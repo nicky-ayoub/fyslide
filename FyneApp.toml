@@ -1,0 +1,5 @@
+[Details]
+    Icon = "assets/icon.png"
+    Name = "Fyne Slide Show"
+    ID = "com.github/nicky-ayoub/fyslide"
+    Build = 0
