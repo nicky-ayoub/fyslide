@@ -19,15 +19,19 @@ func (a *App) buildKeyboardShortcuts() {
 		switch key.Name {
 		// move forward/back within the current folder of images
 		case fyne.KeyRight:
-			a.nextImage(1)
+			a.direction = 1
+			a.nextImage()
 		case fyne.KeyLeft:
-			a.nextImage(-1)
+			a.direction = -1
+			a.nextImage()
 		case fyne.KeyQ:
 			a.app.Quit()
 		case fyne.KeyPageUp, fyne.KeyUp:
-			a.nextImage(-20)
+			a.index -= 20
+			a.nextImage()
 		case fyne.KeyPageDown, fyne.KeyDown:
-			a.nextImage(20)
+			a.index += 20
+			a.nextImage()
 		case fyne.KeyHome:
 			a.firstImage()
 		case fyne.KeyEnd:

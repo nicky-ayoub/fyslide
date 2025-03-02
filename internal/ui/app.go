@@ -35,6 +35,8 @@ type App struct {
 	img    Img
 	image  *canvas.Image
 
+	direction int
+
 	mainModKey fyne.KeyModifier
 
 	split       *container.Split
@@ -46,6 +48,7 @@ type App struct {
 	statusBar   *fyne.Container
 	first       *widget.Button
 	leftArrow   *widget.Button
+	pauseBtn    *widget.Button
 	rightArrow  *widget.Button
 	last        *widget.Button
 	deleteBtn   *widget.Button
@@ -110,7 +113,7 @@ func CreateApplication() {
 	w := a.NewWindow("FySlide")
 	a.SetIcon(resourceIconPng)
 	w.SetIcon(resourceIconPng)
-	ui := &App{app: a, MainWin: w}
+	ui := &App{app: a, MainWin: w, direction: 1}
 	ui.init()
 
 	w.SetContent(ui.buildMainUI())
@@ -123,6 +126,12 @@ func CreateApplication() {
 	for ui.ImageCount() < 1 { // Stupidly wait for something to pop up
 		time.Sleep(100 * time.Microsecond)
 	}
+	ticker := time.NewTicker(2 * time.Second)
+	go func() {
+		for range ticker.C {
+			ui.nextImage()
+		}
+	}()
 	ui.DisplayImage()
 	w.ShowAndRun()
 }

@@ -65,11 +65,13 @@ func (a *App) lastImage() {
 	a.DisplayImage()
 }
 
-func (a *App) nextImage(dir int) {
-	a.index += dir
+func (a *App) nextImage() {
+	a.index += a.direction
 	if a.index < 0 {
+		a.direction = 1
 		a.index = 0
 	} else if a.index >= len(a.images) {
+		a.direction = -1
 		a.index = len(a.images) - 1
 	}
 	a.DisplayImage()
@@ -90,10 +92,11 @@ func (a *App) deleteFileCheck() {
 	}, a.MainWin)
 }
 func (a *App) buildSatusBar() *fyne.Container {
-	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.firstImage() })
-	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.nextImage(-1) })
-	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.nextImage(1) })
-	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.lastImage() })
+	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.direction = 1; a.firstImage() })
+	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
+	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() { a.direction = 0 })
+	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
+	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.direction = -1; a.lastImage() })
 	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.statusLabel = widget.NewLabel("")
@@ -109,6 +112,7 @@ func (a *App) buildSatusBar() *fyne.Container {
 		container.NewHBox(
 			a.first,
 			a.leftArrow,
+			a.pauseBtn,
 			a.rightArrow,
 			a.last,
 			a.deleteBtn,
@@ -140,10 +144,11 @@ func (a *App) buildInformationTab() *container.TabItem {
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 
-		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.firstImage() }),
-		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.nextImage(-1) }),
-		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.nextImage(1) }),
-		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.lastImage() }),
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.direction = 1; a.firstImage() }),
+		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
+		widget.NewToolbarAction(theme.MediaPauseIcon(), func() { a.direction = 0 }),
+		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.direction = -1; a.lastImage() }),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		widget.NewToolbarSpacer(),
@@ -189,8 +194,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
-			fyne.NewMenuItem("Next Image", func() { a.nextImage(1) }),
-			fyne.NewMenuItem("Previous Image", func() { a.nextImage(-1) }),
+			fyne.NewMenuItem("Next Image", func() { a.direction = 1; a.nextImage() }),
+			fyne.NewMenuItem("Previous Image", func() { a.direction = -1; a.nextImage() }),
 		),
 		fyne.NewMenu("Help",
 			fyne.NewMenuItem("About", func() {
@@ -231,8 +236,10 @@ func (a *App) deleteFile() {
 		return
 	}
 	if a.index == len(a.images)-1 {
-		a.nextImage(-1)
+		a.direction = -1
+		a.nextImage()
 	} else if len(a.images) == 1 {
+		a.direction = 1
 		a.image.Image = nil
 		a.img.EditedImage = nil
 		a.img.OriginalImage = nil
@@ -241,6 +248,6 @@ func (a *App) deleteFile() {
 		a.deleteBtn.Disable()
 		a.image.Refresh()
 	} else {
-		a.nextImage(1)
+		a.nextImage()
 	}
 }
