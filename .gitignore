@@ -32,3 +32,6 @@ fyne-cross
 
 # MacOS things
 .DS_Store
+
+fyslide
+test/

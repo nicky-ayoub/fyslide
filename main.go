@@ -10,5 +10,6 @@ import (
 func main() {
 	// Set the logger prefix
 	log.SetPrefix("Fyne Slide Show")
+
 	ui.CreateApplication()
 }
