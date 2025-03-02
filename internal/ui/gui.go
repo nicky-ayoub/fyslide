@@ -35,12 +35,6 @@ func (a *App) DisplayImage() error {
 	a.image.Image = a.img.OriginalImage
 	a.image.Refresh()
 
-	// get and display FileInfo
-	fd, err := os.Stat(a.img.Path)
-	if err != nil {
-		return err
-	}
-
 	a.imgSize.SetText(fmt.Sprintf("Size: %d bytes", a.images[a.index].Size))
 	a.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", a.images[a.index].ModTime.Format("02-01-2006")))
 	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
