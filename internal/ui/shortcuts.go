@@ -28,6 +28,10 @@ func (a *App) buildKeyboardShortcuts() {
 			a.nextImage(-20)
 		case fyne.KeyPageDown, fyne.KeyDown:
 			a.nextImage(20)
+		case fyne.KeyHome:
+			a.firstImage()
+		case fyne.KeyEnd:
+			a.lastImage()
 		case fyne.KeyDelete:
 			a.deleteFileCheck()
 		// close dialogs with esc key

@@ -49,7 +49,19 @@ func (a *App) DisplayImage() error {
 
 	a.leftArrow.Enable()
 	a.rightArrow.Enable()
+	a.first.Enable()
+	a.last.Enable()
 	return nil
+}
+
+func (a *App) firstImage() {
+	a.index = 0
+	a.DisplayImage()
+}
+
+func (a *App) lastImage() {
+	a.index = len(a.images) - 1
+	a.DisplayImage()
 }
 
 func (a *App) nextImage(dir int) {
@@ -77,21 +89,27 @@ func (a *App) deleteFileCheck() {
 	}, a.MainWin)
 }
 func (a *App) buildSatusBar() *fyne.Container {
+	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.firstImage() })
 	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.nextImage(-1) })
 	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.nextImage(1) })
+	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.lastImage() })
 	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.statusLabel = widget.NewLabel("")
-	a.leftArrow.Disable()
-	a.rightArrow.Disable()
+	a.leftArrow.Enable()
+	a.rightArrow.Enable()
 	a.deleteBtn.Enable()
 	a.tagBtn.Enable()
+	a.first.Enable()
+	a.last.Enable()
 
 	a.statusBar = container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(
+			a.first,
 			a.leftArrow,
 			a.rightArrow,
+			a.last,
 			a.deleteBtn,
 			a.tagBtn,
 			a.statusLabel,
@@ -121,8 +139,10 @@ func (a *App) buildInformationTab() *container.TabItem {
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.firstImage() }),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.nextImage(-1) }),
 		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.nextImage(1) }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.lastImage() }),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		widget.NewToolbarSpacer(),

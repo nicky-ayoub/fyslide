@@ -41,8 +41,10 @@ type App struct {
 	imgSize     *widget.Label
 	imgLastMod  *widget.Label
 	statusBar   *fyne.Container
+	first       *widget.Button
 	leftArrow   *widget.Button
 	rightArrow  *widget.Button
+	last        *widget.Button
 	deleteBtn   *widget.Button
 	tagBtn      *widget.Button
 	statusLabel *widget.Label
