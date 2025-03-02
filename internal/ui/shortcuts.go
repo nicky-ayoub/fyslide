@@ -6,7 +6,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (a *App) loadKeyboardShortcuts() {
+func (a *App) buildKeyboardShortcuts() {
 	// keyboard shortcuts
 
 	// ctrl+q to quit application
@@ -29,7 +29,7 @@ func (a *App) loadKeyboardShortcuts() {
 		case fyne.KeyPageDown, fyne.KeyDown:
 			a.nextImage(20)
 		case fyne.KeyDelete:
-			a.deleteFile()
+			a.deleteFileCheck()
 		// close dialogs with esc key
 		case fyne.KeyEscape:
 			if len(a.MainWin.Canvas().Overlays().List()) > 0 {

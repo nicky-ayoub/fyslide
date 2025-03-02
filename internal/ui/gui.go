@@ -45,6 +45,7 @@ func (a *App) DisplayImage() error {
 	a.countLabel.SetText(c)
 
 	a.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
+	a.statusLabel.SetText(fmt.Sprintf("Image %s, %d of %d", a.img.Path, a.index+1, len(a.images)))
 
 	a.leftArrow.Enable()
 	a.rightArrow.Enable()
@@ -61,28 +62,30 @@ func (a *App) nextImage(dir int) {
 	a.DisplayImage()
 }
 
-func (a *App) loadStatusBar() *fyne.Container {
+func (a *App) tagFile() {
+	dialog.ShowCustom("TAGGER", "Ok", container.NewVBox(
+		widget.NewLabel("Add image tag."),
+		widget.NewHyperlink("Help and more information on Github", parseURL("https://github.com/nicky-ayoub/fyslide")),
+		widget.NewLabel("v1.2 | License: MIT"),
+	), a.MainWin)
+}
+func (a *App) deleteFileCheck() {
+	dialog.ShowConfirm("Delete file!", "Are you sure?\n This action can't be undone.", func(b bool) {
+		if b {
+			a.deleteFile()
+		}
+	}, a.MainWin)
+}
+func (a *App) buildSatusBar() *fyne.Container {
 	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.nextImage(-1) })
 	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.nextImage(1) })
-	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-		dialog.ShowConfirm("Delete file!", "Are you sure?\n This action can't be undone.", func(b bool) {
-			if b {
-				a.deleteFile()
-			}
-		}, a.MainWin)
-	})
-	a.deleteBtn.Disable()
-	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
-		dialog.ShowCustom("TAGGER", "Ok", container.NewVBox(
-			widget.NewLabel("Add image tag."),
-			widget.NewHyperlink("Help and more information on Github", parseURL("https://github.com/nicky-ayoub/fyslide")),
-			widget.NewLabel("v1.2 | License: MIT"),
-		), a.MainWin)
-	})
+	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
+	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
+	a.statusLabel = widget.NewLabel("")
 	a.leftArrow.Disable()
 	a.rightArrow.Disable()
 	a.deleteBtn.Enable()
-	a.tagBtn.Disable()
+	a.tagBtn.Enable()
 
 	a.statusBar = container.NewVBox(
 		widget.NewSeparator(),
@@ -91,13 +94,14 @@ func (a *App) loadStatusBar() *fyne.Container {
 			a.rightArrow,
 			a.deleteBtn,
 			a.tagBtn,
+			a.statusLabel,
 			layout.NewSpacer(),
 		),
 	)
 	return a.statusBar
 }
 
-func (a *App) loadInformationTab() *container.TabItem {
+func (a *App) buildInformationTab() *container.TabItem {
 	a.countLabel = widget.NewLabel("Count: ")
 	a.widthLabel = widget.NewLabel("Width: ")
 	a.heightLabel = widget.NewLabel("Height: ")
@@ -114,14 +118,13 @@ func (a *App) loadInformationTab() *container.TabItem {
 	))
 }
 
-func (a *App) gen_toolbar() *widget.Toolbar {
+func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
-		widget.NewToolbarAction(theme.DocumentCreateIcon(), func() {
-			log.Println("Create Pressed on toolbar")
-		}),
-		widget.NewToolbarSeparator(),
+
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.nextImage(-1) }),
 		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.nextImage(1) }),
+		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
+		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
 			log.Println("Display help")
@@ -130,7 +133,7 @@ func (a *App) gen_toolbar() *widget.Toolbar {
 	return t
 }
 
-func (a *App) loadMainUI() fyne.CanvasObject {
+func (a *App) buildMainUI() fyne.CanvasObject {
 	a.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
 	if runtime.GOOS == "darwin" {
@@ -138,14 +141,15 @@ func (a *App) loadMainUI() fyne.CanvasObject {
 	} else {
 		a.mainModKey = fyne.KeyModifierControl
 	}
-	toolbar := a.gen_toolbar()
+	toolbar := a.buildToolbar()
+	status := a.buildSatusBar()
 
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
 
 		fyne.NewMenu("Edit",
-			fyne.NewMenuItem("Delete Image", a.deleteFile),
+			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
@@ -163,7 +167,7 @@ func (a *App) loadMainUI() fyne.CanvasObject {
 		),
 	)
 	a.MainWin.SetMainMenu(mainMenu)
-	a.loadKeyboardShortcuts()
+	a.buildKeyboardShortcuts()
 
 	// image canvas
 	a.image = &canvas.Image{}
@@ -172,15 +176,15 @@ func (a *App) loadMainUI() fyne.CanvasObject {
 	a.split = container.NewHSplit(
 		a.image,
 		container.NewAppTabs(
-			a.loadInformationTab(),
+			a.buildInformationTab(),
 		),
 	)
 	a.split.SetOffset(0.90)
 	return container.NewBorder(
-		toolbar,           // Top
-		a.loadStatusBar(), //Bottom
-		nil,               //left
-		nil,               //right
+		toolbar, // Top
+		status,  //Bottom
+		nil,     //left
+		nil,     //right
 		a.split,
 	)
 }

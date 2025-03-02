@@ -45,6 +45,7 @@ type App struct {
 	rightArrow  *widget.Button
 	deleteBtn   *widget.Button
 	tagBtn      *widget.Button
+	statusLabel *widget.Label
 }
 
 func parseURL(urlStr string) *url.URL {
@@ -91,7 +92,7 @@ func CreateApplication() {
 	ui := &App{app: a, MainWin: w}
 	ui.init()
 
-	w.SetContent(ui.loadMainUI())
+	w.SetContent(ui.buildMainUI())
 
 	go func() { ui.loadImages(dir) }()
 
