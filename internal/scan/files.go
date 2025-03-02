@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,8 @@ type FileItem struct {
 	ModTime time.Time
 	Path    string
 }
+
+var mu sync.Mutex
 
 type FileItems []FileItem
 
@@ -39,7 +42,9 @@ func searchTree(dir string, m *FileItems) error {
 		}
 
 		if fi.Mode().IsRegular() && fi.Size() > 0 && IsImage(p) {
+			mu.Lock()
 			*m = append(*m, data(p, fi))
+			mu.Unlock()
 		}
 
 		return nil

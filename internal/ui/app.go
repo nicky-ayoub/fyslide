@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -26,6 +27,8 @@ type Img struct {
 type App struct {
 	app     fyne.App
 	MainWin fyne.Window
+
+	fileTree binding.URITree
 
 	images scan.FileItems
 	index  int
@@ -56,10 +59,26 @@ func parseURL(urlStr string) *url.URL {
 		fyne.LogError("Could not parse URL", err)
 	}
 	return link
+
 }
+
+// func pathToURI(path string) (fyne.URI, error) {
+// 	absPath, _ := filepath.Abs(path)
+// 	fileURI := storage.NewFileURI(absPath)
+// 	return fileURI, nil
+// }
 
 func (a *App) loadImages(root string) {
 	scan.Run(root, &a.images)
+
+	// for _, img := range a.images {
+	// 	uri, err := pathToURI(img.Path)
+	// 	if err != nil {
+	// 		fmt.Println("Error:", err)
+	// 		return
+	// 	}
+	// 	a.fileTree.Append(binding.DataTreeRootID, uri.String(), uri)
+	// }
 }
 func (a *App) ImageCount() int {
 	return len(a.images)

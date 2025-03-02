@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -164,6 +165,21 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	toolbar := a.buildToolbar()
 	status := a.buildSatusBar()
 
+	a.fileTree = binding.NewURITree()
+	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
+		return widget.NewLabel("filename.ext")
+	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
+		l := obj.(*widget.Label)
+		u, _ := data.(binding.URI).Get()
+		name := u.Name()
+		l.SetText(name)
+	})
+
+	explorer := widget.NewAccordion(
+		widget.NewAccordionItem("Files", files),
+		widget.NewAccordionItem("Data", widget.NewLabel("data")),
+	)
+
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
@@ -201,10 +217,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	)
 	a.split.SetOffset(0.90)
 	return container.NewBorder(
-		toolbar, // Top
-		status,  //Bottom
-		nil,     //left
-		nil,     //right
+		toolbar,  // Top
+		status,   //Bottom
+		explorer, //left
+		nil,      //right
 		a.split,
 	)
 }
