@@ -5,27 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 type FileItem struct {
-	Size    int64
-	ModTime time.Time
-	Path    string
+	Path string
 }
 
 var mu sync.Mutex
 
 type FileItems []FileItem
 
-func data(p string, fi os.FileInfo) FileItem {
-	item :=
-		FileItem{
-			Size:    fi.Size(),
-			ModTime: fi.ModTime(),
-			Path:    p,
-		}
-	return item
+func NewFileItem(p string) FileItem {
+	return FileItem{
+		Path: p,
+	}
+
 }
 
 func searchTree(dir string, m *FileItems) error {
@@ -43,7 +37,7 @@ func searchTree(dir string, m *FileItems) error {
 
 		if fi.Mode().IsRegular() && fi.Size() > 0 && IsImage(p) {
 			mu.Lock()
-			*m = append(*m, data(p, fi))
+			*m = append(*m, NewFileItem(p))
 			mu.Unlock()
 		}
 
@@ -58,15 +52,7 @@ func Run(dir string, m *FileItems) {
 }
 
 func IsImage(n string) bool {
-
-	// libRegEx, err := regexp.Compile(`(?i)^.+\.(png|jpg|jpeg|gif)$`)
-	// if err != nil {
-	// 	return false
-	// }
-	// return libRegEx.MatchString(n)
-
-	ext := strings.ToLower(filepath.Ext(n))
-	switch ext {
+	switch strings.ToLower(filepath.Ext(n)) {
 	case ".png", ".jpg", ".jpeg", ".gif":
 		return true
 	default:

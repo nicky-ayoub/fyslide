@@ -11,7 +11,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -36,8 +35,13 @@ func (a *App) DisplayImage() error {
 	a.image.Image = a.img.OriginalImage
 	a.image.Refresh()
 
-	a.imgSize.SetText(fmt.Sprintf("Size: %d bytes", a.images[a.index].Size))
-	a.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", a.images[a.index].ModTime.Format("02-01-2006")))
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("unable to get file info %v", err)
+	}
+
+	a.imgSize.SetText(fmt.Sprintf("Size: %d bytes", fileInfo.Size()))
+	a.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
 	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
 	h := fmt.Sprintf("Height: %dpx", a.img.OriginalImage.Bounds().Max.Y)
 	c := fmt.Sprintf("Count: %d", a.ImageCount())
@@ -58,11 +62,15 @@ func (a *App) DisplayImage() error {
 func (a *App) firstImage() {
 	a.index = 0
 	a.DisplayImage()
+	a.direction = 1
+
 }
 
 func (a *App) lastImage() {
 	a.index = len(a.images) - 1
 	a.DisplayImage()
+	a.direction = -1
+
 }
 
 func (a *App) nextImage() {
@@ -92,11 +100,11 @@ func (a *App) deleteFileCheck() {
 	}, a.MainWin)
 }
 func (a *App) buildSatusBar() *fyne.Container {
-	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.direction = 1; a.firstImage() })
+	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.firstImage() })
 	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
-	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() { a.direction = 0 })
+	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() { a.pause() })
 	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
-	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.direction = -1; a.lastImage() })
+	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.lastImage() })
 	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.statusLabel = widget.NewLabel("")
@@ -115,10 +123,10 @@ func (a *App) buildSatusBar() *fyne.Container {
 			a.pauseBtn,
 			a.rightArrow,
 			a.last,
-			a.deleteBtn,
 			a.tagBtn,
-			a.statusLabel,
+			a.deleteBtn,
 			layout.NewSpacer(),
+			a.statusLabel,
 		),
 	)
 	return a.statusBar
@@ -141,14 +149,27 @@ func (a *App) buildInformationTab() *container.TabItem {
 	))
 }
 
+func (a *App) pause() {
+	if a.paused {
+		a.paused = false
+		a.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		a.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
+
+	} else {
+		a.paused = true
+		a.pauseBtn.SetIcon(theme.MediaPlayIcon())
+		a.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
+	}
+}
+
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 
-		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.direction = 1; a.firstImage() }),
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.firstImage() }),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaPauseIcon(), func() { a.direction = 0 }),
+		widget.NewToolbarAction(theme.MediaPauseIcon(), func() { a.pause() }),
 		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.direction = -1; a.lastImage() }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.lastImage() }),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		widget.NewToolbarSpacer(),
@@ -167,23 +188,23 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	} else {
 		a.mainModKey = fyne.KeyModifierControl
 	}
-	toolbar := a.buildToolbar()
+	a.toolbar = a.buildToolbar()
 	status := a.buildSatusBar()
 
-	a.fileTree = binding.NewURITree()
-	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
-		return widget.NewLabel("filename.ext")
-	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
-		l := obj.(*widget.Label)
-		u, _ := data.(binding.URI).Get()
-		name := u.Name()
-		l.SetText(name)
-	})
+	// a.fileTree = binding.NewURITree()
+	// files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
+	// 	return widget.NewLabel("filename.ext")
+	// }, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
+	// 	l := obj.(*widget.Label)
+	// 	u, _ := data.(binding.URI).Get()
+	// 	name := u.Name()
+	// 	l.SetText(name)
+	// })
 
-	explorer := widget.NewAccordion(
-		widget.NewAccordionItem("Files", files),
-		widget.NewAccordionItem("Data", widget.NewLabel("data")),
-	)
+	// explorer := widget.NewAccordion(
+	// 	widget.NewAccordionItem("Files", files),
+	// 	widget.NewAccordionItem("Data", widget.NewLabel("data")),
+	// )
 
 	// main menu
 	mainMenu := fyne.NewMainMenu(
@@ -222,10 +243,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	)
 	a.split.SetOffset(0.90)
 	return container.NewBorder(
-		toolbar,  // Top
-		status,   //Bottom
-		explorer, //left
-		nil,      //right
+		a.toolbar, // Top
+		status,    // Bottom
+		nil,       // explorer left
+		nil,       // right
 		a.split,
 	)
 }

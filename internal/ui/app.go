@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -28,13 +27,14 @@ type App struct {
 	app     fyne.App
 	MainWin fyne.Window
 
-	fileTree binding.URITree
+	//fileTree binding.URITree
 
 	images scan.FileItems
 	index  int
 	img    Img
 	image  *canvas.Image
 
+	paused    bool
 	direction int
 
 	mainModKey fyne.KeyModifier
@@ -54,6 +54,7 @@ type App struct {
 	deleteBtn   *widget.Button
 	tagBtn      *widget.Button
 	statusLabel *widget.Label
+	toolbar     *widget.Toolbar
 }
 
 func parseURL(urlStr string) *url.URL {
@@ -129,7 +130,9 @@ func CreateApplication() {
 	ticker := time.NewTicker(2 * time.Second)
 	go func() {
 		for range ticker.C {
-			ui.nextImage()
+			if !ui.paused {
+				ui.nextImage()
+			}
 		}
 	}()
 	ui.DisplayImage()
