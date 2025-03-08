@@ -26,6 +26,8 @@ func (a *App) buildKeyboardShortcuts() {
 			a.nextImage()
 		case fyne.KeyQ:
 			a.app.Quit()
+		case fyne.KeyP, fyne.KeySpace:
+			a.togglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
 			a.index -= 20
 			a.nextImage()

@@ -100,11 +100,11 @@ func (a *App) deleteFileCheck() {
 	}, a.MainWin)
 }
 func (a *App) buildSatusBar() *fyne.Container {
-	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), func() { a.firstImage() })
+	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
 	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
-	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() { a.pause() })
+	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
 	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
-	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() { a.lastImage() })
+	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), a.lastImage)
 	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.statusLabel = widget.NewLabel("")
@@ -149,12 +149,11 @@ func (a *App) buildInformationTab() *container.TabItem {
 	))
 }
 
-func (a *App) pause() {
+func (a *App) togglePlay() {
 	if a.paused {
 		a.paused = false
 		a.pauseBtn.SetIcon(theme.MediaPauseIcon())
 		a.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
-
 	} else {
 		a.paused = true
 		a.pauseBtn.SetIcon(theme.MediaPlayIcon())
@@ -165,11 +164,11 @@ func (a *App) pause() {
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 
-		widget.NewToolbarAction(theme.MediaFastRewindIcon(), func() { a.firstImage() }),
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaPauseIcon(), func() { a.pause() }),
+		widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay),
 		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaFastForwardIcon(), func() { a.lastImage() }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		widget.NewToolbarSpacer(),
