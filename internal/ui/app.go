@@ -25,21 +25,9 @@ type Img struct {
 	Directory     string
 }
 
-// App represents the whole application with all its windows, widgets and functions
-type App struct {
-	app     fyne.App
-	MainWin fyne.Window
-
-	//fileTree binding.URITree
-
-	images scan.FileItems
-	index  int
-	img    Img
-	image  *canvas.Image
-
-	paused    bool
-	direction int
-
+// Fyne UI struct
+type UI struct {
+	MainWin    fyne.Window
 	mainModKey fyne.KeyModifier
 
 	split       *container.Split
@@ -58,6 +46,22 @@ type App struct {
 	tagBtn      *widget.Button
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar
+}
+
+// App represents the whole application with all its windows, widgets and functions
+type App struct {
+	app fyne.App
+	UI  UI
+
+	//fileTree binding.URITree
+
+	images scan.FileItems
+	index  int
+	img    Img
+	image  *canvas.Image
+
+	paused    bool
+	direction int
 }
 
 func parseURL(urlStr string) *url.URL {
@@ -92,22 +96,22 @@ func (a *App) DisplayImage() error {
 		return fmt.Errorf("unable to get file info %v", err)
 	}
 
-	a.imgSize.SetText(fmt.Sprintf("Size: %d bytes", fileInfo.Size()))
-	a.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
+	a.UI.imgSize.SetText(fmt.Sprintf("Size: %d bytes", fileInfo.Size()))
+	a.UI.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
 	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
 	h := fmt.Sprintf("Height: %dpx", a.img.OriginalImage.Bounds().Max.Y)
 	c := fmt.Sprintf("Count: %d", a.ImageCount())
-	a.widthLabel.SetText(w)
-	a.heightLabel.SetText(h)
-	a.countLabel.SetText(c)
+	a.UI.widthLabel.SetText(w)
+	a.UI.heightLabel.SetText(h)
+	a.UI.countLabel.SetText(c)
 
-	a.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
-	a.statusLabel.SetText(fmt.Sprintf("Image %s, %d of %d", a.img.Path, a.index+1, len(a.images)))
+	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
+	a.UI.statusLabel.SetText(fmt.Sprintf("Image %s, %d of %d", a.img.Path, a.index+1, len(a.images)))
 
-	a.leftArrow.Enable()
-	a.rightArrow.Enable()
-	a.first.Enable()
-	a.last.Enable()
+	a.UI.leftArrow.Enable()
+	a.UI.rightArrow.Enable()
+	a.UI.first.Enable()
+	a.UI.last.Enable()
 	return nil
 }
 
@@ -142,31 +146,31 @@ func (a *App) tagFile() {
 		widget.NewLabel("Add image tag."),
 		widget.NewHyperlink("Help and more information on Github", parseURL("https://github.com/nicky-ayoub/fyslide")),
 		widget.NewLabel("v1.2 | License: MIT"),
-	), a.MainWin)
+	), a.UI.MainWin)
 }
 func (a *App) deleteFileCheck() {
 	dialog.ShowConfirm("Delete file!", "Are you sure?\n This action can't be undone.", func(b bool) {
 		if b {
 			a.deleteFile()
 		}
-	}, a.MainWin)
+	}, a.UI.MainWin)
 }
 
 func (a *App) togglePlay() {
 	if a.paused {
 		a.paused = false
-		a.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
+		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
 	} else {
 		a.paused = true
-		a.pauseBtn.SetIcon(theme.MediaPlayIcon())
-		a.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
+		a.UI.pauseBtn.SetIcon(theme.MediaPlayIcon())
+		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
 	}
 }
 
 func (a *App) deleteFile() {
 	if err := os.Remove(a.img.Path); err != nil {
-		dialog.NewError(err, a.MainWin)
+		dialog.NewError(err, a.UI.MainWin)
 		return
 	}
 	if a.index == len(a.images)-1 {
@@ -177,9 +181,9 @@ func (a *App) deleteFile() {
 		a.image.Image = nil
 		a.img.EditedImage = nil
 		a.img.OriginalImage = nil
-		a.rightArrow.Disable()
-		a.leftArrow.Disable()
-		a.deleteBtn.Disable()
+		a.UI.rightArrow.Disable()
+		a.UI.leftArrow.Disable()
+		a.UI.deleteBtn.Disable()
 		a.image.Refresh()
 	} else {
 		a.nextImage()
@@ -231,18 +235,18 @@ func CreateApplication() {
 	}
 
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
-	w := a.NewWindow("FySlide")
 	a.SetIcon(resourceIconPng)
-	w.SetIcon(resourceIconPng)
-	ui := &App{app: a, MainWin: w, direction: 1}
+	ui := &App{app: a, direction: 1}
+	ui.UI.MainWin = a.NewWindow("FySlide")
+	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init()
 
-	w.SetContent(ui.buildMainUI())
+	ui.UI.MainWin.SetContent(ui.buildMainUI())
 
 	go func() { ui.loadImages(dir) }()
 
-	w.Resize(fyne.NewSize(1400, 700))
-	w.CenterOnScreen()
+	ui.UI.MainWin.Resize(fyne.NewSize(1400, 700))
+	ui.UI.MainWin.CenterOnScreen()
 
 	for ui.ImageCount() < 1 { // Stupidly wait for something to pop up
 		time.Sleep(100 * time.Microsecond)
@@ -256,7 +260,7 @@ func CreateApplication() {
 		}
 	}()
 	ui.DisplayImage()
-	w.ShowAndRun()
+	ui.UI.MainWin.ShowAndRun()
 }
 
 /*

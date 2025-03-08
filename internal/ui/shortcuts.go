@@ -10,12 +10,12 @@ func (a *App) buildKeyboardShortcuts() {
 	// keyboard shortcuts
 
 	// ctrl+q to quit application
-	a.MainWin.Canvas().AddShortcut(&desktop.CustomShortcut{
+	a.UI.MainWin.Canvas().AddShortcut(&desktop.CustomShortcut{
 		KeyName:  fyne.KeyQ,
-		Modifier: a.mainModKey,
+		Modifier: a.UI.mainModKey,
 	}, func(shortcut fyne.Shortcut) { a.app.Quit() })
 
-	a.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
+	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
 		switch key.Name {
 		// move forward/back within the current folder of images
 		case fyne.KeyRight:
@@ -42,8 +42,8 @@ func (a *App) buildKeyboardShortcuts() {
 			a.deleteFileCheck()
 		// close dialogs with esc key
 		case fyne.KeyEscape:
-			if len(a.MainWin.Canvas().Overlays().List()) > 0 {
-				a.MainWin.Canvas().Overlays().Top().Hide()
+			if len(a.UI.MainWin.Canvas().Overlays().List()) > 0 {
+				a.UI.MainWin.Canvas().Overlays().Top().Hide()
 			}
 		}
 	})

@@ -14,51 +14,51 @@ import (
 )
 
 func (a *App) buildSatusBar() *fyne.Container {
-	a.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
-	a.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
-	a.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-	a.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
-	a.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), a.lastImage)
-	a.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
-	a.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
-	a.statusLabel = widget.NewLabel("")
-	a.leftArrow.Enable()
-	a.rightArrow.Enable()
-	a.deleteBtn.Enable()
-	a.tagBtn.Enable()
-	a.first.Enable()
-	a.last.Enable()
+	a.UI.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
+	a.UI.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
+	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
+	a.UI.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
+	a.UI.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), a.lastImage)
+	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
+	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
+	a.UI.statusLabel = widget.NewLabel("")
+	a.UI.leftArrow.Enable()
+	a.UI.rightArrow.Enable()
+	a.UI.deleteBtn.Enable()
+	a.UI.tagBtn.Enable()
+	a.UI.first.Enable()
+	a.UI.last.Enable()
 
-	a.statusBar = container.NewVBox(
+	a.UI.statusBar = container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(
-			a.first,
-			a.leftArrow,
-			a.pauseBtn,
-			a.rightArrow,
-			a.last,
-			a.tagBtn,
-			a.deleteBtn,
+			a.UI.first,
+			a.UI.leftArrow,
+			a.UI.pauseBtn,
+			a.UI.rightArrow,
+			a.UI.last,
+			a.UI.tagBtn,
+			a.UI.deleteBtn,
 			layout.NewSpacer(),
-			a.statusLabel,
+			a.UI.statusLabel,
 		),
 	)
-	return a.statusBar
+	return a.UI.statusBar
 }
 
 func (a *App) buildInformationTab() *container.TabItem {
-	a.countLabel = widget.NewLabel("Count: ")
-	a.widthLabel = widget.NewLabel("Width: ")
-	a.heightLabel = widget.NewLabel("Height: ")
-	a.imgSize = widget.NewLabel("Size: ")
-	a.imgLastMod = widget.NewLabel("Last modified: ")
+	a.UI.countLabel = widget.NewLabel("Count: ")
+	a.UI.widthLabel = widget.NewLabel("Width: ")
+	a.UI.heightLabel = widget.NewLabel("Height: ")
+	a.UI.imgSize = widget.NewLabel("Size: ")
+	a.UI.imgLastMod = widget.NewLabel("Last modified: ")
 	return container.NewTabItem("Information", container.NewScroll(
 		container.NewVBox(
-			a.countLabel,
-			a.widthLabel,
-			a.heightLabel,
-			a.imgSize,
-			a.imgLastMod,
+			a.UI.countLabel,
+			a.UI.widthLabel,
+			a.UI.heightLabel,
+			a.UI.imgSize,
+			a.UI.imgLastMod,
 		),
 	))
 }
@@ -82,14 +82,14 @@ func (a *App) buildToolbar() *widget.Toolbar {
 }
 
 func (a *App) buildMainUI() fyne.CanvasObject {
-	a.MainWin.SetMaster()
+	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
 	if runtime.GOOS == "darwin" {
-		a.mainModKey = fyne.KeyModifierSuper
+		a.UI.mainModKey = fyne.KeyModifierSuper
 	} else {
-		a.mainModKey = fyne.KeyModifierControl
+		a.UI.mainModKey = fyne.KeyModifierControl
 	}
-	a.toolbar = a.buildToolbar()
+	a.UI.toolbar = a.buildToolbar()
 	status := a.buildSatusBar()
 
 	// a.fileTree = binding.NewURITree()
@@ -125,29 +125,29 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 					widget.NewLabel("A simple image slide show."),
 					widget.NewHyperlink("Help and more information on Github", parseURL("https://github.com/nicky-ayoub/fyslide")),
 					widget.NewLabel("v1.2 | License: MIT"),
-				), a.MainWin)
+				), a.UI.MainWin)
 			}),
 		),
 	)
-	a.MainWin.SetMainMenu(mainMenu)
+	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
 
 	// image canvas
 	a.image = &canvas.Image{}
 	a.image.FillMode = canvas.ImageFillContain
 
-	a.split = container.NewHSplit(
+	a.UI.split = container.NewHSplit(
 		a.image,
 		container.NewAppTabs(
 			a.buildInformationTab(),
 		),
 	)
-	a.split.SetOffset(0.90)
+	a.UI.split.SetOffset(0.90)
 	return container.NewBorder(
-		a.toolbar, // Top
-		status,    // Bottom
-		nil,       // explorer left
-		nil,       // right
-		a.split,
+		a.UI.toolbar, // Top
+		status,       // Bottom
+		nil,          // explorer left
+		nil,          // right
+		a.UI.split,
 	)
 }
