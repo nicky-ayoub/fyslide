@@ -85,12 +85,14 @@ func (a *App) buildToolbar() *widget.Toolbar {
 
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
+	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
 	if runtime.GOOS == "darwin" {
 		a.UI.mainModKey = fyne.KeyModifierSuper
 	} else {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
+	a.UI.toolbar = a.buildToolbar()
 	a.UI.toolbar = a.buildToolbar()
 	status := a.buildSatusBar()
 
@@ -132,6 +134,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 	)
 	a.UI.MainWin.SetMainMenu(mainMenu)
+	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
 
 	// image canvas
@@ -144,6 +147,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			a.buildInformationTab(),
 		),
 	)
+	a.UI.split.SetOffset(0.90)
 	a.UI.split.SetOffset(0.90)
 	return container.NewBorder(
 		a.UI.toolbar, // Top
