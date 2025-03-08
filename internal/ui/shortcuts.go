@@ -54,11 +54,13 @@ func (a *App) showShortcuts() {
 		"Ctrl+Q",
 		"Arrow Right", "Arrow Left",
 		"Page Up", "Page Down",
+		"Home", "End",
 	}
 	descriptions := []string{
 		"Quit Application",
 		"Next Image", "Previous Image",
 		"Skip 20 Images Back", "Skip 20 Images Forward",
+		"First Image", "Last Image",
 	}
 
 	win := a.app.NewWindow("Keyboard Shortcuts")
