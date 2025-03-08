@@ -47,6 +47,7 @@ func (a *App) buildSatusBar() *fyne.Container {
 }
 
 func (a *App) buildInformationTab() *container.TabItem {
+	a.UI.clockLabel = widget.NewLabel("Time: ")
 	a.UI.countLabel = widget.NewLabel("Count: ")
 	a.UI.widthLabel = widget.NewLabel("Width: ")
 	a.UI.heightLabel = widget.NewLabel("Height: ")
@@ -54,6 +55,7 @@ func (a *App) buildInformationTab() *container.TabItem {
 	a.UI.imgLastMod = widget.NewLabel("Last modified: ")
 	return container.NewTabItem("Information", container.NewScroll(
 		container.NewVBox(
+			a.UI.clockLabel,
 			a.UI.countLabel,
 			a.UI.widthLabel,
 			a.UI.heightLabel,

@@ -31,6 +31,7 @@ type UI struct {
 	mainModKey fyne.KeyModifier
 
 	split       *container.Split
+	clockLabel  *widget.Label
 	countLabel  *widget.Label
 	widthLabel  *widget.Label
 	heightLabel *widget.Label
@@ -141,6 +142,10 @@ func (a *App) nextImage() {
 	a.DisplayImage()
 }
 
+func (a *App) updateTime() {
+	formatted := time.Now().Format("Time: 03:04:05")
+	a.UI.clockLabel.SetText(formatted)
+}
 func (a *App) tagFile() {
 	dialog.ShowCustom("TAGGER", "Ok", container.NewVBox(
 		widget.NewLabel("Add image tag."),
@@ -257,6 +262,11 @@ func CreateApplication() {
 			if !ui.paused {
 				ui.nextImage()
 			}
+		}
+	}()
+	go func() {
+		for range time.Tick(time.Second) {
+			ui.updateTime()
 		}
 	}()
 	ui.DisplayImage()
