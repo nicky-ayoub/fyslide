@@ -1,3 +1,4 @@
+// Package ui  Setup for the FySlide Application
 package ui
 
 import (
@@ -22,6 +23,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// Img struct
 type Img struct {
 	OriginalImage image.Image
 	EditedImage   *image.RGBA
@@ -29,7 +31,7 @@ type Img struct {
 	Directory     string
 }
 
-// Fyne UI struct
+// UI struct
 type UI struct {
 	MainWin    fyne.Window
 	mainModKey fyne.KeyModifier
@@ -80,6 +82,7 @@ func parseURL(urlStr string) *url.URL {
 
 }
 
+// DisplayImage displays the image on the canvas at the current index
 func (a *App) DisplayImage() error {
 	// decode and update the image + get image path
 	//fmt.Printf("Displaying %s\n", a.images[a.index].Path)
@@ -107,7 +110,7 @@ func (a *App) DisplayImage() error {
 	a.UI.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
 	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
 	h := fmt.Sprintf("Height: %dpx", a.img.OriginalImage.Bounds().Max.Y)
-	c := fmt.Sprintf("Count: %d", a.ImageCount())
+	c := fmt.Sprintf("Count: %d", a.imageCount())
 	a.UI.widthLabel.SetText(w)
 	a.UI.heightLabel.SetText(h)
 	a.UI.countLabel.SetText(c)
@@ -214,7 +217,7 @@ func (a *App) loadImages(root string) {
 	scan.Run(root, &a.images)
 }
 
-func (a *App) ImageCount() int {
+func (a *App) imageCount() int {
 	return len(a.images)
 }
 
@@ -222,6 +225,7 @@ func (a *App) init() {
 	a.img = Img{}
 }
 
+// CreateApplication is the GUI entrypoint
 func CreateApplication() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -259,7 +263,7 @@ func CreateApplication() {
 	ui.UI.MainWin.Resize(fyne.NewSize(1400, 700))
 	ui.UI.MainWin.CenterOnScreen()
 
-	for ui.ImageCount() < 1 { // Stupidly wait for something to pop up
+	for ui.imageCount() < 1 { // Stupidly wait for something to pop up
 		time.Sleep(100 * time.Microsecond)
 	}
 

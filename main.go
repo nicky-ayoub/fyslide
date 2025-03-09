@@ -1,3 +1,4 @@
+// Main entry point for the application
 package main
 
 //go:generate fyne bundle --package ui -output bundle.go assets/icon.png

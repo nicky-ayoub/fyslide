@@ -83,14 +83,14 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-func (a *App) findIndex(target string) int {
-	for i, v := range a.images {
-		if v.Path == target {
-			return i
-		}
-	}
-	return -1
-}
+// func (a *App) findIndex(target string) int {
+// 	for i, v := range a.images {
+// 		if v.Path == target {
+// 			return i
+// 		}
+// 	}
+// 	return -1
+// }
 
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()

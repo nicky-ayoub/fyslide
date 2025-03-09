@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// About represents the about dialog
 type About struct {
 	title     string
 	parent    *fyne.Window
@@ -16,6 +17,7 @@ type About struct {
 	d         dialog.Dialog
 }
 
+// NewAbout creates a new about dialog
 func NewAbout(parent *fyne.Window, title string, image fyne.Resource) *About {
 	a := &About{
 		title:  title,
@@ -39,10 +41,12 @@ func NewAbout(parent *fyne.Window, title string, image fyne.Resource) *About {
 	return a
 }
 
+// Hide hides the dialog
 func (a *About) Hide() {
 	a.d.Hide()
 }
 
+// Show shows the dialog
 func (a *About) Show() {
 	a.d = dialog.NewCustomWithoutButtons(a.title, a.container, *a.parent)
 	a.d.Show()

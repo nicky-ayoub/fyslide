@@ -1,3 +1,4 @@
+// Package ui  Shortcuts for keyboard actions
 package ui
 
 import (
@@ -13,7 +14,7 @@ func (a *App) buildKeyboardShortcuts() {
 	a.UI.MainWin.Canvas().AddShortcut(&desktop.CustomShortcut{
 		KeyName:  fyne.KeyQ,
 		Modifier: a.UI.mainModKey,
-	}, func(shortcut fyne.Shortcut) { a.app.Quit() })
+	}, func(_ fyne.Shortcut) { a.app.Quit() })
 
 	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
 		switch key.Name {
