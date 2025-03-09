@@ -6,15 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // FileItem represents a file item. Just a path for now
 type FileItem struct {
 	Path string
 }
-
-var mu sync.Mutex
 
 // FileItems is a slice of FileItem
 type FileItems []FileItem
@@ -40,7 +37,7 @@ func searchDir(dir string, m *FileItems) error {
 			return filepath.SkipDir
 		}
 
-		if !d.IsDir() && IsImage(p) {
+		if !d.IsDir() && isImage(p) {
 			//mu.Lock()
 			*m = append(*m, NewFileItem(p))
 			//mu.Unlock()
@@ -65,7 +62,7 @@ func searchTree(dir string, m *FileItems) error {
 			return filepath.SkipDir
 		}
 
-		if fi.Mode().IsRegular() && fi.Size() > 0 && IsImage(p) {
+		if fi.Mode().IsRegular() && fi.Size() > 0 && isImage(p) {
 			mu.Lock()
 			*m = append(*m, NewFileItem(p))
 			mu.Unlock()
@@ -82,8 +79,7 @@ func Run(dir string, m *FileItems) {
 	searchDir(dir, m)
 }
 
-// IsImage checks if a file is an image
-func IsImage(n string) bool {
+func isImage(n string) bool {
 	switch strings.ToLower(filepath.Ext(n)) {
 	case ".png", ".jpg", ".jpeg", ".gif":
 		return true
