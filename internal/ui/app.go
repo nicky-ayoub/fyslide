@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"fyslide/internal/scan"
 	"image"
+	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,7 +15,9 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -54,7 +58,7 @@ type App struct {
 	app fyne.App
 	UI  UI
 
-	//fileTree binding.URITree
+	fileTree binding.URITree
 
 	images scan.FileItems
 	index  int
@@ -213,6 +217,7 @@ func (a *App) loadImages(root string) {
 	// 	a.fileTree.Append(binding.DataTreeRootID, uri.String(), uri)
 	// }
 }
+
 func (a *App) ImageCount() int {
 	return len(a.images)
 }
@@ -238,6 +243,11 @@ func CreateApplication() {
 			dir = s.Name()
 		}
 	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		fmt.Println("Error getting absolute path:", err)
+		return
+	}
 
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
@@ -247,8 +257,14 @@ func CreateApplication() {
 	ui.init()
 
 	ui.UI.MainWin.SetContent(ui.buildMainUI())
-
+	dirURI := storage.NewFileURI(dir)
+	udir, err := storage.ListerForURI(dirURI)
+	if err != nil {
+		fmt.Println("Error opening project", err)
+		return
+	}
 	go func() { ui.loadImages(dir) }()
+	go func() { ui.loadExplorer(udir) }()
 
 	ui.UI.MainWin.Resize(fyne.NewSize(1400, 700))
 	ui.UI.MainWin.CenterOnScreen()
@@ -297,3 +313,29 @@ From https://github.com/fyne-io/fyne/issues/2307
 		return fyne.NewSize(800, 800)
 	}
 */
+
+func (a *App) loadExplorer(dir fyne.ListableURI) {
+	a.fileTree.Set(map[string][]string{}, map[string]fyne.URI{})
+	addFilesToTree(dir, a.fileTree, binding.DataTreeRootID)
+}
+
+func addFilesToTree(dir fyne.ListableURI, tree binding.URITree, root string) {
+	items, err := dir.List()
+	if err != nil {
+		log.Println("Failed to list directory " + dir.String())
+		return
+	}
+	for _, uri := range items {
+		nodeID := uri.String()
+		tree.Append(root, nodeID, uri)
+
+		isDir, err := storage.CanList(uri)
+		if err != nil {
+			log.Println("Failed to check for listing")
+		}
+		if isDir {
+			child, _ := storage.ListerForURI(uri)
+			addFilesToTree(child, tree, nodeID)
+		}
+	}
+}

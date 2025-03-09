@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -83,6 +85,15 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
+func (a *App) findIndex(target string) int {
+	for i, v := range a.images {
+		if v.Path == target {
+			return i
+		}
+	}
+	return -1
+}
+
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
 	a.UI.MainWin.SetMaster()
@@ -96,20 +107,34 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.toolbar = a.buildToolbar()
 	status := a.buildSatusBar()
 
-	// a.fileTree = binding.NewURITree()
-	// files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
-	// 	return widget.NewLabel("filename.ext")
-	// }, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
-	// 	l := obj.(*widget.Label)
-	// 	u, _ := data.(binding.URI).Get()
-	// 	name := u.Name()
-	// 	l.SetText(name)
-	// })
+	a.fileTree = binding.NewURITree()
+	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
+		return widget.NewLabel("filename.ext")
+	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
+		l := obj.(*widget.Label)
+		u, _ := data.(binding.URI).Get()
+		name := u.Name()
+		l.SetText(name)
+	})
+	files.OnSelected = func(id widget.TreeNodeID) {
+		u, err := a.fileTree.GetValue(id)
+		if err != nil {
+			dialog.ShowError(err, a.UI.MainWin)
+			return
+		}
+		i := a.findIndex(u.Path())
+		if i == -1 {
+			dialog.ShowError(fmt.Errorf("Bad index for "+u.Path()), a.UI.MainWin)
+			return
+		}
+		a.index = i
+		a.DisplayImage()
+	}
 
-	// explorer := widget.NewAccordion(
-	// 	widget.NewAccordionItem("Files", files),
-	// 	widget.NewAccordionItem("Data", widget.NewLabel("data")),
-	// )
+	explorer := widget.NewAccordion(
+		widget.NewAccordionItem("Files", files),
+	)
+	explorer.Open(0)
 
 	// main menu
 	mainMenu := fyne.NewMainMenu(
@@ -148,11 +173,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 	)
 	a.UI.split.SetOffset(0.90)
-	a.UI.split.SetOffset(0.90)
 	return container.NewBorder(
 		a.UI.toolbar, // Top
 		status,       // Bottom
-		nil,          // explorer left
+		explorer,     // explorer left
 		nil,          // right
 		a.UI.split,
 	)
