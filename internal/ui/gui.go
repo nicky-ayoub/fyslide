@@ -1,14 +1,12 @@
 package ui
 
 import (
-	"fmt"
 	"log"
 	"runtime"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -31,7 +29,7 @@ func (a *App) buildSatusBar() *fyne.Container {
 	a.UI.first.Enable()
 	a.UI.last.Enable()
 
-	a.UI.statusBar = container.NewVBox(
+	s := container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(
 			a.UI.first,
@@ -45,7 +43,7 @@ func (a *App) buildSatusBar() *fyne.Container {
 			a.UI.statusLabel,
 		),
 	)
-	return a.UI.statusBar
+	return s
 }
 
 func (a *App) buildInformationTab() *container.TabItem {
@@ -105,37 +103,42 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	}
 	a.UI.toolbar = a.buildToolbar()
 	a.UI.toolbar = a.buildToolbar()
-	status := a.buildSatusBar()
+	a.UI.statusBar = a.buildSatusBar()
 
-	a.fileTree = binding.NewURITree()
-	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
-		return widget.NewLabel("filename.ext")
-	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
-		l := obj.(*widget.Label)
-		u, _ := data.(binding.URI).Get()
-		name := u.Name()
-		l.SetText(name)
-	})
-	files.OnSelected = func(id widget.TreeNodeID) {
-		u, err := a.fileTree.GetValue(id)
-		if err != nil {
-			dialog.ShowError(err, a.UI.MainWin)
-			return
-		}
-		i := a.findIndex(u.Path())
-		if i == -1 {
-			dialog.ShowError(fmt.Errorf("Bad index for "+u.Path()), a.UI.MainWin)
-			return
-		}
-		a.index = i
-		a.DisplayImage()
-	}
+	// if false {
+	// 	a.fileTree = binding.NewURITree()
+	// 	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
+	// 		return widget.NewLabel("filename.ext")
+	// 	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
+	// 		l := obj.(*widget.Label)
+	// 		u, err := data.(binding.URI).Get()
+	// 		if err != nil {
+	// 			dialog.ShowError(err, a.UI.MainWin)
+	// 			return
+	// 		}
+	// 		l.SetText(u.Name())
+	// 	})
 
-	explorer := widget.NewAccordion(
-		widget.NewAccordionItem("Files", files),
-	)
-	explorer.Open(0)
+	// 	a.UI.explorer = widget.NewAccordion(
+	// 		widget.NewAccordionItem("Files", files),
+	// 	)
+	// 	a.UI.explorer.Open(0)
 
+	// 	files.OnSelected = func(id widget.TreeNodeID) {
+	// 		u, err := a.fileTree.GetValue(id)
+	// 		if err != nil {
+	// 			dialog.ShowError(err, a.UI.MainWin)
+	// 			return
+	// 		}
+	// 		i := a.findIndex(u.Path())
+	// 		if i == -1 {
+	// 			dialog.ShowError(fmt.Errorf("Bad index for "+u.Path()), a.UI.MainWin)
+	// 			return
+	// 		}
+	// 		a.index = i
+	// 		a.DisplayImage()
+	// 	}
+	// }
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
@@ -174,10 +177,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	)
 	a.UI.split.SetOffset(0.90)
 	return container.NewBorder(
-		a.UI.toolbar, // Top
-		status,       // Bottom
-		explorer,     // explorer left
-		nil,          // right
+		a.UI.toolbar,   // Top
+		a.UI.statusBar, // Bottom
+		nil,            // a.UI.explorer, // explorer left
+		nil,            // right
 		a.UI.split,
 	)
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"fyslide/internal/scan"
 	"image"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,9 +14,10 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
+
+	//"fyne.io/fyne/v2/data/binding"
+
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -51,6 +51,8 @@ type UI struct {
 	tagBtn      *widget.Button
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar
+
+	//explorer *widget.Accordion
 }
 
 // App represents the whole application with all its windows, widgets and functions
@@ -58,7 +60,7 @@ type App struct {
 	app fyne.App
 	UI  UI
 
-	fileTree binding.URITree
+	//fileTree binding.URITree
 
 	images scan.FileItems
 	index  int
@@ -146,6 +148,18 @@ func (a *App) nextImage() {
 	a.DisplayImage()
 }
 
+func (a *App) togglePlay() {
+	if a.paused {
+		a.paused = false
+		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
+	} else {
+		a.paused = true
+		a.UI.pauseBtn.SetIcon(theme.MediaPlayIcon())
+		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
+	}
+}
+
 func (a *App) updateTime() {
 	formatted := time.Now().Format("Time: 03:04:05")
 	a.UI.clockLabel.SetText(formatted)
@@ -157,24 +171,15 @@ func (a *App) tagFile() {
 		widget.NewLabel("v1.2 | License: MIT"),
 	), a.UI.MainWin)
 }
+
+// Delete file
+
 func (a *App) deleteFileCheck() {
 	dialog.ShowConfirm("Delete file!", "Are you sure?\n This action can't be undone.", func(b bool) {
 		if b {
 			a.deleteFile()
 		}
 	}, a.UI.MainWin)
-}
-
-func (a *App) togglePlay() {
-	if a.paused {
-		a.paused = false
-		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
-	} else {
-		a.paused = true
-		a.UI.pauseBtn.SetIcon(theme.MediaPlayIcon())
-		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
-	}
 }
 
 func (a *App) deleteFile() {
@@ -207,15 +212,6 @@ func (a *App) deleteFile() {
 
 func (a *App) loadImages(root string) {
 	scan.Run(root, &a.images)
-
-	// for _, img := range a.images {
-	// 	uri, err := pathToURI(img.Path)
-	// 	if err != nil {
-	// 		fmt.Println("Error:", err)
-	// 		return
-	// 	}
-	// 	a.fileTree.Append(binding.DataTreeRootID, uri.String(), uri)
-	// }
 }
 
 func (a *App) ImageCount() int {
@@ -257,14 +253,8 @@ func CreateApplication() {
 	ui.init()
 
 	ui.UI.MainWin.SetContent(ui.buildMainUI())
-	dirURI := storage.NewFileURI(dir)
-	udir, err := storage.ListerForURI(dirURI)
-	if err != nil {
-		fmt.Println("Error opening project", err)
-		return
-	}
-	go func() { ui.loadImages(dir) }()
-	go func() { ui.loadExplorer(udir) }()
+
+	go ui.loadImages(dir)
 
 	ui.UI.MainWin.Resize(fyne.NewSize(1400, 700))
 	ui.UI.MainWin.CenterOnScreen()
@@ -272,21 +262,27 @@ func CreateApplication() {
 	for ui.ImageCount() < 1 { // Stupidly wait for something to pop up
 		time.Sleep(100 * time.Microsecond)
 	}
+
 	ticker := time.NewTicker(2 * time.Second)
-	go func() {
-		for range ticker.C {
-			if !ui.paused {
-				ui.nextImage()
-			}
-		}
-	}()
-	go func() {
-		for range time.Tick(time.Second) {
-			ui.updateTime()
-		}
-	}()
+	go ui.pauser(ticker)
+	go ui.updateTimer()
+
 	ui.DisplayImage()
 	ui.UI.MainWin.ShowAndRun()
+}
+
+func (a *App) updateTimer() {
+	for range time.Tick(time.Second) {
+		a.updateTime()
+	}
+}
+
+func (a *App) pauser(ticker *time.Ticker) {
+	for range ticker.C {
+		if !a.paused {
+			a.nextImage()
+		}
+	}
 }
 
 /*
@@ -314,28 +310,29 @@ From https://github.com/fyne-io/fyne/issues/2307
 	}
 */
 
-func (a *App) loadExplorer(dir fyne.ListableURI) {
-	a.fileTree.Set(map[string][]string{}, map[string]fyne.URI{})
-	addFilesToTree(dir, a.fileTree, binding.DataTreeRootID)
-}
+// func (a *App) loadExplorer(dir fyne.ListableURI) {
+// 	a.fileTree.Set(map[string][]string{}, map[string]fyne.URI{})
+// 	addFilesToTree(dir, a.fileTree, binding.DataTreeRootID)
+// }
 
-func addFilesToTree(dir fyne.ListableURI, tree binding.URITree, root string) {
-	items, err := dir.List()
-	if err != nil {
-		log.Println("Failed to list directory " + dir.String())
-		return
-	}
-	for _, uri := range items {
-		nodeID := uri.String()
-		tree.Append(root, nodeID, uri)
+// func addFilesToTree(dir fyne.ListableURI, tree binding.URITree, root string) {
+// 	items, err := dir.List()
+// 	if err != nil {
+// 		log.Println("Failed to list directory " + dir.String())
+// 		return
+// 	}
+// 	for _, uri := range items {
+// 		nodeID := uri.String()
 
-		isDir, err := storage.CanList(uri)
-		if err != nil {
-			log.Println("Failed to check for listing")
-		}
-		if isDir {
-			child, _ := storage.ListerForURI(uri)
-			addFilesToTree(child, tree, nodeID)
-		}
-	}
-}
+// 		tree.Append(root, nodeID, uri)
+
+// 		isDir, err := storage.CanList(uri)
+// 		if err != nil {
+// 			log.Println("Failed to check for listing")
+// 		}
+// 		if isDir {
+// 			child, _ := storage.ListerForURI(uri)
+// 			addFilesToTree(child, tree, nodeID)
+// 		}
+// 	}
+// }
