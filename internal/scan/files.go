@@ -63,9 +63,7 @@ func searchTree(dir string, m *FileItems) error {
 		}
 
 		if fi.Mode().IsRegular() && fi.Size() > 0 && isImage(p) {
-			mu.Lock()
 			*m = append(*m, NewFileItem(p))
-			mu.Unlock()
 		}
 
 		return nil
