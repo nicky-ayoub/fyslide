@@ -2,6 +2,7 @@
 package scan
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,31 @@ func NewFileItem(p string) FileItem {
 		Path: p,
 	}
 
+}
+
+func searchDir(dir string, m *FileItems) error {
+
+	visit := func(p string, d fs.DirEntry, err error) error {
+		if err != nil && err != os.ErrNotExist {
+			return err
+		}
+
+		// ignore dir itself to avoid an infinite loop!
+		if d.IsDir() && p != dir {
+			searchTree(p, m)
+			return filepath.SkipDir
+		}
+
+		if !d.IsDir() && IsImage(p) {
+			//mu.Lock()
+			*m = append(*m, NewFileItem(p))
+			//mu.Unlock()
+		}
+
+		return nil
+	}
+
+	return filepath.WalkDir(dir, visit)
 }
 
 func searchTree(dir string, m *FileItems) error {
@@ -53,7 +79,7 @@ func searchTree(dir string, m *FileItems) error {
 
 // Run is the entry point for the package
 func Run(dir string, m *FileItems) {
-	searchTree(dir, m)
+	searchDir(dir, m)
 }
 
 // IsImage checks if a file is an image
