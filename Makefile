@@ -1,7 +1,6 @@
 .PHONY: build lint test run clean
 build:
-	go build
-
+	go build -o fyslide main.go
 lint:
 	revive ./...
 test:
