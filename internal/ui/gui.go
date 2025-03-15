@@ -86,15 +86,6 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-// func (a *App) findIndex(target string) int {
-// 	for i, v := range a.images {
-// 		if v.Path == target {
-// 			return i
-// 		}
-// 	}
-// 	return -1
-// }
-
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
 	a.UI.MainWin.SetMaster()
@@ -108,40 +99,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.toolbar = a.buildToolbar()
 	a.UI.statusBar = a.buildSatusBar()
 
-	// if false {
-	// 	a.fileTree = binding.NewURITree()
-	// 	files := widget.NewTreeWithData(a.fileTree, func(branch bool) fyne.CanvasObject {
-	// 		return widget.NewLabel("filename.ext")
-	// 	}, func(data binding.DataItem, branch bool, obj fyne.CanvasObject) {
-	// 		l := obj.(*widget.Label)
-	// 		u, err := data.(binding.URI).Get()
-	// 		if err != nil {
-	// 			dialog.ShowError(err, a.UI.MainWin)
-	// 			return
-	// 		}
-	// 		l.SetText(u.Name())
-	// 	})
-
-	// 	a.UI.explorer = widget.NewAccordion(
-	// 		widget.NewAccordionItem("Files", files),
-	// 	)
-	// 	a.UI.explorer.Open(0)
-
-	// 	files.OnSelected = func(id widget.TreeNodeID) {
-	// 		u, err := a.fileTree.GetValue(id)
-	// 		if err != nil {
-	// 			dialog.ShowError(err, a.UI.MainWin)
-	// 			return
-	// 		}
-	// 		i := a.findIndex(u.Path())
-	// 		if i == -1 {
-	// 			dialog.ShowError(fmt.Errorf("Bad index for "+u.Path()), a.UI.MainWin)
-	// 			return
-	// 		}
-	// 		a.index = i
-	// 		a.DisplayImage()
-	// 	}
-	// }
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
