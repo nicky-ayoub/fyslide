@@ -14,6 +14,7 @@ import (
 )
 
 func (a *App) buildSatusBar() *fyne.Container {
+	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
 	a.UI.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
 	a.UI.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
@@ -32,6 +33,7 @@ func (a *App) buildSatusBar() *fyne.Container {
 	s := container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(
+			a.UI.quit,
 			a.UI.first,
 			a.UI.leftArrow,
 			a.UI.pauseBtn,
@@ -68,6 +70,7 @@ func (a *App) buildInformationTab() *container.TabItem {
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 
+		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay),

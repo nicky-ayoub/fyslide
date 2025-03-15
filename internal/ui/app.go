@@ -44,6 +44,7 @@ type UI struct {
 	imgSize     *widget.Label
 	imgLastMod  *widget.Label
 	statusBar   *fyne.Container
+	quit        *widget.Button
 	first       *widget.Button
 	leftArrow   *widget.Button
 	pauseBtn    *widget.Button
