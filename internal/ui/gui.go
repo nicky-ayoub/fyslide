@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (a *App) buildSatusBar() *fyne.Container {
+func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
 	a.UI.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
 	a.UI.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
@@ -88,7 +88,6 @@ func (a *App) buildToolbar() *widget.Toolbar {
 
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
-	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
 	if runtime.GOOS == "darwin" {
 		a.UI.mainModKey = fyne.KeyModifierSuper
@@ -96,13 +95,11 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
 	a.UI.toolbar = a.buildToolbar()
-	a.UI.toolbar = a.buildToolbar()
-	a.UI.statusBar = a.buildSatusBar()
+	a.UI.statusBar = a.buildStatusBar()
 
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
-
 		fyne.NewMenu("Edit",
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
@@ -121,7 +118,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			}),
 		),
 	)
-	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
 
