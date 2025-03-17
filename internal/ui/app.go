@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"fyslide/internal/scan"
 	"image"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 
+	"github.com/go-gl/glfw/v3.3/glfw"
 	//"fyne.io/fyne/v2/data/binding"
 
 	"fyne.io/fyne/v2/dialog"
@@ -228,6 +230,10 @@ func (a *App) init() {
 
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
+
+	ScreenWidth, ScreenHeight := getDisplayResolution()
+	log.Printf("Screen resolution: %f x %f\n", ScreenWidth, ScreenHeight)
+
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("error while opening the directory : %v\n", err)
@@ -261,7 +267,7 @@ func CreateApplication() {
 
 	go ui.loadImages(dir)
 
-	ui.UI.MainWin.Resize(fyne.NewSize(1400, 700))
+	ui.UI.MainWin.Resize(fyne.NewSize(ScreenWidth, ScreenHeight))
 	ui.UI.MainWin.CenterOnScreen()
 
 	for ui.imageCount() < 1 { // Stupidly wait for something to pop up
@@ -331,13 +337,19 @@ From https://github.com/fyne-io/fyne/issues/2307
 
 // 		tree.Append(root, nodeID, uri)
 
-// 		isDir, err := storage.CanList(uri)
-// 		if err != nil {
-// 			log.Println("Failed to check for listing")
-// 		}
-// 		if isDir {
-// 			child, _ := storage.ListerForURI(uri)
-// 			addFilesToTree(child, tree, nodeID)
-// 		}
-// 	}
-// }
+//			isDir, err := storage.CanList(uri)
+//			if err != nil {
+//				log.Println("Failed to check for listing")
+//			}
+//			if isDir {
+//				child, _ := storage.ListerForURI(uri)
+//				addFilesToTree(child, tree, nodeID)
+//			}
+//		}
+//	}
+func getDisplayResolution() (float32, float32) {
+	glfw.Init()
+	defer glfw.Terminate()
+	monitor := glfw.GetPrimaryMonitor()
+	return float32(monitor.GetVideoMode().Width), float32(monitor.GetVideoMode().Height)
+}

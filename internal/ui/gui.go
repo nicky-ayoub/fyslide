@@ -69,7 +69,6 @@ func (a *App) buildInformationTab() *container.TabItem {
 
 func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
-
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
