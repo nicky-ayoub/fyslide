@@ -296,57 +296,6 @@ func (a *App) pauser(ticker *time.Ticker) {
 	}
 }
 
-/*
-From https://github.com/fyne-io/fyne/issues/2307
-
-	Maybe this is helpful. It shows the main app window in the middle, covering 80% of the screen area.
-	I use 'github.com/kbinani/screenshot' to get the screen size.
-
-		...
-		a := app.New()
-		w := a.NewWindow("MyApp")
-		...
-		w.Resize(windowSize(0.8))
-		w.CenterOnScreen()
-		w.ShowAndRun()
-		...
-
-	func windowSize(part float32) fyne.Size {
-		if screenshot.NumActiveDisplays() > 0 {
-			// #0 is the main monitor
-			bounds := screenshot.GetDisplayBounds(0)
-			return fyne.NewSize(float32(bounds.Dx())*part, float32(bounds.Dy())*part)
-		}
-		return fyne.NewSize(800, 800)
-	}
-*/
-
-// func (a *App) loadExplorer(dir fyne.ListableURI) {
-// 	a.fileTree.Set(map[string][]string{}, map[string]fyne.URI{})
-// 	addFilesToTree(dir, a.fileTree, binding.DataTreeRootID)
-// }
-
-// func addFilesToTree(dir fyne.ListableURI, tree binding.URITree, root string) {
-// 	items, err := dir.List()
-// 	if err != nil {
-// 		log.Println("Failed to list directory " + dir.String())
-// 		return
-// 	}
-// 	for _, uri := range items {
-// 		nodeID := uri.String()
-
-// 		tree.Append(root, nodeID, uri)
-
-//			isDir, err := storage.CanList(uri)
-//			if err != nil {
-//				log.Println("Failed to check for listing")
-//			}
-//			if isDir {
-//				child, _ := storage.ListerForURI(uri)
-//				addFilesToTree(child, tree, nodeID)
-//			}
-//		}
-//	}
 func getDisplayResolution() (float32, float32) {
 	glfw.Init()
 	defer glfw.Terminate()
