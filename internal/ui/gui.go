@@ -15,32 +15,43 @@ import (
 
 func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
-	a.UI.first = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
-	a.UI.leftArrow = widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() })
+	a.UI.firstBtn = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
+	a.UI.previousBtn = widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() })
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-	a.UI.rightArrow = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
-	a.UI.last = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
+	a.UI.nextBtn = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
+	a.UI.lastBtn = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
+	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, func() {
+		if a.random {
+			a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
+		} else {
+			a.UI.randomBtn.SetIcon(resourceDice24Png)
+		}
+		a.random = !a.random
+	})
+
 	a.UI.statusLabel = widget.NewLabel("")
-	a.UI.leftArrow.Enable()
-	a.UI.rightArrow.Enable()
+	a.UI.previousBtn.Enable()
+	a.UI.nextBtn.Enable()
 	a.UI.deleteBtn.Enable()
 	a.UI.tagBtn.Enable()
-	a.UI.first.Enable()
-	a.UI.last.Enable()
+	a.UI.firstBtn.Enable()
+	a.UI.lastBtn.Enable()
+	a.UI.randomBtn.Enable()
 
 	s := container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(
 			a.UI.quit,
-			a.UI.first,
-			a.UI.leftArrow,
+			a.UI.firstBtn,
+			a.UI.previousBtn,
 			a.UI.pauseBtn,
-			a.UI.rightArrow,
-			a.UI.last,
+			a.UI.nextBtn,
+			a.UI.lastBtn,
 			a.UI.tagBtn,
 			a.UI.deleteBtn,
+			a.UI.randomBtn,
 			layout.NewSpacer(),
 			a.UI.statusLabel,
 		),
@@ -77,11 +88,13 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
+		widget.NewToolbarAction(resourceDice24Png, func() { a.random = !a.random }),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
 			log.Println("Display help")
 		}),
 	)
+
 	return t
 }
 

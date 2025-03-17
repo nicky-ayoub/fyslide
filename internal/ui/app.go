@@ -6,6 +6,7 @@ import (
 	"fyslide/internal/scan"
 	"image"
 	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,14 +47,17 @@ type UI struct {
 	imgSize     *widget.Label
 	imgLastMod  *widget.Label
 	statusBar   *fyne.Container
+
 	quit        *widget.Button
-	first       *widget.Button
-	leftArrow   *widget.Button
+	firstBtn    *widget.Button
+	previousBtn *widget.Button
 	pauseBtn    *widget.Button
-	rightArrow  *widget.Button
-	last        *widget.Button
+	nextBtn     *widget.Button
+	lastBtn     *widget.Button
 	deleteBtn   *widget.Button
 	tagBtn      *widget.Button
+	randomBtn   *widget.Button
+
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar
 
@@ -74,6 +78,8 @@ type App struct {
 
 	paused    bool
 	direction int
+
+	random bool
 }
 
 func parseURL(urlStr string) *url.URL {
@@ -90,6 +96,10 @@ func (a *App) DisplayImage() error {
 	// decode and update the image + get image path
 	//fmt.Printf("Displaying %s\n", a.images[a.index].Path)
 	var err error
+	if a.random {
+		randomNumber := rand.Intn((len(a.images) - 1))
+		a.index = randomNumber
+	}
 	file, err := os.Open(a.images[a.index].Path)
 	if err != nil {
 		return fmt.Errorf("unable to open image '%s' %v", a.images[a.index].Path, err)
@@ -121,10 +131,10 @@ func (a *App) DisplayImage() error {
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
 	a.UI.statusLabel.SetText(fmt.Sprintf("Image %s, %d of %d", a.img.Path, a.index+1, len(a.images)))
 
-	a.UI.leftArrow.Enable()
-	a.UI.rightArrow.Enable()
-	a.UI.first.Enable()
-	a.UI.last.Enable()
+	a.UI.previousBtn.Enable()
+	a.UI.nextBtn.Enable()
+	a.UI.firstBtn.Enable()
+	a.UI.lastBtn.Enable()
 	return nil
 }
 
@@ -201,8 +211,8 @@ func (a *App) deleteFile() {
 		a.image.Image = nil
 		a.img.EditedImage = nil
 		a.img.OriginalImage = nil
-		a.UI.rightArrow.Disable()
-		a.UI.leftArrow.Disable()
+		a.UI.nextBtn.Disable()
+		a.UI.previousBtn.Disable()
 		a.UI.deleteBtn.Disable()
 		a.image.Refresh()
 	} else {
@@ -262,7 +272,7 @@ func CreateApplication() {
 	ui.UI.MainWin = a.NewWindow("FySlide")
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init()
-
+	ui.random = true
 	ui.UI.MainWin.SetContent(ui.buildMainUI())
 
 	go ui.loadImages(dir)
