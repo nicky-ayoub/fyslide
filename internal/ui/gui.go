@@ -15,11 +15,11 @@ import (
 
 func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
-	a.UI.first = widget.NewButtonWithIcon("", theme.MediaFastRewindIcon(), a.firstImage)
-	a.UI.leftArrow = widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() })
+	a.UI.first = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
+	a.UI.leftArrow = widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() })
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-	a.UI.rightArrow = widget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() })
-	a.UI.last = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), a.lastImage)
+	a.UI.rightArrow = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
+	a.UI.last = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.UI.statusLabel = widget.NewLabel("")
@@ -71,9 +71,9 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
-		widget.NewToolbarAction(theme.NavigateBackIcon(), func() { a.direction = -1; a.nextImage() }),
+		widget.NewToolbarAction(resourceBackPng, func() { a.direction = -1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay),
-		widget.NewToolbarAction(theme.NavigateNextIcon(), func() { a.direction = 1; a.nextImage() }),
+		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
