@@ -48,15 +48,16 @@ type UI struct {
 	imgLastMod  *widget.Label
 	statusBar   *fyne.Container
 
-	quit        *widget.Button
-	firstBtn    *widget.Button
-	previousBtn *widget.Button
-	pauseBtn    *widget.Button
-	nextBtn     *widget.Button
-	lastBtn     *widget.Button
-	deleteBtn   *widget.Button
-	tagBtn      *widget.Button
-	randomBtn   *widget.Button
+	quit         *widget.Button
+	firstBtn     *widget.Button
+	previousBtn  *widget.Button
+	pauseBtn     *widget.Button
+	nextBtn      *widget.Button
+	lastBtn      *widget.Button
+	deleteBtn    *widget.Button
+	tagBtn       *widget.Button
+	randomBtn    *widget.Button
+	randomAction *widget.ToolbarAction
 
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar

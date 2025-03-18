@@ -13,6 +13,17 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+func (a *App) toggleRandom() {
+	if a.random {
+		a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
+		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
+	} else {
+		a.UI.randomBtn.SetIcon(resourceDice24Png)
+		a.UI.randomAction.SetIcon(resourceDice24Png)
+	}
+	a.random = !a.random
+}
+
 func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
 	a.UI.firstBtn = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
@@ -22,14 +33,7 @@ func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.lastBtn = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
 	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
-	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, func() {
-		if a.random {
-			a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
-		} else {
-			a.UI.randomBtn.SetIcon(resourceDice24Png)
-		}
-		a.random = !a.random
-	})
+	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
 
 	a.UI.statusLabel = widget.NewLabel("")
 	a.UI.previousBtn.Enable()
@@ -79,6 +83,8 @@ func (a *App) buildInformationTab() *container.TabItem {
 }
 
 func (a *App) buildToolbar() *widget.Toolbar {
+	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
+
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
@@ -88,7 +94,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
-		widget.NewToolbarAction(resourceDice24Png, func() { a.random = !a.random }),
+		a.UI.randomAction,
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
 			log.Println("Display help")
