@@ -42,6 +42,7 @@ type UI struct {
 	split       *container.Split
 	clockLabel  *widget.Label
 	countLabel  *widget.Label
+	indexLabel  *widget.Label
 	widthLabel  *widget.Label
 	heightLabel *widget.Label
 	imgSize     *widget.Label
@@ -124,13 +125,16 @@ func (a *App) DisplayImage() error {
 	a.UI.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
 	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
 	h := fmt.Sprintf("Height: %dpx", a.img.OriginalImage.Bounds().Max.Y)
-	c := fmt.Sprintf("Count: %d", a.imageCount())
+	n := fmt.Sprintf("#: %d", a.index)
+	c := fmt.Sprintf("of: %d", a.imageCount())
+
 	a.UI.widthLabel.SetText(w)
 	a.UI.heightLabel.SetText(h)
 	a.UI.countLabel.SetText(c)
+	a.UI.indexLabel.SetText(n)
 
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
-	a.UI.statusLabel.SetText(fmt.Sprintf("Image %s, %d of %d", a.img.Path, a.index+1, len(a.images)))
+	a.UI.statusLabel.SetText(fmt.Sprintf("%d of %d : %s", a.index, a.imageCount(), a.img.Path))
 
 	a.UI.previousBtn.Enable()
 	a.UI.nextBtn.Enable()
@@ -169,11 +173,11 @@ func (a *App) togglePlay() {
 	if a.paused {
 		a.paused = false
 		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
+		a.UI.toolbar.Items[3].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
 	} else {
 		a.paused = true
-		a.UI.pauseBtn.SetIcon(theme.MediaPlayIcon())
-		a.UI.toolbar.Items[2].(*widget.ToolbarAction).SetIcon(theme.MediaPlayIcon())
+		a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
+		a.UI.toolbar.Items[3].(*widget.ToolbarAction).SetIcon(theme.ContentRedoIcon())
 	}
 }
 

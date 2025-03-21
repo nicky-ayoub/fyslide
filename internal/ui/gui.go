@@ -31,7 +31,7 @@ func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
 	a.UI.nextBtn = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
 	a.UI.lastBtn = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
-	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), a.tagFile)
+	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.tagFile)
 	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
 
@@ -65,7 +65,8 @@ func (a *App) buildStatusBar() *fyne.Container {
 
 func (a *App) buildInformationTab() *container.TabItem {
 	a.UI.clockLabel = widget.NewLabel("Time: ")
-	a.UI.countLabel = widget.NewLabel("Count: ")
+	a.UI.countLabel = widget.NewLabel("of: ")
+	a.UI.indexLabel = widget.NewLabel("#: ")
 	a.UI.widthLabel = widget.NewLabel("Width: ")
 	a.UI.heightLabel = widget.NewLabel("Height: ")
 	a.UI.imgSize = widget.NewLabel("Size: ")
@@ -73,6 +74,7 @@ func (a *App) buildInformationTab() *container.TabItem {
 	return container.NewTabItem("Information", container.NewScroll(
 		container.NewVBox(
 			a.UI.clockLabel,
+			a.UI.indexLabel,
 			a.UI.countLabel,
 			a.UI.widthLabel,
 			a.UI.heightLabel,
@@ -92,7 +94,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay),
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
-		widget.NewToolbarAction(theme.DocumentCreateIcon(), a.tagFile),
+		widget.NewToolbarAction(theme.DocumentIcon(), a.tagFile),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSpacer(),
