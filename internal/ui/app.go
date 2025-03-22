@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"fyslide/internal/scan"
 	"image"
-	"log"
 	"math/rand"
 	"net/url"
 	"os"
@@ -39,15 +38,11 @@ type UI struct {
 	MainWin    fyne.Window
 	mainModKey fyne.KeyModifier
 
-	split       *container.Split
-	clockLabel  *widget.Label
-	countLabel  *widget.Label
-	indexLabel  *widget.Label
-	widthLabel  *widget.Label
-	heightLabel *widget.Label
-	imgSize     *widget.Label
-	imgLastMod  *widget.Label
-	statusBar   *fyne.Container
+	split      *container.Split
+	clockLabel *widget.Label
+	infoText   *widget.RichText
+
+	statusBar *fyne.Container
 
 	quit         *widget.Button
 	firstBtn     *widget.Button
@@ -121,20 +116,27 @@ func (a *App) DisplayImage() error {
 		return fmt.Errorf("unable to get file info %v", err)
 	}
 
-	a.UI.imgSize.SetText(fmt.Sprintf("Size: %d bytes", fileInfo.Size()))
-	a.UI.imgLastMod.SetText(fmt.Sprintf("Last modified: \n%s", fileInfo.ModTime().Format("02-01-2006")))
-	w := fmt.Sprintf("Width:   %dpx", a.img.OriginalImage.Bounds().Max.X)
-	h := fmt.Sprintf("Height: %dpx", a.img.OriginalImage.Bounds().Max.Y)
-	n := fmt.Sprintf("#: %d", a.index)
-	c := fmt.Sprintf("of: %d", a.imageCount())
+	md := fmt.Sprintf(`## Stats
 
-	a.UI.widthLabel.SetText(w)
-	a.UI.heightLabel.SetText(h)
-	a.UI.countLabel.SetText(c)
-	a.UI.indexLabel.SetText(n)
+**Num:** %d
+
+**Total:** %d
+
+**Size:**   %d bytes 
+
+**Width:**   %dpx  
+
+**Height:**  %dpx  
+
+**Last modified:** %s
+
+`,
+		a.index, a.imageCount(), fileInfo.Size(), a.img.OriginalImage.Bounds().Max.X, a.img.OriginalImage.Bounds().Max.Y, fileInfo.ModTime().Format("2006-01-02"),
+	)
+	a.UI.infoText.ParseMarkdown(md)
 
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", (strings.Split(a.img.Path, "/")[len(strings.Split(a.img.Path, "/"))-1])))
-	a.UI.statusLabel.SetText(fmt.Sprintf("%d of %d : %s", a.index, a.imageCount(), a.img.Path))
+	a.UI.statusLabel.SetText(a.img.Path)
 
 	a.UI.previousBtn.Enable()
 	a.UI.nextBtn.Enable()
@@ -247,7 +249,6 @@ func (a *App) init() {
 func CreateApplication() {
 
 	ScreenWidth, ScreenHeight := getDisplayResolution()
-	log.Printf("Screen resolution: %f x %f\n", ScreenWidth, ScreenHeight)
 
 	dir, err := os.Getwd()
 	if err != nil {
