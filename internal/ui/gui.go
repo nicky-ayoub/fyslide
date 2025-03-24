@@ -13,17 +13,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (a *App) toggleRandom() {
-	if a.random {
-		a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
-		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
-	} else {
-		a.UI.randomBtn.SetIcon(resourceDice24Png)
-		a.UI.randomAction.SetIcon(resourceDice24Png)
-	}
-	a.random = !a.random
-}
-
 func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
 	a.UI.firstBtn = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
@@ -76,12 +65,13 @@ func (a *App) buildInformationTab() *container.TabItem {
 
 func (a *App) buildToolbar() *widget.Toolbar {
 	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
+	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
 
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(resourceBackPng, func() { a.direction = -1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay),
+		a.UI.pauseAction,
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.tagFile),

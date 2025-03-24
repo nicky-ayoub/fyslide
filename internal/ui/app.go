@@ -16,12 +16,12 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
 	//"fyne.io/fyne/v2/data/binding"
 
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -54,6 +54,7 @@ type UI struct {
 	tagBtn       *widget.Button
 	randomBtn    *widget.Button
 	randomAction *widget.ToolbarAction
+	pauseAction  *widget.ToolbarAction
 
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar
@@ -171,18 +172,6 @@ func (a *App) nextImage() {
 	a.DisplayImage()
 }
 
-func (a *App) togglePlay() {
-	if a.paused {
-		a.paused = false
-		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.UI.toolbar.Items[3].(*widget.ToolbarAction).SetIcon(theme.MediaPauseIcon())
-	} else {
-		a.paused = true
-		a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
-		a.UI.toolbar.Items[3].(*widget.ToolbarAction).SetIcon(theme.ContentRedoIcon())
-	}
-}
-
 func (a *App) updateTime() {
 	formatted := time.Now().Format("Time: 03:04:05")
 	a.UI.clockLabel.SetText(formatted)
@@ -243,6 +232,29 @@ func (a *App) imageCount() int {
 
 func (a *App) init() {
 	a.img = Img{}
+}
+
+// Handle toggles
+func (a *App) togglePlay() {
+	if a.paused {
+		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+	} else {
+		a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
+		a.UI.pauseAction.SetIcon(theme.ContentRedoIcon())
+	}
+	a.paused = !a.paused
+}
+
+func (a *App) toggleRandom() {
+	if a.random {
+		a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
+		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
+	} else {
+		a.UI.randomBtn.SetIcon(resourceDice24Png)
+		a.UI.randomAction.SetIcon(resourceDice24Png)
+	}
+	a.random = !a.random
 }
 
 // CreateApplication is the GUI entrypoint
