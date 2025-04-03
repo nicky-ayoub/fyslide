@@ -176,6 +176,7 @@ func (a *App) updateTime() {
 	formatted := time.Now().Format("Time: 03:04:05")
 	a.UI.clockLabel.SetText(formatted)
 }
+
 func (a *App) tagFile() {
 	dialog.ShowCustom("TAGGER", "Ok", container.NewVBox(
 		widget.NewLabel("Add image tag."),
