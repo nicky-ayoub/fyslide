@@ -11,15 +11,17 @@ import (
 // FileItem represents a file item. Just a path for now
 type FileItem struct {
 	Path string
+	Info fs.FileInfo
 }
 
 // FileItems is a slice of FileItem
 type FileItems []FileItem
 
 // NewFileItem creates a new FileItem
-func NewFileItem(p string) FileItem {
+func NewFileItem(p string, fi fs.FileInfo) FileItem {
 	return FileItem{
 		Path: p,
+		Info: fi,
 	}
 
 }
@@ -37,11 +39,12 @@ func searchDir(dir string, m *FileItems) error {
 			return filepath.SkipDir
 		}
 
-		if !d.IsDir() && isImage(p) {
-			//mu.Lock()
-			*m = append(*m, NewFileItem(p))
-			//mu.Unlock()
-		}
+		// if !d.IsDir() && isImage(p) { // I don't think this is ever called...
+		// 	//mu.Lock()
+		// 	log.Printf("Adding %s to list", p)
+		// 	*m = append(*m, NewFileItem(p, nil))
+		// 	//mu.Unlock()
+		// }
 
 		return nil
 	}
@@ -63,7 +66,7 @@ func searchTree(dir string, m *FileItems) error {
 		}
 
 		if fi.Mode().IsRegular() && fi.Size() > 0 && isImage(p) {
-			*m = append(*m, NewFileItem(p))
+			*m = append(*m, NewFileItem(p, fi))
 		}
 
 		return nil

@@ -112,25 +112,42 @@ func parseURL(urlStr string) *url.URL {
 
 }
 
-// Add this function within the App struct methods
+// getCurrentItem returns the FileItem for the current index, or nil if invalid
+func (a *App) getCurrentItem() *scan.FileItem {
+	currentList := a.getCurrentList()
+	count := len(currentList)
+	if a.index < 0 || a.index >= count {
+		return nil
+	}
+	return &currentList[a.index]
+}
 
 // updateInfoText fetches current image info and tags, then updates the infoText widget.
 func (a *App) updateInfoText() {
-	if a.img.Path == "" {
+	currentItem := a.getCurrentItem() // Use helper to get current item safely
+
+	if currentItem == nil || a.img.Path == "" { // Check if item exists and path is set
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
 		return
 	}
 
 	count := a.getCurrentImageCount() // Use helper
 
-	// Re-fetch file info (needed for size, mod time etc.)
-	// Use os.Stat directly as we don't need the file handle here
-	fileInfo, err := os.Stat(a.img.Path)
-	if err != nil {
-		log.Printf("updateInfoText: failed to stat %s: %v", a.img.Path, err)
-		a.UI.infoText.ParseMarkdown(fmt.Sprintf("## Error\nCould not get file stats for %s", a.img.Path))
-		return
+	// --- Use FileInfo from the scanned item ---
+	fileInfo := currentItem.Info // OPTIMIZATION: Use existing FileInfo
+	if fileInfo == nil {
+		// Fallback or handle error if FileInfo wasn't stored during scan
+		log.Printf("updateInfoText: Warning - FileInfo missing for %s", a.img.Path)
+		// Optionally try os.Stat as a fallback, or show an error
+		var err error
+		fileInfo, err = os.Stat(a.img.Path)
+		if err != nil {
+			log.Printf("updateInfoText: Fallback os.Stat failed for %s: %v", a.img.Path, err)
+			a.UI.infoText.ParseMarkdown(fmt.Sprintf("## Error\nCould not get file stats for %s", a.img.Path))
+			return
+		}
 	}
+	// --- End Optimization ---
 
 	// Get image dimensions (assuming a.img.OriginalImage is still valid from DisplayImage)
 	imgWidth := 0
@@ -160,9 +177,9 @@ func (a *App) updateInfoText() {
 
 	md := fmt.Sprintf(`## Stats
 %s
-**Num:** %d (in current view)
+**Num:** %d
 
-**Total:** %d (in current view)
+**Total:** %d
 
 **Size:**   %d bytes
 
@@ -651,7 +668,7 @@ func CreateApplication() {
 		}
 		ui.UI.MainWin.Close() // Proceed with closing the window
 	})
-	// --- End TagDB Init ---
+
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init()
 	ui.random = true
