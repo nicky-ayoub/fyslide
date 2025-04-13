@@ -20,7 +20,11 @@ func (a *App) buildStatusBar() *fyne.Container {
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
 	a.UI.nextBtn = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
 	a.UI.lastBtn = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
-	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.tagFile)
+	// Use the renamed function addTag (if you renamed it)
+	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
+	// You could add a remove tag button here too if desired
+	a.UI.removeTagBtn = widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), a.removeTag) // Need to add removeTagBtn to UI struct
+
 	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
 
@@ -43,6 +47,7 @@ func (a *App) buildStatusBar() *fyne.Container {
 			a.UI.nextBtn,
 			a.UI.lastBtn,
 			a.UI.tagBtn,
+			a.UI.removeTagBtn,
 			a.UI.deleteBtn,
 			a.UI.randomBtn,
 			layout.NewSpacer(),
@@ -74,7 +79,10 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		a.UI.pauseAction,
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
-		widget.NewToolbarAction(theme.DocumentIcon(), a.tagFile),
+		// Use the renamed function addTag (if you renamed it)
+		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
+		// You could add a remove tag button here too if desired
+		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSpacer(),
@@ -101,12 +109,18 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
 		fyne.NewMenu("Edit",
+			fyne.NewMenuItem("Add Tag", a.addTag),
+			fyne.NewMenuItem("Remove Tag", a.removeTag),
+			fyne.NewMenuItemSeparator(), // Optional separator
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
 			fyne.NewMenuItem("Next Image", func() { a.direction = 1; a.nextImage() }),
 			fyne.NewMenuItem("Previous Image", func() { a.direction = -1; a.nextImage() }),
+			fyne.NewMenuItemSeparator(),                              // NEW Separator
+			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option
+
 		),
 		fyne.NewMenu("Help",
 			fyne.NewMenuItem("About", func() {
