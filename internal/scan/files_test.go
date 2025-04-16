@@ -9,7 +9,7 @@ import (
 
 func TestNewFileItem(t *testing.T) {
 	path := "test/path"
-	item := NewFileItem(path)
+	item := NewFileItem(path, nil)
 	if item.Path != path {
 		t.Errorf("expected %s, got %s", path, item.Path)
 	}

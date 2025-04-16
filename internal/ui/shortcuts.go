@@ -84,7 +84,7 @@ func (a *App) showShortcuts() {
 				if id.Col == 0 {
 					label.SetText(descriptions[id.Row-1])
 				} else {
-					label.SetText(descriptions[id.Row-1])
+					label.SetText(shortcuts[id.Row-1])
 				}
 			}
 		},

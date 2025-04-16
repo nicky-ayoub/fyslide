@@ -20,7 +20,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 
-	"github.com/go-gl/glfw/v3.3/glfw"
 	//"fyne.io/fyne/v2/data/binding"
 
 	"fyne.io/fyne/v2/dialog"
@@ -62,6 +61,7 @@ type UI struct {
 	statusLabel *widget.Label
 	toolbar     *widget.Toolbar
 
+	tabs *container.AppTabs
 	//explorer *widget.Accordion
 
 }
@@ -88,6 +88,8 @@ type App struct {
 
 	isFiltered       bool   // NEW: Flag to indicate if filtering is active
 	currentFilterTag string // NEW: The tag currently being filtered by
+
+	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -624,8 +626,6 @@ func (a *App) toggleRandom() {
 
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
-	ScreenWidth, ScreenHeight := getDisplayResolution()
-
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("error while opening the directory : %v\n", err)
@@ -676,8 +676,9 @@ func CreateApplication() {
 
 	go ui.loadImages(dir)
 
-	ui.UI.MainWin.Resize(fyne.NewSize(ScreenWidth, ScreenHeight))
 	ui.UI.MainWin.CenterOnScreen()
+	ui.UI.MainWin.SetFullScreen(true)
+
 	// Wait for initial scan
 	startTime := time.Now()
 	for ui.imageCount() < 1 {
@@ -722,14 +723,80 @@ func (a *App) pauser(ticker *time.Ticker) {
 	}
 }
 
-func getDisplayResolution() (float32, float32) {
-	glfw.Init()
-	defer glfw.Terminate()
-	monitor := glfw.GetPrimaryMonitor()
-	return float32(monitor.GetVideoMode().Width), float32(monitor.GetVideoMode().Height)
-}
+// removeTagGlobally removes a specific tag from all images in the database.
+func (a *App) removeTagGlobally(tag string) error {
+	if tag == "" {
+		return fmt.Errorf("cannot remove an empty tag")
+	}
+	log.Printf("Starting global removal process for tag: '%s'", tag)
 
-// Add this function within the App struct methods in internal/ui/app.go
+	// 1. Get all images associated with this tag
+	imagePaths, err := a.tagDB.GetImages(tag)
+	if err != nil {
+		// Log the error, but maybe the tag just doesn't exist (which is fine for removal)
+		log.Printf("Error getting images for tag '%s' during global removal (maybe tag doesn't exist?): %v", tag, err)
+		// Check if it's a "not found" type error if your DB layer provides it.
+		// If it's just not found, we can consider it a success (nothing to remove).
+		// For BoltDB, GetImages returns an empty list if the tag key doesn't exist, not an error.
+		// So, an error here is likely a real DB issue.
+		return fmt.Errorf("database error while getting images for tag '%s': %w", tag, err)
+	}
+
+	if len(imagePaths) == 0 {
+		log.Printf("Tag '%s' not found or no images associated with it. Global removal considered complete.", tag)
+		// It's important to still try and remove the tag key itself in case of orphaned data
+		// The RemoveTag function should handle deleting the tag key if the image list becomes empty.
+		// We can call RemoveTag with a dummy path just to trigger the tag key cleanup if needed,
+		// but let's rely on the loop below (which won't run if len=0) and the TagDB logic.
+		// A more robust TagDB might have a specific DeleteTagKey function.
+		return nil // No images had this tag, so removal is effectively done.
+	}
+
+	log.Printf("Found %d images associated with tag '%s'. Proceeding with removal...", len(imagePaths), tag)
+
+	// 2. Iterate and remove the tag from each image
+	var firstError error = nil
+	errorsEncountered := 0
+	successfulRemovals := 0
+
+	for _, path := range imagePaths {
+		// RemoveTag handles both Image->Tag and Tag->Image mappings.
+		// It should also delete the Tag key if the image list becomes empty.
+		errRemove := a.tagDB.RemoveTag(path, tag)
+		if errRemove != nil {
+			log.Printf("Error removing tag '%s' from image '%s': %v", tag, path, errRemove)
+			errorsEncountered++
+			if firstError == nil {
+				firstError = fmt.Errorf("failed removing tag '%s' from %s: %w", tag, filepath.Base(path), errRemove)
+			}
+		} else {
+			successfulRemovals++
+		}
+	}
+
+	log.Printf("Global removal attempt for tag '%s' finished. Successes: %d, Errors: %d", tag, successfulRemovals, errorsEncountered)
+
+	// 3. Update UI if the currently displayed image was affected
+	// Check if the current image *had* the tag that was just removed
+	currentItem := a.getCurrentItem()
+	if currentItem != nil {
+		// Check if the current item's path was in the list we just processed
+		wasAffected := false
+		for _, path := range imagePaths {
+			if currentItem.Path == path {
+				wasAffected = true
+				break
+			}
+		}
+		if wasAffected {
+			log.Printf("Current image %s was affected by global tag removal. Updating info panel.", currentItem.Path)
+			a.updateInfoText() // Refresh the info panel to show updated tags
+		}
+	}
+
+	// 4. Return the first error encountered, if any
+	return firstError
+}
 
 // removeTag shows a dialog to remove an existing tag from the current image,
 // with an option to remove it from all images in the same directory.
@@ -853,8 +920,8 @@ func (a *App) removeTag() {
 	}, a.UI.MainWin)
 }
 
-// Optional but recommended: Rename tagFile to addTag for clarity
-func (a *App) addTag() { // Renamed from tagFile
+// addTag shows a dialog to add a new tag to the current image
+func (a *App) addTag() {
 	if a.img.Path == "" {
 		dialog.ShowInformation("Add Tag", "No image loaded to tag.", a.UI.MainWin) // Updated title
 		return
@@ -907,9 +974,7 @@ func (a *App) addTag() { // Renamed from tagFile
 		}
 
 		rawInput := tagEntry.Text
-		// Replace commas with spaces, then split by whitespace
 		potentialTags := strings.Split(rawInput, ",")
-
 		var tagsToAdd []string
 		uniqueTags := make(map[string]bool) // Use a map to handle duplicates in input
 		for _, pt := range potentialTags {
@@ -1000,6 +1065,12 @@ func (a *App) addTag() { // Renamed from tagFile
 		} else {
 			log.Println(logMessage)
 			a.updateInfoText() // Update info panel for the current image
+			if a.refreshTagsFunc != nil {
+				log.Println("Calling Tags tab refresh function.")
+				a.refreshTagsFunc()
+			} else {
+				log.Println("Tags tab refresh function not set.")
+			}
 			dialog.ShowInformation("Success", successMessage, a.UI.MainWin)
 		}
 	}, a.UI.MainWin)
