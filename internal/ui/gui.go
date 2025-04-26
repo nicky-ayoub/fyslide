@@ -15,89 +15,111 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// selectStackView activates the view at the given index (0 or 1) in the main content stack.
+func (a *App) selectStackView(index int) {
+	if a.UI.contentStack == nil {
+		log.Println("ERROR: selectStackView called but contentStack is nil")
+		return
+	}
+
+	var targetView fyne.CanvasObject
+	if index == 0 {
+		targetView = a.UI.imageContentView
+	} else if index == 1 {
+		targetView = a.UI.tagsContentView
+	} else {
+		log.Printf("ERROR: selectStackView called with invalid index: %d", index)
+		return
+	}
+
+	if targetView == nil {
+		log.Printf("ERROR: selectStackView - target view for index %d is nil", index)
+		return
+	}
+
+	// Hide all objects in the stack first
+	for _, obj := range a.UI.contentStack.Objects {
+		obj.Hide()
+	}
+
+	// Show the target object
+	targetView.Show()
+
+	// Refresh the stack container to apply visibility changes
+	a.UI.contentStack.Refresh()
+	log.Printf("DEBUG: Switched stack view to index %d", index)
+
+	// Special case: Refresh tags when switching TO the tags view
+	if index == 1 && a.refreshTagsFunc != nil {
+		log.Println("DEBUG: Refreshing tags data on view switch.")
+		a.refreshTagsFunc()
+	}
+}
+
 func (a *App) buildStatusBar() *fyne.Container {
-	a.UI.quit = widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() })
-	a.UI.firstBtn = widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage)
-	a.UI.previousBtn = widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() })
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-	a.UI.nextBtn = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() })
-	a.UI.lastBtn = widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage)
 	// Use the renamed function addTag (if you renamed it)
 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
 	// You could add a remove tag button here too if desired
 	a.UI.removeTagBtn = widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), a.removeTag) // Need to add removeTagBtn to UI struct
-
-	a.UI.deleteBtn = widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck)
 	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
 
-	a.UI.statusLabel = widget.NewLabel("")
-	a.UI.previousBtn.Enable()
-	a.UI.nextBtn.Enable()
-	a.UI.deleteBtn.Enable()
 	a.UI.tagBtn.Enable()
-	a.UI.firstBtn.Enable()
-	a.UI.lastBtn.Enable()
 	a.UI.randomBtn.Enable()
 
-	s := container.NewVBox(
-		widget.NewSeparator(),
-		container.NewHBox(
-			a.UI.quit,
-			a.UI.firstBtn,
-			a.UI.previousBtn,
-			a.UI.pauseBtn,
-			a.UI.nextBtn,
-			a.UI.lastBtn,
-			a.UI.tagBtn,
-			a.UI.removeTagBtn,
-			a.UI.deleteBtn,
-			a.UI.randomBtn,
-			layout.NewSpacer(),
-			a.UI.statusLabel,
-		),
+	s := container.NewHBox(
+		// --- End Added Buttons ---
+		widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() }),
+		widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage),
+		widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() }),
+		a.UI.pauseBtn,
+		widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
+		widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage),
+		a.UI.tagBtn,
+		a.UI.removeTagBtn,
+		widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck),
+		a.UI.randomBtn,
+		layout.NewSpacer(),
+
+		// --- ADDED: View Switching Buttons ---
+		widget.NewButtonWithIcon("", theme.FileImageIcon(), func() { // Button for Image View
+			a.selectStackView(0) // Switch to image view
+		}),
+		widget.NewButtonWithIcon("", theme.ListIcon(), func() { // Button for Tags View
+			a.selectStackView(1) // Switch to tags view
+		}),
 	)
 	return s
 }
 
-func (a *App) buildInformationTab() *container.TabItem {
-	a.UI.clockLabel = widget.NewLabel("Time: ")
-	a.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
-	return container.NewTabItem("Information", container.NewScroll(
-		container.NewVBox(
-			a.UI.clockLabel,
-			a.UI.infoText,
-		),
-	))
-}
+// func (a *App) buildToolbar() *widget.Toolbar {
+// 	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
+// 	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
 
-func (a *App) buildToolbar() *widget.Toolbar {
-	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
-	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
+// 	t := widget.NewToolbar(
+// 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
+// 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
+// 		widget.NewToolbarAction(resourceBackPng, func() { a.direction = -1; a.nextImage() }),
+// 		a.UI.pauseAction,
+// 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
+// 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
+// 		// Use the renamed function addTag (if you renamed it)
+// 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
+// 		// You could add a remove tag button here too if desired
+// 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
+// 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
+// 		a.UI.randomAction,
+// 		widget.NewToolbarSpacer(),
+// 		widget.NewToolbarAction(theme.HelpIcon(), func() {
+// 			log.Println("Display help")
+// 		}),
+// 	)
 
-	t := widget.NewToolbar(
-		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
-		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
-		widget.NewToolbarAction(resourceBackPng, func() { a.direction = -1; a.nextImage() }),
-		a.UI.pauseAction,
-		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
-		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
-		// Use the renamed function addTag (if you renamed it)
-		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
-		// You could add a remove tag button here too if desired
-		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
-		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
-		a.UI.randomAction,
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarAction(theme.HelpIcon(), func() {
-			log.Println("Display help")
-		}),
-	)
-
-	return t
-}
+// 	return t
+// }
 
 // buildTagsTab creates the content for the "Tags" tab with search and global removal
-func (a *App) buildTagsTab() (*container.TabItem, func()) {
+func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	var tagList *widget.List
 	var allTags []string            // Holds all tags fetched from DB
 	var filteredData []string       // Holds the tags currently displayed in the list
@@ -231,23 +253,23 @@ func (a *App) buildTagsTab() (*container.TabItem, func()) {
 		removeButton.Enable()
 		log.Printf("Tag selected from list: %s", selectedTag)
 		a.applyFilter(selectedTag)
-		if a.UI.tabs != nil {
-			a.UI.tabs.SelectIndex(0) // Select the first tab (Image View)
+		if a.UI.contentStack != nil {
+			a.selectStackView(0)
 		}
 	}
 
 	// --- Handle Unselection ---
-	tagList.OnUnselected = func(id widget.ListItemID) {
+	tagList.OnUnselected = func(_ widget.ListItemID) {
 		selectedTagForAction = ""
 		removeButton.Disable()
+		//a.clearFilter()
 	}
 
 	loadAndFilterTagData()
 
 	content := container.NewBorder(topBar, removeButton, nil, nil, tagList)
-	tabItem := container.NewTabItemWithIcon("Tags", theme.ListIcon(), content)
 
-	return tabItem, loadAndFilterTagData
+	return content, loadAndFilterTagData
 }
 
 func (a *App) buildMainUI() fyne.CanvasObject {
@@ -258,7 +280,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	} else {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
-	a.UI.toolbar = a.buildToolbar()
 	a.UI.statusBar = a.buildStatusBar()
 
 	// main menu
@@ -295,25 +316,38 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.image = &canvas.Image{}
 	a.image.FillMode = canvas.ImageFillContain
 
-	a.UI.split = container.NewHSplit(
-		a.image,
-		container.NewAppTabs(
-			a.buildInformationTab(),
+	infoPanelContent := container.NewScroll(
+		container.NewVBox(
+			a.UI.clockLabel,
+			a.UI.infoText,
 		),
 	)
+	a.UI.split = container.NewHSplit(
+		a.image,
+		infoPanelContent, // Use the info panel content directly
+	)
 	a.UI.split.SetOffset(0.85)
+	a.UI.imageContentView = a.UI.split // Store the image view content
 
-	imageTabView := container.NewTabItemWithIcon("Image View", theme.FileImageIcon(), a.UI.split) // Tab 1: Contains the HSplit
-	tagsTabView, refreshFunc := a.buildTagsTab()
+	// --- Build Tags View Content ---
+	tagsContent, refreshFunc := a.buildTagsTab()
 	a.refreshTagsFunc = refreshFunc
+	a.UI.tagsContentView = tagsContent // Store the tags view content
 
-	a.UI.tabs = container.NewAppTabs(imageTabView, tagsTabView)
+	// --- Create the Content Stack ---
+	a.UI.contentStack = container.NewStack(
+		a.UI.imageContentView, // Index 0
+		a.UI.tagsContentView,  // Index 1
+	)
+	// Ensure the first view (image view) is visible initially
+	a.UI.tagsContentView.Hide()
+	a.UI.imageContentView.Show()
 
 	return container.NewBorder(
-		a.UI.toolbar,   // Top
-		a.UI.statusBar, // Bottom
+		a.UI.statusBar, // a.UI.toolbar,   // Top
+		nil,            // a.UI.statusBar, // Bottom
 		nil,            // a.UI.explorer, // explorer left
 		nil,            // right
-		a.UI.tabs,
+		a.UI.contentStack,
 	)
 }

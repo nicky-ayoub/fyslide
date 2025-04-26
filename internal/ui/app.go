@@ -45,24 +45,14 @@ type UI struct {
 
 	statusBar *fyne.Container
 
-	quit         *widget.Button
-	firstBtn     *widget.Button
-	previousBtn  *widget.Button
 	pauseBtn     *widget.Button
-	nextBtn      *widget.Button
-	lastBtn      *widget.Button
-	deleteBtn    *widget.Button
 	removeTagBtn *widget.Button
 	tagBtn       *widget.Button
 	randomBtn    *widget.Button
-	randomAction *widget.ToolbarAction
-	pauseAction  *widget.ToolbarAction
 
-	statusLabel *widget.Label
-	toolbar     *widget.Toolbar
-
-	tabs *container.AppTabs
-	//explorer *widget.Accordion
+	contentStack     *fyne.Container   // ADDED: To hold the main views
+	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
+	tagsContentView  fyne.CanvasObject // ADDED: Holds the tags view content
 
 }
 
@@ -222,19 +212,9 @@ func (a *App) DisplayImage() error {
 		a.img = Img{}
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle("FySlide")
-		a.UI.statusLabel.SetText("No images to display")
-		if a.isFiltered {
-			a.UI.statusLabel.SetText(fmt.Sprintf("No images match filter: %s", a.currentFilterTag))
-		}
 		a.updateInfoText()
-		// Disable buttons
-		a.UI.previousBtn.Disable()
-		a.UI.nextBtn.Disable()
-		a.UI.firstBtn.Disable()
-		a.UI.lastBtn.Disable()
 		a.UI.tagBtn.Disable()
 		a.UI.removeTagBtn.Disable()
-		a.UI.deleteBtn.Disable()
 		return fmt.Errorf("no images available in the current list")
 	}
 
@@ -269,16 +249,10 @@ func (a *App) DisplayImage() error {
 		a.img = Img{Path: imagePath} // Keep path for context
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Loading %v", filepath.Base(a.img.Path)))
-		a.UI.statusLabel.SetText(fmt.Sprintf("Error loading: %s", a.img.Path))
 		a.updateInfoText()
 		// Keep buttons enabled to allow navigation away from the error
-		a.UI.previousBtn.Enable()
-		a.UI.nextBtn.Enable()
-		a.UI.firstBtn.Enable()
-		a.UI.lastBtn.Enable()
 		a.UI.tagBtn.Enable() // Can still tag/untag even if load failed
 		a.UI.removeTagBtn.Enable()
-		a.UI.deleteBtn.Enable()
 		return fmt.Errorf("unable to open image '%s': %w", imagePath, err)
 	}
 	defer file.Close()
@@ -291,16 +265,9 @@ func (a *App) DisplayImage() error {
 		a.img = Img{Path: file.Name()}
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Decoding %v", filepath.Base(a.img.Path)))
-		a.UI.statusLabel.SetText(fmt.Sprintf("Error decoding: %s", a.img.Path))
 		a.updateInfoText()
-		// Keep buttons enabled
-		a.UI.previousBtn.Enable()
-		a.UI.nextBtn.Enable()
-		a.UI.firstBtn.Enable()
-		a.UI.lastBtn.Enable()
 		a.UI.tagBtn.Enable()
 		a.UI.removeTagBtn.Enable()
-		a.UI.deleteBtn.Enable()
 		return fmt.Errorf("unable to decode image %s: %w", file.Name(), err)
 	}
 
@@ -313,22 +280,12 @@ func (a *App) DisplayImage() error {
 	// --- Update Title, Status Bar, and Info Text ---
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", filepath.Base(a.img.Path)))
 	// Update status label based on filter state
-	statusText := a.img.Path
-	if a.isFiltered {
-		statusText = fmt.Sprintf("[Filtered: %s] %s", a.currentFilterTag, a.img.Path)
-	}
-	a.UI.statusLabel.SetText(statusText)
 
 	a.updateInfoText() // Call the function to update the info panel
 
 	// --- Ensure buttons are enabled (if count > 0) ---
-	a.UI.previousBtn.Enable()
-	a.UI.nextBtn.Enable()
-	a.UI.firstBtn.Enable()
-	a.UI.lastBtn.Enable()
 	a.UI.tagBtn.Enable()
 	a.UI.removeTagBtn.Enable()
-	a.UI.deleteBtn.Enable()
 
 	return nil
 }
@@ -605,10 +562,8 @@ func (a *App) init() {
 func (a *App) togglePlay() {
 	if a.paused {
 		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
 	} else {
 		a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
-		a.UI.pauseAction.SetIcon(theme.ContentRedoIcon())
 	}
 	a.paused = !a.paused
 }
@@ -616,10 +571,8 @@ func (a *App) togglePlay() {
 func (a *App) toggleRandom() {
 	if a.random {
 		a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
-		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
 	} else {
 		a.UI.randomBtn.SetIcon(resourceDice24Png)
-		a.UI.randomAction.SetIcon(resourceDice24Png)
 	}
 	a.random = !a.random
 }
@@ -650,6 +603,10 @@ func CreateApplication() {
 
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
+
+	currentTheme := a.Settings().Theme()
+	a.Settings().SetTheme(NewSmallTabsTheme(currentTheme))
+
 	ui := &App{app: a, direction: 1}
 
 	ui.tagDB, err = tagging.NewTagDB("")
@@ -672,6 +629,10 @@ func CreateApplication() {
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init()
 	ui.random = true
+
+	ui.UI.clockLabel = widget.NewLabel("Time: ")
+	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
+
 	ui.UI.MainWin.SetContent(ui.buildMainUI())
 
 	go ui.loadImages(dir)
@@ -698,12 +659,7 @@ func CreateApplication() {
 		ui.DisplayImage()
 	} else {
 		// Handle case where no images were found/loaded
-		ui.UI.statusLabel.SetText("No images found in directory.")
 		ui.updateInfoText()
-		// Disable buttons
-		ui.UI.previousBtn.Disable()
-		ui.UI.nextBtn.Disable()
-		// ... disable others ...
 	}
 
 	ui.UI.MainWin.ShowAndRun()
@@ -755,7 +711,7 @@ func (a *App) removeTagGlobally(tag string) error {
 	log.Printf("Found %d images associated with tag '%s'. Proceeding with removal...", len(imagePaths), tag)
 
 	// 2. Iterate and remove the tag from each image
-	var firstError error = nil
+	var firstError error
 	errorsEncountered := 0
 	successfulRemovals := 0
 
@@ -864,8 +820,8 @@ func (a *App) removeTag() {
 
 		removeFromAll := removeFromAllCheck.Checked // --- NEW: Get checkbox state ---
 
-		var err error              // Use a local error variable
-		var firstError error = nil // Store the first error encountered in batch mode
+		var err error        // Use a local error variable
+		var firstError error // Store the first error encountered in batch mode
 		var successMessage string
 		var logMessage string
 		imagesUntaggedCount := 0
@@ -992,7 +948,7 @@ func (a *App) addTag() {
 
 		applyToAll := applyToAllCheck.Checked // --- NEW: Get checkbox state ---
 
-		var firstError error = nil // Store the first error encountered
+		var firstError error // Store the first error encountered
 		var successMessage string
 		var logMessage string
 		totalTagsAttempted := 0
