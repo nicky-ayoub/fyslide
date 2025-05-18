@@ -71,7 +71,7 @@ func (a *App) buildStatusBar() *fyne.Container {
 		// --- End Added Buttons ---
 		widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage),
-		widget.NewButtonWithIcon("", resourceBackPng, func() { a.direction = -1; a.nextImage() }),
+		widget.NewButtonWithIcon("", resourceBackPng, a.ShowPreviousImage),
 		a.UI.pauseBtn,
 		widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
 		widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage),
@@ -294,7 +294,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 		fyne.NewMenu("View",
 			fyne.NewMenuItem("Next Image", func() { a.direction = 1; a.nextImage() }),
-			fyne.NewMenuItem("Previous Image", func() { a.direction = -1; a.nextImage() }),
+			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),                              // NEW Separator
 			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option
 

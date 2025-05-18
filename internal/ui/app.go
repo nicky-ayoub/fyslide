@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"flag"
 	"fmt"
 	"fyslide/internal/scan"
 	"fyslide/internal/tagging"
@@ -68,6 +69,12 @@ type App struct {
 	index          int
 	img            Img
 	image          *canvas.Image
+
+	// --- New History Fields ---
+	historyStack        []string // Stores paths of viewed images
+	currentHistoryIndex int      // Points to the current image in historyStack (-1 if empty or before first)
+	historyCapacity     int      // Max number of images to remember
+	isNavigatingHistory bool     // True if DisplayImage is called from a history action
 
 	paused    bool
 	direction int
@@ -218,12 +225,11 @@ func (a *App) DisplayImage() error {
 		return fmt.Errorf("no images available in the current list")
 	}
 
-	if a.random {
-		// rand.Intn panics if n <= 0, handle the case of 1 image
+	if a.random && !a.isNavigatingHistory {
 		if count == 1 {
 			a.index = 0
-		} else {
-			randomNumber := rand.Intn(count) // Use current count
+		} else if count > 1 { // count is already guaranteed > 0 here
+			randomNumber := rand.Intn(count)
 			a.index = randomNumber
 		}
 	}
@@ -286,7 +292,34 @@ func (a *App) DisplayImage() error {
 	// --- Ensure buttons are enabled (if count > 0) ---
 	a.UI.tagBtn.Enable()
 	a.UI.removeTagBtn.Enable()
+	// --- History Update ---
+	if a.historyCapacity > 0 && !a.isNavigatingHistory {
+		// If currentHistoryIndex is not at the end of the stack (e.g., user went back, then chose a new path),
+		// truncate the "future" part of history.
+		if a.currentHistoryIndex != -1 && a.currentHistoryIndex < len(a.historyStack)-1 {
+			a.historyStack = a.historyStack[:a.currentHistoryIndex+1]
+		}
 
+		// Add current image to history.
+		// Avoid adding if it's the exact same path as the last entry AND we are at the end of history.
+		// This prevents duplicates if DisplayImage is called for a refresh without actual navigation.
+		// If we branched (currentHistoryIndex < len(historyStack)-1), we always add.
+		addToHistory := true
+		if len(a.historyStack) > 0 && a.currentHistoryIndex == len(a.historyStack)-1 && a.historyStack[a.currentHistoryIndex] == a.img.Path {
+			addToHistory = false
+		}
+
+		if addToHistory {
+			a.historyStack = append(a.historyStack, a.img.Path)
+		}
+
+		// Trim history if it exceeds capacity (remove from the beginning)
+		if len(a.historyStack) > a.historyCapacity {
+			a.historyStack = a.historyStack[len(a.historyStack)-a.historyCapacity:]
+		}
+		// After adding/trimming, the current history index points to the last item.
+		a.currentHistoryIndex = len(a.historyStack) - 1
+	}
 	return nil
 }
 
@@ -381,8 +414,9 @@ func (a *App) applyFilter(tag string) {
 	a.direction = 1 // Default direction
 	log.Printf("Filter applied. %d images match tag '%s'.", len(a.filteredImages), tag)
 
-	a.DisplayImage()   // Display the first image in the filtered set
-	a.updateInfoText() // Update info panel immediately
+	a.isNavigatingHistory = false // Applying a filter is a new view, not history navigation
+	a.DisplayImage()              // Display the first image in the filtered set
+	a.updateInfoText()            // Update info panel immediately
 }
 
 // clearFilter removes any active tag filter.
@@ -397,11 +431,13 @@ func (a *App) clearFilter() {
 	a.index = 0            // Reset index to the start of the full list
 	a.direction = 1
 
-	a.DisplayImage()   // Display the first image in the full set
-	a.updateInfoText() // Update info panel immediately
+	a.isNavigatingHistory = false // Clearing a filter is a new view state
+	a.DisplayImage()              // Display the first image in the full set
+	a.updateInfoText()            // Update info panel immediately
 }
 
 func (a *App) firstImage() {
+	a.isNavigatingHistory = false
 	if a.getCurrentImageCount() == 0 {
 		return
 	} // Add check
@@ -411,6 +447,7 @@ func (a *App) firstImage() {
 }
 
 func (a *App) lastImage() {
+	a.isNavigatingHistory = false
 	count := a.getCurrentImageCount() // Use helper
 	if count == 0 {
 		return
@@ -425,18 +462,209 @@ func (a *App) nextImage() {
 	if count == 0 {
 		return
 	} // Add check
-
-	a.index += a.direction
-	if a.index < 0 {
-		a.direction = 1
-		a.index = 0
-	} else if a.index >= count { // Use current count
-		a.direction = -1
-		a.index = count - 1 // Use current count
+	// --- History Navigation Logic ---
+	if a.isNavigatingHistory {
+		// If currently navigating history (came here from a 'back' action),
+		// try to go forward in history first.
+		if a.ShowNextImageFromHistory() {
+			return // Successfully moved forward in history
+		}
+		// If ShowNextImageFromHistory returned false, it means we are at the end
+		// of the history stack. Fall through to standard next image logic.
 	}
-	a.DisplayImage()
+	// --- Standard Next Image Logic ---
+	a.isNavigatingHistory = false // Ensure this is false for standard navigation
+
+	// Calculate next index based on direction (original logic)
+	a.index += a.direction              // This might go out of bounds
+	a.index = (a.index + count) % count // Wrap around using modulo
+
+	a.DisplayImage() // Display the image at the calculated index
+
 }
 
+// ShowNextImageFromHistory attempts to move forward in the history stack.
+// Returns true if successful, false otherwise (e.g., at end of history or history disabled).
+func (a *App) ShowNextImageFromHistory() bool {
+	if a.historyCapacity == 0 || a.currentHistoryIndex == -1 || a.currentHistoryIndex >= len(a.historyStack)-1 {
+		// Cannot go forward in history
+		return false
+	}
+
+	targetHistoryIndex := a.currentHistoryIndex + 1
+	// Bounds check (should be <= len(a.historyStack)-1)
+	if targetHistoryIndex >= len(a.historyStack) {
+		log.Println("Already at the newest image in history (targetHistoryIndex out of bounds).")
+		return false
+	}
+	imagePathFromHistory := a.historyStack[targetHistoryIndex]
+
+	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
+
+	// Check if the historical image is in the current filtered list if filtering is active.
+	// Unlike 'back', for 'forward' it might be better to just skip if it's not in the filter,
+	// or clear the filter. Clearing the filter seems more consistent with the 'back' behavior.
+	mustClearFilter := false
+	if a.isFiltered {
+		foundInFilter := false
+		for _, item := range a.filteredImages {
+			if item.Path == imagePathFromHistory {
+				foundInFilter = true
+				break
+			}
+		}
+		if !foundInFilter {
+			mustClearFilter = true
+		}
+	}
+
+	if mustClearFilter {
+		log.Printf("Image %s from history not in current filter. Clearing filter state for forward navigation.", filepath.Base(imagePathFromHistory))
+		// Directly modify filter state without calling a.clearFilter() to avoid its DisplayImage call
+		a.isFiltered = false
+		a.currentFilterTag = ""
+		a.filteredImages = nil
+		// The info text will be updated by the DisplayImage call later.
+	}
+
+	// Find the index of the historical image in the *current* active list (full or filtered)
+	activeList := a.getCurrentList()
+	foundIndexInActiveList := -1
+	for i, item := range activeList {
+		if item.Path == imagePathFromHistory {
+			foundIndexInActiveList = i
+			break
+		}
+	}
+
+	if foundIndexInActiveList == -1 {
+		log.Printf("Error: Image from history (%s) not found in current active list during forward navigation. Removing from history.", imagePathFromHistory)
+		// Image might have been deleted or is otherwise inaccessible.
+		// Remove the problematic item from history.
+		if targetHistoryIndex >= 0 && targetHistoryIndex < len(a.historyStack) {
+			a.historyStack = append(a.historyStack[:targetHistoryIndex], a.historyStack[targetHistoryIndex+1:]...)
+			// currentHistoryIndex stays the same, effectively now pointing to the item that was after the removed one.
+			// If the removed item was the last one, currentHistoryIndex will now be len(historyStack), which is handled by the check at the start of this function.
+		}
+		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
+		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
+		return false                  // Failed to show the historical image
+	}
+
+	a.index = foundIndexInActiveList
+	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
+
+	err := a.DisplayImage() // DisplayImage will respect a.isNavigatingHistory
+	if err != nil {
+		log.Printf("Error displaying image %s from history during forward navigation: %v", imagePathFromHistory, err)
+		// Consider how to handle display errors for historical items (e.g., remove from history)
+		a.isNavigatingHistory = false // Reset flag on error
+		return false                  // Failed to display
+	}
+
+	a.isNavigatingHistory = false // Reset flag after the operation is complete
+	return true                   // Successfully displayed historical image
+}
+
+// ShowPreviousImage handles the "back" button logic using history.
+func (a *App) ShowPreviousImage() {
+	if a.historyCapacity == 0 {
+		log.Println("History is disabled.")
+		// Optionally, could fall back to old random/previous behavior:
+		// a.direction = -1
+		// a.isNavigatingHistory = false // Ensure this is set if calling nextImage
+		// a.nextImage()
+		return
+	}
+
+	// --- Turn off random mode if active ---
+	if a.random {
+		a.toggleRandom() // This function handles icon update and state change
+		log.Println("Random mode turned off due to back button press.")
+	}
+
+	// --- Pause slideshow if it's playing ---
+	if !a.paused {
+		a.togglePlay() // This function handles icon update and state change
+		log.Println("Slideshow paused due to back button press.")
+	}
+
+	if a.currentHistoryIndex <= 0 || len(a.historyStack) < 2 { // Need at least 2 items to go "back" to a different one
+		log.Println("No more images in history to go back to, or history is too short.")
+		// Optionally, show a brief message to the user via a dialog or status bar update
+		return
+	}
+
+	targetHistoryIndex := a.currentHistoryIndex - 1
+	// Bounds check for targetHistoryIndex (should be >= 0)
+	// This check is somewhat redundant due to `a.currentHistoryIndex <= 0` above, but good for safety.
+	if targetHistoryIndex < 0 {
+		log.Println("Already at the oldest image in history (targetHistoryIndex < 0).")
+		return
+	}
+	imagePathFromHistory := a.historyStack[targetHistoryIndex]
+
+	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
+
+	mustClearFilter := false
+	if a.isFiltered {
+		foundInFilter := false
+		for _, item := range a.filteredImages {
+			if item.Path == imagePathFromHistory {
+				foundInFilter = true
+				break
+			}
+		}
+		if !foundInFilter {
+			mustClearFilter = true
+		}
+	}
+
+	if mustClearFilter {
+		log.Printf("Image %s from history not in current filter. Clearing filter state.", filepath.Base(imagePathFromHistory))
+		// Directly modify filter state without calling a.clearFilter() to avoid its DisplayImage call
+		a.isFiltered = false
+		a.currentFilterTag = ""
+		a.filteredImages = nil
+		// The info text will be updated by the DisplayImage call later.
+	}
+
+	activeList := a.getCurrentList() // Get the list that's now active (could be a.images if filter was cleared)
+	foundIndexInActiveList := -1
+	for i, item := range activeList {
+		if item.Path == imagePathFromHistory {
+			foundIndexInActiveList = i
+			break
+		}
+	}
+
+	if foundIndexInActiveList == -1 {
+		log.Printf("Error: Image from history (%s) not found in current active list. Removing from history.", imagePathFromHistory)
+		if targetHistoryIndex >= 0 && targetHistoryIndex < len(a.historyStack) {
+			a.historyStack = append(a.historyStack[:targetHistoryIndex], a.historyStack[targetHistoryIndex+1:]...)
+			a.currentHistoryIndex-- // Adjust pointer to currently displayed image
+			// Ensure index is valid after removal
+			if a.currentHistoryIndex >= len(a.historyStack) {
+				a.currentHistoryIndex = len(a.historyStack) - 1
+			}
+			if a.currentHistoryIndex < 0 {
+				a.currentHistoryIndex = -1
+			}
+		}
+		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
+		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
+		return
+	}
+
+	a.index = foundIndexInActiveList
+	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
+
+	err := a.DisplayImage() // DisplayImage will respect a.isNavigatingHistory
+	if err != nil {
+		log.Printf("Error displaying image %s from history: %v", imagePathFromHistory, err)
+	}
+	a.isNavigatingHistory = false // Reset flag after the operation is complete
+}
 func (a *App) updateTime() {
 	formatted := time.Now().Format("Time: 03:04:05")
 	a.UI.clockLabel.SetText(formatted)
@@ -500,6 +728,33 @@ func (a *App) deleteFile() {
 	}
 	a.images = newImages
 
+	// 3.5. Remove from historyStack
+	if a.historyCapacity > 0 {
+		newHistoryStack := make([]string, 0, len(a.historyStack))
+		deletedFromHistoryIndex := -1
+		for i, p := range a.historyStack {
+			if p == deletedPath {
+				if i <= a.currentHistoryIndex {
+					// If the deleted item was at or before the current history pointer,
+					// the pointer needs to shift left.
+					deletedFromHistoryIndex = i // Mark that a relevant history item was deleted
+				}
+			} else {
+				newHistoryStack = append(newHistoryStack, p)
+			}
+		}
+		a.historyStack = newHistoryStack
+		if deletedFromHistoryIndex != -1 && a.currentHistoryIndex >= deletedFromHistoryIndex {
+			a.currentHistoryIndex-- // Adjust index
+		}
+		if a.currentHistoryIndex < 0 && len(a.historyStack) > 0 {
+			a.currentHistoryIndex = 0
+		}
+		if len(a.historyStack) == 0 {
+			a.currentHistoryIndex = -1
+		}
+	}
+
 	// 4. Remove from the filtered list (a.filteredImages) if filtering is active
 	if a.isFiltered {
 		newFiltered := a.filteredImages[:0]
@@ -554,8 +809,18 @@ func (a *App) imageCount() int {
 	return len(a.images)
 }
 
-func (a *App) init() {
+func (a *App) init(historyCap int) { // Added historyCap parameter
 	a.img = Img{}
+	a.historyCapacity = historyCap
+	if a.historyCapacity < 0 { // Ensure non-negative
+		log.Println("Warning: History capacity cannot be negative. Setting to 0 (disabled).")
+		a.historyCapacity = 0
+	}
+	if a.historyCapacity > 0 {
+		a.historyStack = make([]string, 0, a.historyCapacity) // Initialize with capacity
+	}
+	a.currentHistoryIndex = -1    // Indicates history is empty or pointer is before the first item
+	a.isNavigatingHistory = false // Default state
 }
 
 // Handle toggles
@@ -577,8 +842,12 @@ func (a *App) toggleRandom() {
 	a.random = !a.random
 }
 
+// Command-line flags
+var historySizeFlag = flag.Int("history-size", 10, "Number of last viewed images to remember (0 to disable). Min: 0.")
+
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
+	flag.Parse() // Parse command-line flags
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("error while opening the directory : %v\n", err)
@@ -627,7 +896,7 @@ func CreateApplication() {
 	})
 
 	ui.UI.MainWin.SetIcon(resourceIconPng)
-	ui.init()
+	ui.init(*historySizeFlag) // Pass parsed flag to init
 	ui.random = true
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
@@ -654,6 +923,7 @@ func CreateApplication() {
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
 		ticker := time.NewTicker(2 * time.Second)
+		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)
 		go ui.updateTimer()
 		ui.DisplayImage()
@@ -667,13 +937,22 @@ func CreateApplication() {
 
 func (a *App) updateTimer() {
 	for range time.Tick(time.Second) {
+		// ???
+		if a.UI.MainWin == nil || a.UI.clockLabel == nil { // Check if UI elements are still valid
+			return // Exit goroutine if window is closed
+		}
 		a.updateTime()
 	}
 }
 
 func (a *App) pauser(ticker *time.Ticker) {
 	for range ticker.C {
+		if a.UI.MainWin == nil { // Check if window is still valid
+			ticker.Stop() // Stop the ticker
+			return        // Exit goroutine
+		}
 		if !a.paused {
+			a.isNavigatingHistory = false // Standard "next" is not history navigation
 			a.nextImage()
 		}
 	}
@@ -853,8 +1132,7 @@ func (a *App) removeTag() {
 			logMessage = fmt.Sprintf("Attempted removal of tag '%s' for %d images in %s.", selectedTag, imagesUntaggedCount, currentDir)
 			if errorsEncountered > 0 {
 				successMessage = fmt.Sprintf("Tag '%s' removal attempted for %d images.\n%d errors occurred (see logs).", selectedTag, imagesUntaggedCount, errorsEncountered)
-			} else {
-				successMessage = fmt.Sprintf("Tag '%s' removed successfully from matching images in the directory.", selectedTag)
+				log.Println(successMessage)
 			}
 		} else {
 			// Original logic: Remove only from the current image
@@ -862,7 +1140,6 @@ func (a *App) removeTag() {
 			if err == nil {
 				imagesUntaggedCount = 1 // Only one attempt
 				logMessage = fmt.Sprintf("Removed tag '%s' from %s", selectedTag, a.img.Path)
-				successMessage = fmt.Sprintf("Tag '%s' removed successfully.", selectedTag)
 			}
 		}
 
@@ -871,7 +1148,6 @@ func (a *App) removeTag() {
 		} else {
 			log.Println(logMessage)
 			a.updateInfoText()
-			dialog.ShowInformation("Success", successMessage, a.UI.MainWin)
 		}
 	}, a.UI.MainWin)
 }
@@ -950,6 +1226,7 @@ func (a *App) addTag() {
 
 		var firstError error // Store the first error encountered
 		var successMessage string
+		showMessage := false
 		var logMessage string
 		totalTagsAttempted := 0
 		successfulAdditions := 0
@@ -983,9 +1260,8 @@ func (a *App) addTag() {
 			}
 			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %d images in %s. Successes: %d, Errors: %d", len(tagsToAdd), imagesProcessed, currentDir, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
+				showMessage = true
 				successMessage = fmt.Sprintf("%d tag(s) applied partially across %d images.\n%d errors occurred (see logs).", len(tagsToAdd), imagesProcessed, errorsEncountered)
-			} else {
-				successMessage = fmt.Sprintf("%d tag(s) applied successfully to %d images in the directory.", len(tagsToAdd), imagesProcessed)
 			}
 		} else {
 			// Apply tags only to the current image
@@ -1006,8 +1282,6 @@ func (a *App) addTag() {
 			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %s. Successes: %d, Errors: %d", len(tagsToAdd), a.img.Path, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
 				successMessage = fmt.Sprintf("%d tag(s) applied partially.\n%d errors occurred (see logs).", len(tagsToAdd), errorsEncountered)
-			} else {
-				successMessage = fmt.Sprintf("%d tag(s) added successfully.", len(tagsToAdd))
 			}
 		}
 
@@ -1027,7 +1301,9 @@ func (a *App) addTag() {
 			} else {
 				log.Println("Tags tab refresh function not set.")
 			}
-			dialog.ShowInformation("Success", successMessage, a.UI.MainWin)
+			if showMessage {
+				dialog.ShowInformation("Success", successMessage, a.UI.MainWin)
+			}
 		}
 	}, a.UI.MainWin)
 }

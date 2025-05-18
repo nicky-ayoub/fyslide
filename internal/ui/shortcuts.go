@@ -23,8 +23,7 @@ func (a *App) buildKeyboardShortcuts() {
 			a.direction = 1
 			a.nextImage()
 		case fyne.KeyLeft:
-			a.direction = -1
-			a.nextImage()
+			a.ShowPreviousImage()
 		case fyne.KeyQ:
 			a.app.Quit()
 		case fyne.KeyP, fyne.KeySpace:
