@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -1194,6 +1195,7 @@ func (a *App) addTag() {
 	}
 
 	applyToAllCheck := widget.NewCheck("Apply tag(s) to all images in this directory", nil)
+	applyToAllCheck.SetChecked(true)
 
 	// Keep the rest of the addTag (formerly tagFile) function body the same...
 	dialog.ShowForm("Add Tag", "Add", "Cancel", []*widget.FormItem{
@@ -1241,32 +1243,59 @@ func (a *App) addTag() {
 		successfulAdditions := 0
 		errorsEncountered := 0
 
-		// --- The rest of the logic for applying tags remains the same ---
 		// --- It correctly iterates through the 'tagsToAdd' slice ---
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
 			log.Printf("Attempting to apply %d tag(s) [%s] to all images in directory: %s", len(tagsToAdd), strings.Join(tagsToAdd, ", "), currentDir)
 
+			var wg sync.WaitGroup
+			var mu sync.Mutex // Mutex to protect shared variables
 			imagesProcessed := 0
-			for _, item := range a.images {
-				itemDir := filepath.Dir(item.Path)
+
+			for _, imageItem := range a.images { // Iterate through the original full list
+				// Capture loop variables for the goroutine
+				itemPath := imageItem.Path    // Capture path
+				currentTagsToAdd := tagsToAdd // Capture tags to add for this goroutine
+
+				itemDir := filepath.Dir(itemPath) // Use captured itemPath or imageItem.Path
 				if itemDir == currentDir {
-					imagesProcessed++
-					for _, tag := range tagsToAdd { // Loop through tags for each image
-						totalTagsAttempted++
-						errAdd := a.tagDB.AddTag(item.Path, tag)
-						if errAdd != nil {
-							log.Printf("Error adding tag '%s' to %s: %v", tag, item.Path, errAdd)
-							errorsEncountered++
-							if firstError == nil {
-								firstError = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(item.Path), tag, errAdd)
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+
+						localTagsAttemptedOnThisImage := 0
+						localSuccessfulAdditionsOnThisImage := 0
+						localErrorsOnThisImage := 0
+						var localFirstErrorForThisImage error
+
+						for _, tag := range currentTagsToAdd {
+							localTagsAttemptedOnThisImage++
+							errAdd := a.tagDB.AddTag(itemPath, tag)
+							if errAdd != nil {
+								log.Printf("Error adding tag '%s' to %s: %v", tag, itemPath, errAdd)
+								localErrorsOnThisImage++
+								if localFirstErrorForThisImage == nil {
+									localFirstErrorForThisImage = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(itemPath), tag, errAdd)
+								}
+							} else {
+								localSuccessfulAdditionsOnThisImage++
 							}
-						} else {
-							successfulAdditions++
 						}
-					}
+
+						mu.Lock()
+						imagesProcessed++ // This image's processing is complete
+						totalTagsAttempted += localTagsAttemptedOnThisImage
+						successfulAdditions += localSuccessfulAdditionsOnThisImage
+						errorsEncountered += localErrorsOnThisImage
+						if localFirstErrorForThisImage != nil && firstError == nil {
+							firstError = localFirstErrorForThisImage
+						}
+						mu.Unlock()
+					}()
 				}
 			}
+			wg.Wait() // Wait for all goroutines to finish
+
 			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %d images in %s. Successes: %d, Errors: %d", len(tagsToAdd), imagesProcessed, currentDir, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
 				showMessage = true
@@ -1291,6 +1320,7 @@ func (a *App) addTag() {
 			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %s. Successes: %d, Errors: %d", len(tagsToAdd), a.img.Path, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
 				successMessage = fmt.Sprintf("%d tag(s) applied partially.\n%d errors occurred (see logs).", len(tagsToAdd), errorsEncountered)
+				showMessage = true // Show message for partial success on single image too
 			}
 		}
 
