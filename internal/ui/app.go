@@ -802,7 +802,16 @@ func (a *App) deleteFile() {
 // }
 
 func (a *App) loadImages(root string) {
-	scan.Run(root, &a.images)
+	a.images = nil // Clear previous images or a.images = a.images[:0]
+
+	imageChan := scan.Run(root)   // scan.Run now returns a channel
+	for item := range imageChan { // Loop until the channel is closed
+		a.images = append(a.images, item)
+		// Optionally, you could update a progress indicator here
+		// if the GUI needs to show loading progress.
+	}
+	log.Printf("Finished loading %d images from %s", len(a.images), root)
+	// The existing wait loop in CreateApplication for imageCount() > 0 will work as before.
 }
 
 func (a *App) imageCount() int {

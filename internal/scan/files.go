@@ -3,7 +3,7 @@ package scan
 
 import (
 	"io/fs"
-	"os"
+	"log"
 	"path/filepath"
 	"strings"
 )
@@ -26,58 +26,56 @@ func NewFileItem(p string, fi fs.FileInfo) FileItem {
 
 }
 
-func searchDir(dir string, m *FileItems) error {
+// findImageFiles recursively scans dir for image files and sends them to the out channel.
+// It closes the out channel when done.
+func findImageFiles(dir string, out chan<- FileItem) {
+	defer close(out) // Ensure channel is closed when WalkDir finishes or panics
 
-	visit := func(p string, d fs.DirEntry, err error) error {
-		if err != nil && err != os.ErrNotExist {
-			return err
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Printf("Error accessing path %q: %v\n", path, err)
+			if d != nil && d.IsDir() && path != dir { // Don't skip the root dir on error
+				return filepath.SkipDir // Skip problematic directory
+			}
+			return nil // Continue if possible, or return err to stop
 		}
 
-		// ignore dir itself to avoid an infinite loop!
-		if d.IsDir() && p != dir {
-			searchTree(p, m)
-			return filepath.SkipDir
+		if !d.IsDir() && isImage(d.Name()) {
+			// Get FileInfo. d.Info() is efficient.
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				log.Printf("Error getting FileInfo for %q: %v\n", path, infoErr)
+				return nil // Skip this file
+			}
+			if info.Size() > 0 { // Ensure it's not an empty file
+				out <- NewFileItem(path, info)
+			}
 		}
-
-		// if !d.IsDir() && isImage(p) { // I don't think this is ever called...
-		// 	//mu.Lock()
-		// 	log.Printf("Adding %s to list", p)
-		// 	*m = append(*m, NewFileItem(p, nil))
-		// 	//mu.Unlock()
-		// }
-
 		return nil
-	}
+	})
 
-	return filepath.WalkDir(dir, visit)
+	if err != nil {
+		// Log the error from WalkDir itself, if any.
+		// The channel will still be closed by defer.
+		log.Printf("Error walking directory %s: %v", dir, err)
+	}
 }
 
-func searchTree(dir string, m *FileItems) error {
+// Run is the entry point for the package. It now returns a channel
+// from which FileItems can be read. The scanning happens in a new goroutine.
+func Run(dir string) <-chan FileItem {
+	out := make(chan FileItem, 100) // Buffered channel for some decoupling
 
-	visit := func(p string, fi os.FileInfo, err error) error {
-		if err != nil && err != os.ErrNotExist {
-			return err
+	go func() {
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			log.Printf("Error getting absolute path for %s: %v. Scanning original path.", dir, err)
+			absDir = dir // Proceed with original if Abs fails
 		}
+		findImageFiles(absDir, out)
+	}()
 
-		// ignore dir itself to avoid an infinite loop!
-		if fi.Mode().IsDir() && p != dir {
-			searchTree(p, m)
-			return filepath.SkipDir
-		}
-
-		if fi.Mode().IsRegular() && fi.Size() > 0 && isImage(p) {
-			*m = append(*m, NewFileItem(p, fi))
-		}
-
-		return nil
-	}
-
-	return filepath.Walk(dir, visit)
-}
-
-// Run is the entry point for the package
-func Run(dir string, m *FileItems) {
-	searchDir(dir, m)
+	return out
 }
 
 func isImage(n string) bool {
