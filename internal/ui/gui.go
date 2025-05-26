@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -56,67 +55,72 @@ func (a *App) selectStackView(index int) {
 	}
 }
 
-func (a *App) buildToolbar() *fyne.Container {
-	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-	// Use the renamed function addTag (if you renamed it)
-	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
-	// You could add a remove tag button here too if desired
-	a.UI.removeTagBtn = widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), a.removeTag) // Need to add removeTagBtn to UI struct
-	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
+// func (a *App) buildRibbon() *fyne.Container {
+// 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
+// 	// Use the renamed function addTag (if you renamed it)
+// 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
+// 	// You could add a remove tag button here too if desired
+// 	a.UI.removeTagBtn = widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), a.removeTag) // Need to add removeTagBtn to UI struct
+// 	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
 
-	a.UI.tagBtn.Enable()
-	a.UI.randomBtn.Enable()
+// 	a.UI.tagBtn.Enable()
+// 	a.UI.randomBtn.Enable()
 
-	s := container.NewHBox(
-		// --- End Added Buttons ---
-		widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() }),
-		widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage),
-		widget.NewButtonWithIcon("", resourceBackPng, a.ShowPreviousImage),
-		a.UI.pauseBtn,
-		widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
-		widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage),
-		a.UI.tagBtn,
-		a.UI.removeTagBtn,
-		widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck),
-		a.UI.randomBtn,
-		layout.NewSpacer(),
+// 	s := container.NewHBox(
+// 		// --- End Added Buttons ---
+// 		widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() }),
+// 		widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage),
+// 		widget.NewButtonWithIcon("", resourceBackPng, a.ShowPreviousImage),
+// 		a.UI.pauseBtn,
+// 		widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
+// 		widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage),
+// 		a.UI.tagBtn,
+// 		a.UI.removeTagBtn,
+// 		widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck),
+// 		a.UI.randomBtn,
+// 		layout.NewSpacer(),
 
-		// --- ADDED: View Switching Buttons ---
-		widget.NewButtonWithIcon("", theme.FileImageIcon(), func() { // Button for Image View
-			a.selectStackView(0) // Switch to image view
-		}),
-		widget.NewButtonWithIcon("", theme.ListIcon(), func() { // Button for Tags View
-			a.selectStackView(1) // Switch to tags view
-		}),
-	)
-	return s
-}
-
-// func (a *App) buildToolbar() *widget.Toolbar {
-// 	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
-// 	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
-
-// 	t := widget.NewToolbar(
-// 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
-// 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
-// 		widget.NewToolbarAction(resourceBackPng, func() { a.direction = -1; a.nextImage() }),
-// 		a.UI.pauseAction,
-// 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
-// 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
-// 		// Use the renamed function addTag (if you renamed it)
-// 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
-// 		// You could add a remove tag button here too if desired
-// 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
-// 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
-// 		a.UI.randomAction,
-// 		widget.NewToolbarSpacer(),
-// 		widget.NewToolbarAction(theme.HelpIcon(), func() {
-// 			log.Println("Display help")
+// 		// --- ADDED: View Switching Buttons ---
+// 		widget.NewButtonWithIcon("", theme.FileImageIcon(), func() { // Button for Image View
+// 			a.selectStackView(0) // Switch to image view
+// 		}),
+// 		widget.NewButtonWithIcon("", theme.ListIcon(), func() { // Button for Tags View
+// 			a.selectStackView(1) // Switch to tags view
 // 		}),
 // 	)
-
-// 	return t
+// 	return s
 // }
+
+func (a *App) buildToolbar() *widget.Toolbar {
+	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
+	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
+
+	t := widget.NewToolbar(
+		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
+		widget.NewToolbarAction(resourceBackPng, a.ShowPreviousImage),
+		a.UI.pauseAction,
+		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
+		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
+		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
+		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
+		a.UI.randomAction,
+		widget.NewToolbarSpacer(),
+
+		widget.NewToolbarAction(theme.FileImageIcon(), func() { // Button for Image View
+			a.selectStackView(0) // Switch to image view
+		}),
+		widget.NewToolbarAction(theme.ListIcon(), func() { // Button for Tags View
+			a.selectStackView(1) // Switch to tags view
+		}),
+		widget.NewToolbarAction(theme.HelpIcon(), func() {
+			log.Println("Display help")
+		}),
+	)
+
+	return t
+}
 
 // Helper struct for buildTagsTab to hold tag name and count.
 // Count = -1 indicates a placeholder message not to be treated as a real tag.
@@ -304,8 +308,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	} else {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
-	a.UI.toolBar = a.buildToolbar() // Renamed field and function call
-
+	//a.UI.ribbonBar = a.buildRibbon()
+	a.UI.toolBar = a.buildToolbar()
 	// main menu
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
@@ -368,8 +372,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.imageContentView.Show()
 
 	return container.NewBorder(
-		a.UI.toolBar, // Top
-		nil,          // a.UI.statusBar, // Bottom
+		a.UI.toolBar, // top
+		nil,          // a.UI.ribbonBar, // bottom
 		nil,          // a.UI.explorer, // explorer left
 		nil,          // right
 		a.UI.contentStack,

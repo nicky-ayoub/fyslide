@@ -45,12 +45,15 @@ type UI struct {
 	clockLabel *widget.Label
 	infoText   *widget.RichText
 
-	toolBar *fyne.Container
+	//ribbonBar *fyne.Container
+	// pauseBtn     *widget.Button
+	// removeTagBtn *widget.Button
+	// tagBtn       *widget.Button
+	// randomBtn    *widget.Button
 
-	pauseBtn     *widget.Button
-	removeTagBtn *widget.Button
-	tagBtn       *widget.Button
-	randomBtn    *widget.Button
+	toolBar      *widget.Toolbar
+	randomAction *widget.ToolbarAction
+	pauseAction  *widget.ToolbarAction
 
 	contentStack     *fyne.Container   // ADDED: To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
@@ -221,8 +224,8 @@ func (a *App) DisplayImage() error {
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateInfoText()
-		a.UI.tagBtn.Disable()
-		a.UI.removeTagBtn.Disable()
+		// a.UI.tagBtn.Disable()
+		// a.UI.removeTagBtn.Disable()
 		return fmt.Errorf("no images available in the current list")
 	}
 
@@ -258,8 +261,8 @@ func (a *App) DisplayImage() error {
 		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Loading %v", filepath.Base(a.img.Path)))
 		a.updateInfoText()
 		// Keep buttons enabled to allow navigation away from the error
-		a.UI.tagBtn.Enable() // Can still tag/untag even if load failed
-		a.UI.removeTagBtn.Enable()
+		// a.UI.tagBtn.Enable() // Can still tag/untag even if load failed
+		// a.UI.removeTagBtn.Enable()
 		return fmt.Errorf("unable to open image '%s': %w", imagePath, err)
 	}
 	defer file.Close()
@@ -273,8 +276,8 @@ func (a *App) DisplayImage() error {
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Decoding %v", filepath.Base(a.img.Path)))
 		a.updateInfoText()
-		a.UI.tagBtn.Enable()
-		a.UI.removeTagBtn.Enable()
+		// a.UI.tagBtn.Enable()
+		// a.UI.removeTagBtn.Enable()
 		return fmt.Errorf("unable to decode image %s: %w", file.Name(), err)
 	}
 
@@ -291,8 +294,8 @@ func (a *App) DisplayImage() error {
 	a.updateInfoText() // Call the function to update the info panel
 
 	// --- Ensure buttons are enabled (if count > 0) ---
-	a.UI.tagBtn.Enable()
-	a.UI.removeTagBtn.Enable()
+	// a.UI.tagBtn.Enable()
+	// a.UI.removeTagBtn.Enable()
 	// --- History Update ---
 	if a.historyCapacity > 0 && !a.isNavigatingHistory {
 		// If currentHistoryIndex is not at the end of the stack (e.g., user went back, then chose a new path),
@@ -829,18 +832,22 @@ func (a *App) init(historyCap int) { // Added historyCap parameter
 // Handle toggles
 func (a *App) togglePlay() {
 	if a.paused {
-		a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		// a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
+		a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
 	} else {
-		a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
+		// a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
+		a.UI.pauseAction.SetIcon(theme.ContentRedoIcon())
 	}
 	a.paused = !a.paused
 }
 
 func (a *App) toggleRandom() {
 	if a.random {
-		a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
+		// a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
+		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
 	} else {
-		a.UI.randomBtn.SetIcon(resourceDice24Png)
+		// a.UI.randomBtn.SetIcon(resourceDice24Png)
+		a.UI.randomAction.SetIcon(resourceDice24Png)
 	}
 	a.random = !a.random
 }
