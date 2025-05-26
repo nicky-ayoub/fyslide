@@ -98,9 +98,9 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
-		widget.NewToolbarAction(resourceBackPng, a.ShowPreviousImage),
+		widget.NewToolbarAction(theme.MediaSkipPreviousIcon(), a.ShowPreviousImage),
 		a.UI.pauseAction,
-		widget.NewToolbarAction(theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
+		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.direction = 1; a.nextImage() }), // Changed icon
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),

@@ -211,6 +211,21 @@ func (a *App) updateInfoText() {
 	// }
 }
 
+// handleImageDisplayError is a helper to set the UI state when an image fails to load or decode.
+// formatName is optional and only used if errorType is "Decoding".
+func (a *App) handleImageDisplayError(imagePath, errorType string, originalError error, formatName string) {
+	a.image.Image = nil
+	a.img = Img{Path: imagePath} // Keep path for context
+	a.image.Refresh()
+	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
+	a.updateInfoText()
+	if errorType == "Decoding" && formatName != "" {
+		log.Printf("Error %s image '%s' (format detected: %s): %v", errorType, imagePath, formatName, originalError)
+	} else {
+		log.Printf("Error %s image '%s': %v", errorType, imagePath, originalError)
+	}
+}
+
 // DisplayImage displays the image on the canvas at the current index
 func (a *App) DisplayImage() error {
 	// decode and update the image + get image path
@@ -252,30 +267,16 @@ func (a *App) DisplayImage() error {
 
 	file, err := os.Open(imagePath) // Use imagePath
 	if err != nil {
-		log.Printf("Unable to open image '%s': %v", imagePath, err)
-		// Error handling: Show placeholder, maybe try next?
-		// For simplicity, just show error state for this image
-		a.image.Image = nil
-		a.img = Img{Path: imagePath} // Keep path for context
-		a.image.Refresh()
-		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Loading %v", filepath.Base(a.img.Path)))
-		a.updateInfoText()
+		a.handleImageDisplayError(imagePath, "Loading", err, "") // No formatName for loading errors
 		// Keep buttons enabled to allow navigation away from the error
 		// a.UI.tagBtn.Enable() // Can still tag/untag even if load failed
 		// a.UI.removeTagBtn.Enable()
 		return fmt.Errorf("unable to open image '%s': %w", imagePath, err)
 	}
 	defer file.Close()
-
 	imageDecoded, formatName, err := image.Decode(file)
 	if err != nil {
-		log.Printf("Unable image.Decode(%q) of format %q: %v", file.Name(), formatName, err)
-		// Similar error handling
-		a.image.Image = nil
-		a.img = Img{Path: file.Name()}
-		a.image.Refresh()
-		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error Decoding %v", filepath.Base(a.img.Path)))
-		a.updateInfoText()
+		a.handleImageDisplayError(file.Name(), "Decoding", err, formatName)
 		// a.UI.tagBtn.Enable()
 		// a.UI.removeTagBtn.Enable()
 		return fmt.Errorf("unable to decode image %s: %w", file.Name(), err)
@@ -831,25 +832,39 @@ func (a *App) init(historyCap int) { // Added historyCap parameter
 
 // Handle toggles
 func (a *App) togglePlay() {
+	a.paused = !a.paused // Toggle state first
 	if a.paused {
-		// a.UI.pauseBtn.SetIcon(theme.MediaPauseIcon())
-		a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+		// Now paused, so button should offer to play
+		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
+			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
+		}
 	} else {
-		// a.UI.pauseBtn.SetIcon(theme.ContentRedoIcon())
-		a.UI.pauseAction.SetIcon(theme.ContentRedoIcon())
+		// Now playing, so button should offer to pause
+		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
+			a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+		}
 	}
-	a.paused = !a.paused
+	if a.UI.toolBar != nil {
+		a.UI.toolBar.Refresh()
+	}
 }
 
 func (a *App) toggleRandom() {
+	a.random = !a.random // Toggle state first
 	if a.random {
-		// a.UI.randomBtn.SetIcon(resourceDiceDisabled24Png)
-		a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
+		// Random is ON, show active dice
+		if a.UI.randomAction != nil {
+			a.UI.randomAction.SetIcon(resourceDice24Png)
+		}
 	} else {
-		// a.UI.randomBtn.SetIcon(resourceDice24Png)
-		a.UI.randomAction.SetIcon(resourceDice24Png)
+		// Random is OFF, show disabled dice
+		if a.UI.randomAction != nil {
+			a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
+		}
 	}
-	a.random = !a.random
+	if a.UI.toolBar != nil {
+		a.UI.toolBar.Refresh()
+	}
 }
 
 // Command-line flags
