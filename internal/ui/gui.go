@@ -56,7 +56,7 @@ func (a *App) selectStackView(index int) {
 	}
 }
 
-func (a *App) buildStatusBar() *fyne.Container {
+func (a *App) buildToolbar() *fyne.Container {
 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
 	// Use the renamed function addTag (if you renamed it)
 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
@@ -118,11 +118,18 @@ func (a *App) buildStatusBar() *fyne.Container {
 // 	return t
 // }
 
+// Helper struct for buildTagsTab to hold tag name and count.
+// Count = -1 indicates a placeholder message not to be treated as a real tag.
+type tagListItem struct {
+	Name  string
+	Count int
+}
+
 // buildTagsTab creates the content for the "Tags" tab with search and global removal
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	var tagList *widget.List
-	var allTags []string            // Holds all tags fetched from DB
-	var filteredData []string       // Holds the tags currently displayed in the list
+	var allTags []tagListItem       // Holds all tags (name and count) fetched from DB
+	var filteredData []tagListItem  // Holds the tags currently displayed in the list
 	var selectedTagForAction string // Holds the string of the currently selected tag for actions
 
 	searchEntry := widget.NewEntry()
@@ -131,24 +138,24 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	// Function to filter and update the list display
 	filterAndRefreshList := func(searchTerm string) {
 		searchTerm = strings.ToLower(strings.TrimSpace(searchTerm))
-		filteredData = []string{} // Clear previous filter results
+		filteredData = []tagListItem{} // Clear previous filter results
 
 		if searchTerm == "" {
 			// If search is empty, show all tags
 			if len(allTags) == 0 {
-				filteredData = []string{"No tags found."} // Keep placeholder if DB is empty
+				filteredData = []tagListItem{{Name: "No tags found.", Count: -1}}
 			} else {
 				filteredData = allTags
 			}
 		} else {
 			// Filter allTags based on searchTerm
 			for _, tag := range allTags {
-				if strings.Contains(strings.ToLower(tag), searchTerm) {
+				if strings.Contains(strings.ToLower(tag.Name), searchTerm) {
 					filteredData = append(filteredData, tag)
 				}
 			}
 			if len(filteredData) == 0 {
-				filteredData = []string{"No tags match search."} // Placeholder for no results
+				filteredData = []tagListItem{{Name: "No tags match search.", Count: -1}}
 			}
 		}
 
@@ -161,14 +168,23 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	// Function to load/reload tag data from DB and apply current filter
 	loadAndFilterTagData := func() {
 		var err error
-		allTags, err = a.tagDB.GetAllTags() // GetAllTags already sorts them
+		// a.tagDB.GetAllTags() now returns []tagging.TagWithCount, error
+		fetchedTagsWithCounts, err := a.tagDB.GetAllTags()
 		if err != nil {
 			log.Printf("Error loading/refreshing tags: %v", err)
-			allTags = []string{} // Ensure allTags is empty on error
-			filteredData = []string{"Error loading tags"}
-		} else if len(allTags) == 0 {
-			filteredData = []string{"No tags found."}
+			allTags = []tagListItem{} // Ensure allTags is empty on error
+			filteredData = []tagListItem{{Name: "Error loading tags", Count: -1}}
+		} else if len(fetchedTagsWithCounts) == 0 { // Check length of fetched data
+			allTags = []tagListItem{}
+			filteredData = []tagListItem{{Name: "No tags found.", Count: -1}}
 		} else {
+			// Convert []tagging.TagWithCount to []tagListItem for the UI
+			tempAllTags := make([]tagListItem, len(fetchedTagsWithCounts))
+			for i, tagInfo := range fetchedTagsWithCounts {
+				tempAllTags[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
+			}
+			allTags = tempAllTags
+
 			// Apply the current search filter after loading
 			filterAndRefreshList(searchEntry.Text)
 			// Disable button and clear selection after refresh
@@ -232,27 +248,35 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 			return widget.NewLabel("tag template") // Use label, simpler
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(filteredData[id]) // Display from filteredData
+			item := filteredData[id]
+			label := obj.(*widget.Label)
+			if item.Count == -1 { // It's a placeholder message
+				label.SetText(item.Name)
+			} else {
+				label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
+			}
 		},
 	)
 
 	tagList.OnSelected = func(id widget.ListItemID) {
 		if id < 0 || id >= len(filteredData) { // Bounds check on filteredData
+			log.Println("DEBUG: Tag selection out of bounds or filteredData empty.")
 			selectedTagForAction = ""
 			removeButton.Disable()
 			return
 		}
-		selectedTag := filteredData[id]
-		isPlaceholder := selectedTag == "Error loading tags" || selectedTag == "No tags found." || selectedTag == "No tags match search."
-		if isPlaceholder {
+		selectedItem := filteredData[id]
+
+		if selectedItem.Count == -1 { // Check if it's a placeholder
+			log.Printf("DEBUG: Placeholder item selected: %s", selectedItem.Name)
 			selectedTagForAction = ""
 			removeButton.Disable()
 			return
 		}
-		selectedTagForAction = selectedTag
+		selectedTagForAction = selectedItem.Name // Store only the name for actions
 		removeButton.Enable()
-		log.Printf("Tag selected from list: %s", selectedTag)
-		a.applyFilter(selectedTag)
+		log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
+		a.applyFilter(selectedItem.Name) // Apply filter using only the tag name
 		if a.UI.contentStack != nil {
 			a.selectStackView(0)
 		}
@@ -280,7 +304,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	} else {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
-	a.UI.statusBar = a.buildStatusBar()
+	a.UI.toolBar = a.buildToolbar() // Renamed field and function call
 
 	// main menu
 	mainMenu := fyne.NewMainMenu(
@@ -344,10 +368,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.imageContentView.Show()
 
 	return container.NewBorder(
-		a.UI.statusBar, // a.UI.toolbar,   // Top
-		nil,            // a.UI.statusBar, // Bottom
-		nil,            // a.UI.explorer, // explorer left
-		nil,            // right
+		a.UI.toolBar, // Top
+		nil,          // a.UI.statusBar, // Bottom
+		nil,          // a.UI.explorer, // explorer left
+		nil,          // right
 		a.UI.contentStack,
 	)
 }

@@ -45,7 +45,7 @@ type UI struct {
 	clockLabel *widget.Label
 	infoText   *widget.RichText
 
-	statusBar *fyne.Container
+	toolBar *fyne.Container
 
 	pauseBtn     *widget.Button
 	removeTagBtn *widget.Button
@@ -326,25 +326,30 @@ func (a *App) DisplayImage() error {
 
 // showFilterDialog displays a dialog to select a tag for filtering.
 func (a *App) showFilterDialog() {
-	allTags, err := a.tagDB.GetAllTags()
+	allTagsWithCounts, err := a.tagDB.GetAllTags() // This now returns []tagging.TagWithCount
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to get tags for filtering: %w", err), a.UI.MainWin)
 		return
 	}
 
-	if len(allTags) == 0 {
+	if len(allTagsWithCounts) == 0 {
 		dialog.ShowInformation("Filter by Tag", "No tags found in the database to filter by.", a.UI.MainWin)
 		return
 	}
 
+	// Extract just the tag names for the dialog options
+	tagNames := make([]string, len(allTagsWithCounts))
+	for i, tagInfo := range allTagsWithCounts {
+		tagNames[i] = tagInfo.Name
+	}
+
 	// Add option to clear filter
-	options := append([]string{"(Show All / Clear Filter)"}, allTags...)
+	options := append([]string{"(Show All / Clear Filter)"}, tagNames...)
 
 	var selectedOption string
 	filterSelector := widget.NewSelect(options, func(selected string) {
 		selectedOption = selected
 	})
-
 	// Set initial selection based on current filter
 	if a.isFiltered {
 		filterSelector.SetSelected(a.currentFilterTag)
@@ -695,21 +700,9 @@ func (a *App) deleteFile() {
 	log.Printf("Deleted file: %s", deletedPath)
 
 	// 2. Remove tags associated with this file from DB
-	// Get tags first, then remove image from each tag's list, then remove image key
-	tags, err := a.tagDB.GetTags(deletedPath)
+	err := a.tagDB.RemoveAllTagsForImage(deletedPath)
 	if err != nil {
-		log.Printf("Warning: Failed to get tags for deleted file %s: %v", deletedPath, err)
-		// Continue deletion from lists anyway
-	} else {
-		for _, tag := range tags {
-			errRemove := a.tagDB.RemoveTag(deletedPath, tag) // This removes both ways
-			if errRemove != nil {
-				log.Printf("Warning: Failed to remove tag '%s' for deleted file %s: %v", tag, deletedPath, errRemove)
-			}
-		}
-		// Explicitly delete the image key from ImagesToTags just in case RemoveTag didn't clear it
-		// (Though it should if the tag list becomes empty)
-		// errDelImgKey := a.tagDB.db.Update(func(tx *bolt.Tx) error { ... delete key ... })
+		log.Printf("Warning: Failed to remove all tags for deleted file %s: %v", deletedPath, err)
 	}
 
 	// 3. Remove from the main image list (a.images)
@@ -1121,27 +1114,49 @@ func (a *App) removeTag() {
 			currentDir := filepath.Dir(a.img.Path)
 			log.Printf("Attempting to remove tag '%s' from all images in directory: %s", selectedTag, currentDir)
 
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+
 			for _, item := range a.images { // Iterate through the original full list
+				// Capture loop variables for the goroutine
+				itemPath := item.Path
+				tagToRemove := selectedTag
+
 				itemDir := filepath.Dir(item.Path)
 				if itemDir == currentDir {
-					errRemove := a.tagDB.RemoveTag(item.Path, selectedTag)
-					if errRemove != nil {
-						log.Printf("Error removing tag '%s' from %s: %v", selectedTag, item.Path, errRemove)
-						errorsEncountered++
-						if firstError == nil {
-							firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(item.Path), errRemove)
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						errRemove := a.tagDB.RemoveTag(itemPath, tagToRemove)
+
+						mu.Lock()
+						defer mu.Unlock()
+
+						if errRemove != nil {
+							log.Printf("Error removing tag '%s' from %s: %v", tagToRemove, itemPath, errRemove)
+							errorsEncountered++
+							if firstError == nil {
+								firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(itemPath), errRemove)
+							}
+						} else {
+							imagesUntaggedCount++
 						}
-					} else {
-						imagesUntaggedCount++
-					}
+					}()
 				}
 			}
+			wg.Wait() // Wait for all goroutines to finish
 
 			err = firstError // Use firstError for the main error status check later
 
-			logMessage = fmt.Sprintf("Attempted removal of tag '%s' for %d images in %s.", selectedTag, imagesUntaggedCount, currentDir)
+			if imagesUntaggedCount > 0 || errorsEncountered > 0 { // Only log if something was attempted
+				logMessage = fmt.Sprintf("Attempted removal of tag '%s'. Images successfully untagged: %d in %s. Errors: %d.",
+					selectedTag, imagesUntaggedCount, currentDir, errorsEncountered)
+			} else {
+				logMessage = fmt.Sprintf("No images in directory %s found requiring removal of tag '%s'.", currentDir, selectedTag)
+			}
+
 			if errorsEncountered > 0 {
-				successMessage = fmt.Sprintf("Tag '%s' removal attempted for %d images.\n%d errors occurred (see logs).", selectedTag, imagesUntaggedCount, errorsEncountered)
+				successMessage = fmt.Sprintf("Tag '%s' removal attempted. %d images untagged.\n%d errors occurred (see logs).", selectedTag, imagesUntaggedCount, errorsEncountered)
 				log.Println(successMessage)
 			}
 		} else {
@@ -1156,6 +1171,9 @@ func (a *App) removeTag() {
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("failed to remove tag '%s': %w", selectedTag, err), a.UI.MainWin)
 		} else {
+			if successMessage != "" { // Show partial success/error summary if there is one
+				dialog.ShowInformation("Tag Removal Status", successMessage, a.UI.MainWin)
+			}
 			log.Println(logMessage)
 			a.updateInfoText()
 		}

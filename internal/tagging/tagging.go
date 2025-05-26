@@ -25,6 +25,12 @@ type TagDB struct {
 	db *bolt.DB
 }
 
+// TagWithCount holds a tag name and the number of images associated with it.
+type TagWithCount struct {
+	Name  string
+	Count int
+}
+
 // NewTagDB creates or opens the tag database file.
 // dbDir specifies the directory where the db file should be stored.
 func NewTagDB(dbDir string) (*TagDB, error) {
@@ -274,17 +280,96 @@ func (tdb *TagDB) GetImages(tag string) ([]string, error) {
 	return images, err
 }
 
-// GetAllTags retrieves a sorted list of all unique tags in the database.
-func (tdb *TagDB) GetAllTags() ([]string, error) {
-	var allTags []string
+// GetAllTags retrieves a sorted list of all unique tags in the database,
+// along with the count of images associated with each tag.
+func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
+	var allTagsInfo []TagWithCount
 	err := tdb.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(tagsToImagesBucket))
-		return bucket.ForEach(func(k, _ []byte) error { // the _ was v
-			// k is the tag name
-			allTags = append(allTags, string(k))
+		return bucket.ForEach(func(k, v []byte) error { // k is tag name, v is list of image paths
+			tagName := string(k)
+			imageList, err := decodeList(v)
+			if err != nil {
+				// Log the error and continue if possible, or return to stop.
+				// For now, let's propagate the error, as malformed data is serious.
+				return fmt.Errorf("failed to decode image list for tag '%s': %w", tagName, err)
+			}
+			count := len(imageList)
+			allTagsInfo = append(allTagsInfo, TagWithCount{Name: tagName, Count: count})
 			return nil // continue iteration
 		})
 	})
-	sort.Strings(allTags)
-	return allTags, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Sort the results by tag name
+	sort.Slice(allTagsInfo, func(i, j int) bool {
+		return allTagsInfo[i].Name < allTagsInfo[j].Name
+	})
+	return allTagsInfo, nil
+}
+
+// RemoveAllTagsForImage removes all tag associations for a given imagePath
+// and cleans up the image's entry from the ImagesToTags bucket.
+func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
+	if imagePath == "" {
+		return fmt.Errorf("image path cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
+		tagBucket := tx.Bucket([]byte(tagsToImagesBucket))
+
+		// 1. Get all tags currently associated with the image
+		currentTagsBytes := imgBucket.Get([]byte(imagePath))
+		if currentTagsBytes == nil {
+			// Image has no tags, nothing to do for its specific tags.
+			// It might still be listed under some tags if data is inconsistent,
+			// but RemoveTag below would handle that if called.
+			// For a full cleanup, we'd iterate all tags and check, but that's less efficient.
+			// This function assumes we primarily care about removing the image's own tag list
+			// and its references from tags it knows it has.
+			return nil
+		}
+		currentTags, err := decodeList(currentTagsBytes)
+		if err != nil {
+			return fmt.Errorf("failed to decode tags for image %s during cleanup: %w", imagePath, err)
+		}
+
+		// 2. For each tag, remove the imagePath from that tag's list of images
+		for _, tag := range currentTags {
+			currentImagesBytes := tagBucket.Get([]byte(tag))
+			if currentImagesBytes == nil {
+				// Tag doesn't exist or has no images, skip
+				continue
+			}
+			currentImages, err := decodeList(currentImagesBytes)
+			if err != nil {
+				return fmt.Errorf("failed to decode images for tag %s during cleanup of %s: %w", tag, imagePath, err)
+			}
+
+			updatedImages := removeFromList(currentImages, imagePath)
+			if len(updatedImages) != len(currentImages) { // If changed
+				if len(updatedImages) == 0 {
+					if err := tagBucket.Delete([]byte(tag)); err != nil {
+						return fmt.Errorf("failed to delete empty image list for tag %s: %w", tag, err)
+					}
+				} else {
+					updatedImagesBytes, err := encodeList(updatedImages)
+					if err != nil {
+						return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
+					}
+					if err := tagBucket.Put([]byte(tag), updatedImagesBytes); err != nil {
+						return fmt.Errorf("failed to put updated images for tag %s: %w", tag, err)
+					}
+				}
+			}
+		}
+
+		// 3. Remove the imagePath key from the imagesToTagsBucket
+		if err := imgBucket.Delete([]byte(imagePath)); err != nil {
+			return fmt.Errorf("failed to delete image key %s from images bucket: %w", imagePath, err)
+		}
+		return nil
+	})
 }
