@@ -188,14 +188,14 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 				return
 			}
 
-			log.Printf("User confirmed global removal of tag: %s", selectedTagForAction)
+			a.addLogMessage(fmt.Sprintf("User confirmed global removal of tag: %s", selectedTagForAction))
 			err := a.removeTagGlobally(selectedTagForAction) // Call the new global removal function
 
 			if err != nil {
-				log.Printf("Error during global removal of tag '%s': %v", selectedTagForAction, err)
+				// Error is already logged by removeTagGlobally (via addLogMessage) and shown in dialog
 				dialog.ShowError(fmt.Errorf("failed to globally remove tag '%s': %w", selectedTagForAction, err), a.UI.MainWin)
 			} else {
-				log.Printf("Successfully initiated global removal of tag: %s", selectedTagForAction)
+				// Success message is logged by removeTagGlobally (via addLogMessage)
 				dialog.ShowInformation("Success", fmt.Sprintf("Tag '%s' removed globally.", selectedTagForAction), a.UI.MainWin)
 				// Refresh the list after successful removal
 				loadAndFilterTagData()
@@ -333,8 +333,26 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.imageContentView.Show()
 
 	// --- Initialize Status Bar ---
-	a.UI.statusBar = widget.NewLabel("Loading images...")
-	a.UI.statusBar.Alignment = fyne.TextAlignCenter // Align text to the center
+	a.UI.statusPathLabel = widget.NewLabel("Loading images...")
+	a.UI.statusPathLabel.Alignment = fyne.TextAlignLeading
+
+	a.UI.statusLogLabel = widget.NewLabel("") // Initially empty
+	a.UI.statusLogLabel.Alignment = fyne.TextAlignCenter
+	a.UI.statusLogLabel.Truncation = fyne.TextTruncateEllipsis
+
+	a.UI.statusLogUpBtn = widget.NewButtonWithIcon("", theme.MoveUpIcon(), a.showPreviousLogMessage)
+	a.UI.statusLogDownBtn = widget.NewButtonWithIcon("", theme.MoveDownIcon(), a.showNextLogMessage)
+	a.UI.statusLogUpBtn.Disable()   // Initially disabled
+	a.UI.statusLogDownBtn.Disable() // Initially disabled
+
+	logScrollButtons := container.NewHBox(a.UI.statusLogUpBtn, a.UI.statusLogDownBtn)
+
+	a.UI.statusBar = container.NewBorder(
+		nil, nil, // top, bottom
+		a.UI.statusPathLabel, // left
+		logScrollButtons,     // right
+		a.UI.statusLogLabel,  // center (main space for log message)
+	)
 
 	return container.NewBorder(
 		a.UI.toolBar,   // top
