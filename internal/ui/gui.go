@@ -55,42 +55,6 @@ func (a *App) selectStackView(index int) {
 	}
 }
 
-// func (a *App) buildRibbon() *fyne.Container {
-// 	a.UI.pauseBtn = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), a.togglePlay)
-// 	// Use the renamed function addTag (if you renamed it)
-// 	a.UI.tagBtn = widget.NewButtonWithIcon("", theme.DocumentIcon(), a.addTag) // Changed from a.tagFile
-// 	// You could add a remove tag button here too if desired
-// 	a.UI.removeTagBtn = widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), a.removeTag) // Need to add removeTagBtn to UI struct
-// 	a.UI.randomBtn = widget.NewButtonWithIcon("", resourceDice24Png, a.toggleRandom)
-
-// 	a.UI.tagBtn.Enable()
-// 	a.UI.randomBtn.Enable()
-
-// 	s := container.NewHBox(
-// 		// --- End Added Buttons ---
-// 		widget.NewButtonWithIcon("", theme.CancelIcon(), func() { a.app.Quit() }),
-// 		widget.NewButtonWithIcon("", theme.MediaSkipPreviousIcon(), a.firstImage),
-// 		widget.NewButtonWithIcon("", resourceBackPng, a.ShowPreviousImage),
-// 		a.UI.pauseBtn,
-// 		widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() { a.direction = 1; a.nextImage() }),
-// 		widget.NewButtonWithIcon("", theme.MediaSkipNextIcon(), a.lastImage),
-// 		a.UI.tagBtn,
-// 		a.UI.removeTagBtn,
-// 		widget.NewButtonWithIcon("", theme.DeleteIcon(), a.deleteFileCheck),
-// 		a.UI.randomBtn,
-// 		layout.NewSpacer(),
-
-// 		// --- ADDED: View Switching Buttons ---
-// 		widget.NewButtonWithIcon("", theme.FileImageIcon(), func() { // Button for Image View
-// 			a.selectStackView(0) // Switch to image view
-// 		}),
-// 		widget.NewButtonWithIcon("", theme.ListIcon(), func() { // Button for Tags View
-// 			a.selectStackView(1) // Switch to tags view
-// 		}),
-// 	)
-// 	return s
-// }
-
 func (a *App) buildToolbar() *widget.Toolbar {
 	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
 	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
@@ -329,11 +293,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 		fyne.NewMenu("Help",
 			fyne.NewMenuItem("About", func() {
-				dialog.ShowCustom("About", "Ok", container.NewVBox(
-					widget.NewLabel("A simple image slide show."),
-					widget.NewHyperlink("Help and more information on Github", parseURL("https://github.com/nicky-ayoub/fyslide")),
-					widget.NewLabel("v1.2 | License: MIT"),
-				), a.UI.MainWin)
+				aboutDialog := NewAbout(&a.UI.MainWin, "About FySlide", resourceIconPng)
+				aboutDialog.Show()
 			}),
 		),
 	)
@@ -371,11 +332,15 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.tagsContentView.Hide()
 	a.UI.imageContentView.Show()
 
+	// --- Initialize Status Bar ---
+	a.UI.statusBar = widget.NewLabel("Loading images...")
+	a.UI.statusBar.Alignment = fyne.TextAlignCenter // Align text to the center
+
 	return container.NewBorder(
-		a.UI.toolBar, // top
-		nil,          // a.UI.ribbonBar, // bottom
-		nil,          // a.UI.explorer, // explorer left
-		nil,          // right
+		a.UI.toolBar,   // top
+		a.UI.statusBar, // bottom
+		nil,            // a.UI.explorer, // explorer left
+		nil,            // right
 		a.UI.contentStack,
 	)
 }

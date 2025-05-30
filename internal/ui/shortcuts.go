@@ -29,10 +29,10 @@ func (a *App) buildKeyboardShortcuts() {
 		case fyne.KeyP, fyne.KeySpace:
 			a.togglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
-			a.index -= 20
+			a.index -= a.skipCount // Use configurable skip count
 			a.nextImage()
 		case fyne.KeyPageDown, fyne.KeyDown:
-			a.index += 20
+			a.index += a.skipCount // Use configurable skip count
 			a.nextImage()
 		case fyne.KeyHome:
 			a.firstImage()
@@ -54,10 +54,12 @@ func (a *App) showShortcuts() {
 		"Ctrl+Q",
 		"Arrow Right", "Arrow Left",
 		"Page Up", "Page Down",
+		"Arrow Up", "Arrow Down", // KeyUp and KeyDown also skip
 		"Home", "End",
+		"P or Space", "Delete", "Esc",
 	}
 	descriptions := []string{
-		"Quit Application",
+		"Quit Application (Ctrl+Q or Q)",
 		"Next Image", "Previous Image",
 		"Skip 20 Images Back", "Skip 20 Images Forward",
 		"First Image", "Last Image",
@@ -65,27 +67,21 @@ func (a *App) showShortcuts() {
 
 	win := a.app.NewWindow("Keyboard Shortcuts")
 	table := widget.NewTable(
-		func() (int, int) { return len(shortcuts), 2 },
+		func() (int, int) { return len(descriptions) + 1, 2 }, // +1 for header row
 		func() fyne.CanvasObject {
 			return widget.NewLabel("")
 		},
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			label := obj.(*widget.Label)
-			if id.Row == 0 {
-				if id.Col == 0 {
-					label.SetText("Description")
-					label.TextStyle.Bold = true
-				} else {
-					label.SetText("Shortcut")
-					label.TextStyle.Bold = true
-				}
-			} else {
-				if id.Col == 0 {
-					label.SetText(descriptions[id.Row-1])
-				} else {
-					label.SetText(shortcuts[id.Row-1])
-				}
+			isHeader := id.Row == 0 // First row is header
+			dataRowIndex := id.Row - 1
+
+			if id.Col == 0 { // Description column
+				label.SetText(ternary(isHeader, "Description", descriptions[dataRowIndex]))
+			} else { // Shortcut column
+				label.SetText(ternary(isHeader, "Shortcut", shortcuts[dataRowIndex]))
 			}
+			label.TextStyle.Bold = isHeader
 		},
 	)
 	table.SetColumnWidth(0, 250)

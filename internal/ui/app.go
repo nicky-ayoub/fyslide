@@ -58,6 +58,7 @@ type UI struct {
 	contentStack     *fyne.Container   // ADDED: To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
 	tagsContentView  fyne.CanvasObject // ADDED: Holds the tags view content
+	statusBar        *widget.Label     // NEW: For the status bar
 
 }
 
@@ -91,6 +92,9 @@ type App struct {
 	currentFilterTag string // NEW: The tag currently being filtered by
 
 	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
+
+	slideshowInterval time.Duration // NEW: Configurable slideshow interval
+	skipCount         int           // NEW: Configurable skip count for PageUp/PageDown
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -123,6 +127,23 @@ func (a *App) getCurrentItem() *scan.FileItem {
 		return nil
 	}
 	return &currentList[a.index]
+}
+
+// updateStatusBar updates the text of the status bar.
+func (a *App) updateStatusBar() {
+	if a.UI.statusBar == nil {
+		return
+	}
+	currentItem := a.getCurrentItem()
+	statusText := "Ready"
+	if currentItem != nil && a.img.Path != "" {
+		statusText = fmt.Sprintf("%s  |  Image %d / %d", a.img.Path, a.index+1, a.getCurrentImageCount())
+		if a.isFiltered {
+			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
+		}
+	}
+	statusText += ternary(a.paused, " | Paused", " | Playing")
+	a.UI.statusBar.SetText(statusText)
 }
 
 // updateInfoText fetches current image info and tags, then updates the infoText widget.
@@ -238,6 +259,7 @@ func (a *App) DisplayImage() error {
 		a.img = Img{}
 		a.image.Refresh()
 		a.UI.MainWin.SetTitle("FySlide")
+		a.updateStatusBar()
 		a.updateInfoText()
 		// a.UI.tagBtn.Disable()
 		// a.UI.removeTagBtn.Disable()
@@ -290,8 +312,7 @@ func (a *App) DisplayImage() error {
 
 	// --- Update Title, Status Bar, and Info Text ---
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", filepath.Base(a.img.Path)))
-	// Update status label based on filter state
-
+	a.updateStatusBar()
 	a.updateInfoText() // Call the function to update the info panel
 
 	// --- Ensure buttons are enabled (if count > 0) ---
@@ -427,6 +448,7 @@ func (a *App) applyFilter(tag string) {
 	a.isNavigatingHistory = false // Applying a filter is a new view, not history navigation
 	a.DisplayImage()              // Display the first image in the filtered set
 	a.updateInfoText()            // Update info panel immediately
+	a.updateStatusBar()
 }
 
 // clearFilter removes any active tag filter.
@@ -444,6 +466,7 @@ func (a *App) clearFilter() {
 	a.isNavigatingHistory = false // Clearing a filter is a new view state
 	a.DisplayImage()              // Display the first image in the full set
 	a.updateInfoText()            // Update info panel immediately
+	a.updateStatusBar()
 }
 
 func (a *App) firstImage() {
@@ -791,6 +814,7 @@ func (a *App) deleteFile() {
 		a.DisplayImage() // Display the image at the (potentially adjusted) index
 	}
 	a.updateInfoText() // Update counts etc.
+	a.updateStatusBar()
 }
 
 // func pathToURI(path string) (fyne.URI, error) {
@@ -816,10 +840,12 @@ func (a *App) imageCount() int {
 	return len(a.images)
 }
 
-func (a *App) init(historyCap int) { // Added historyCap parameter
+func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{}
 	a.historyCapacity = historyCap
-	if a.historyCapacity < 0 { // Ensure non-negative
+	a.slideshowInterval = time.Duration(slideshowIntervalSec*1000) * time.Millisecond
+	a.skipCount = skipNum
+	if a.historyCapacity < 0 {
 		log.Println("Warning: History capacity cannot be negative. Setting to 0 (disabled).")
 		a.historyCapacity = 0
 	}
@@ -828,6 +854,15 @@ func (a *App) init(historyCap int) { // Added historyCap parameter
 	}
 	a.currentHistoryIndex = -1    // Indicates history is empty or pointer is before the first item
 	a.isNavigatingHistory = false // Default state
+
+	if a.slideshowInterval <= 0 {
+		log.Printf("Warning: Slideshow interval must be positive. Defaulting to 2s. Got: %.2f", slideshowIntervalSec)
+		a.slideshowInterval = 2 * time.Second
+	}
+	if a.skipCount <= 0 {
+		log.Printf("Warning: Skip count must be positive. Defaulting to 20. Got: %d", skipNum)
+		a.skipCount = 20
+	}
 }
 
 // Handle toggles
@@ -847,6 +882,7 @@ func (a *App) togglePlay() {
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
+	a.updateStatusBar()
 }
 
 func (a *App) toggleRandom() {
@@ -869,6 +905,8 @@ func (a *App) toggleRandom() {
 
 // Command-line flags
 var historySizeFlag = flag.Int("history-size", 10, "Number of last viewed images to remember (0 to disable). Min: 0.")
+var slideshowIntervalFlag = flag.Float64("slideshow-interval", 2.0, "Slideshow image display interval in seconds. Min: 0.1.")
+var skipCountFlag = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
 
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
@@ -921,12 +959,13 @@ func CreateApplication() {
 	})
 
 	ui.UI.MainWin.SetIcon(resourceIconPng)
-	ui.init(*historySizeFlag) // Pass parsed flag to init
+	ui.init(*historySizeFlag, *slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
 	ui.random = true
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
 
+	// Status bar will be initialized in buildMainUI
 	ui.UI.MainWin.SetContent(ui.buildMainUI())
 
 	go ui.loadImages(dir)
@@ -947,13 +986,14 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(ui.slideshowInterval)
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)
 		go ui.updateTimer()
 		ui.DisplayImage()
 	} else {
 		// Handle case where no images were found/loaded
+		ui.updateStatusBar() // Show "Ready" or similar
 		ui.updateInfoText()
 	}
 
@@ -1202,6 +1242,69 @@ func (a *App) removeTag() {
 	}, a.UI.MainWin)
 }
 
+func ternary(condition bool, trueVal, falseVal string) string {
+	if condition {
+		return trueVal
+	}
+	return falseVal
+}
+
+// _addTagsToDirectory is a helper to apply a list of tags to all images in a given directory.
+// It uses goroutines for concurrent database operations.
+func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
+	wg *sync.WaitGroup, mu *sync.Mutex,
+	firstError *error, totalTagsAttempted *int, successfulAdditions *int, errorsEncountered *int, imagesProcessed *int) {
+
+	log.Printf("Attempting to apply %d tag(s) [%s] to all images in directory: %s", len(tagsToAdd), strings.Join(tagsToAdd, ", "), currentDir)
+
+	for _, imageItem := range a.images { // Iterate through the original full list
+		// Capture loop variables for the goroutine
+		itemPath := imageItem.Path
+		currentTagsToAdd := tagsToAdd // Capture for goroutine
+
+		itemDir := filepath.Dir(itemPath)
+		if itemDir == currentDir {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				localTagsAttemptedOnThisImage := 0
+				localSuccessfulAdditionsOnThisImage := 0
+				localErrorsOnThisImage := 0
+				var localFirstErrorForThisImage error
+
+				for _, tag := range currentTagsToAdd {
+					localTagsAttemptedOnThisImage++
+					errAdd := a.tagDB.AddTag(itemPath, tag)
+					if errAdd != nil {
+						log.Printf("Error adding tag '%s' to %s: %v", tag, itemPath, errAdd)
+						localErrorsOnThisImage++
+						if localFirstErrorForThisImage == nil {
+							localFirstErrorForThisImage = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(itemPath), tag, errAdd)
+						}
+					} else {
+						localSuccessfulAdditionsOnThisImage++
+					}
+				}
+
+				mu.Lock()
+				(*imagesProcessed)++
+				*totalTagsAttempted += localTagsAttemptedOnThisImage
+				*successfulAdditions += localSuccessfulAdditionsOnThisImage
+				*errorsEncountered += localErrorsOnThisImage
+				if localFirstErrorForThisImage != nil && *firstError == nil {
+					*firstError = localFirstErrorForThisImage
+				}
+				mu.Unlock()
+			}()
+		}
+	}
+	wg.Wait() // Wait for all goroutines to finish
+
+	log.Printf("Directory tagging for %d tag(s) in '%s' complete. Images processed: %d. Total attempts: %d, Successes: %d, Errors: %d.",
+		len(tagsToAdd), currentDir, *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered)
+}
+
 // addTag shows a dialog to add a new tag to the current image
 func (a *App) addTag() {
 	if a.img.Path == "" {
@@ -1286,55 +1389,10 @@ func (a *App) addTag() {
 		// --- It correctly iterates through the 'tagsToAdd' slice ---
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			log.Printf("Attempting to apply %d tag(s) [%s] to all images in directory: %s", len(tagsToAdd), strings.Join(tagsToAdd, ", "), currentDir)
-
 			var wg sync.WaitGroup
 			var mu sync.Mutex // Mutex to protect shared variables
 			imagesProcessed := 0
-
-			for _, imageItem := range a.images { // Iterate through the original full list
-				// Capture loop variables for the goroutine
-				itemPath := imageItem.Path    // Capture path
-				currentTagsToAdd := tagsToAdd // Capture tags to add for this goroutine
-
-				itemDir := filepath.Dir(itemPath) // Use captured itemPath or imageItem.Path
-				if itemDir == currentDir {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-
-						localTagsAttemptedOnThisImage := 0
-						localSuccessfulAdditionsOnThisImage := 0
-						localErrorsOnThisImage := 0
-						var localFirstErrorForThisImage error
-
-						for _, tag := range currentTagsToAdd {
-							localTagsAttemptedOnThisImage++
-							errAdd := a.tagDB.AddTag(itemPath, tag)
-							if errAdd != nil {
-								log.Printf("Error adding tag '%s' to %s: %v", tag, itemPath, errAdd)
-								localErrorsOnThisImage++
-								if localFirstErrorForThisImage == nil {
-									localFirstErrorForThisImage = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(itemPath), tag, errAdd)
-								}
-							} else {
-								localSuccessfulAdditionsOnThisImage++
-							}
-						}
-
-						mu.Lock()
-						imagesProcessed++ // This image's processing is complete
-						totalTagsAttempted += localTagsAttemptedOnThisImage
-						successfulAdditions += localSuccessfulAdditionsOnThisImage
-						errorsEncountered += localErrorsOnThisImage
-						if localFirstErrorForThisImage != nil && firstError == nil {
-							firstError = localFirstErrorForThisImage
-						}
-						mu.Unlock()
-					}()
-				}
-			}
-			wg.Wait() // Wait for all goroutines to finish
+			a._addTagsToDirectory(tagsToAdd, currentDir, &wg, &mu, &firstError, &totalTagsAttempted, &successfulAdditions, &errorsEncountered, &imagesProcessed)
 
 			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %d images in %s. Successes: %d, Errors: %d", len(tagsToAdd), imagesProcessed, currentDir, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
