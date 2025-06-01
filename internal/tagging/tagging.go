@@ -16,8 +16,8 @@ import (
 
 const (
 	dbFileName         = "fyslide_tags.db"
-	imagesToTagsBucket = "ImagesToTags"
-	tagsToImagesBucket = "TagsToImages"
+	ImagesToTagsBucket = "ImagesToTags" // Exported
+	TagsToImagesBucket = "TagsToImages" // Exported
 )
 
 // TagDB manages the tagging database.
@@ -59,13 +59,13 @@ func NewTagDB(dbDir string) (*TagDB, error) {
 
 	// Ensure buckets exist
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(imagesToTagsBucket))
+		_, err := tx.CreateBucketIfNotExists([]byte(ImagesToTagsBucket))
 		if err != nil {
-			return fmt.Errorf("failed to create bucket %s: %w", imagesToTagsBucket, err)
+			return fmt.Errorf("failed to create bucket %s: %w", ImagesToTagsBucket, err)
 		}
-		_, err = tx.CreateBucketIfNotExists([]byte(tagsToImagesBucket))
+		_, err = tx.CreateBucketIfNotExists([]byte(TagsToImagesBucket))
 		if err != nil {
-			return fmt.Errorf("failed to create bucket %s: %w", tagsToImagesBucket, err)
+			return fmt.Errorf("failed to create bucket %s: %w", TagsToImagesBucket, err)
 		}
 		return nil
 	})
@@ -88,7 +88,8 @@ func (tdb *TagDB) Close() error {
 
 // --- Helper Functions ---
 
-func encodeList(list []string) ([]byte, error) {
+// EncodeList marshals a list of strings into a JSON byte slice.
+func EncodeList(list []string) ([]byte, error) {
 	return json.Marshal(list)
 }
 
@@ -130,8 +131,8 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 		return fmt.Errorf("image path and tag cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(tagsToImagesBucket))
+		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
 
 		// 1. Update Image -> Tags mapping
 		currentTagsBytes := imgBucket.Get([]byte(imagePath))
@@ -142,7 +143,7 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 
 		updatedTags, added := addToList(currentTags, tag)
 		if added { // Only update if the tag was actually added
-			updatedTagsBytes, err := encodeList(updatedTags)
+			updatedTagsBytes, err := EncodeList(updatedTags)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
 			}
@@ -160,7 +161,7 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 
 		updatedImages, added := addToList(currentImages, imagePath)
 		if added { // Only update if the image path was actually added
-			updatedImagesBytes, err := encodeList(updatedImages)
+			updatedImagesBytes, err := EncodeList(updatedImages)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 			}
@@ -179,8 +180,8 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		return fmt.Errorf("image path and tag cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(tagsToImagesBucket))
+		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
 
 		// 1. Update Image -> Tags mapping
 		currentTagsBytes := imgBucket.Get([]byte(imagePath))
@@ -192,7 +193,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		updatedTags := removeFromList(currentTags, tag)
 		// Only update if the list actually changed
 		if len(updatedTags) != len(currentTags) {
-			updatedTagsBytes, err := encodeList(updatedTags)
+			updatedTagsBytes, err := EncodeList(updatedTags)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
 			}
@@ -218,7 +219,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		updatedImages := removeFromList(currentImages, imagePath)
 		// Only update if the list actually changed
 		if len(updatedImages) != len(currentImages) {
-			updatedImagesBytes, err := encodeList(updatedImages)
+			updatedImagesBytes, err := EncodeList(updatedImages)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 			}
@@ -242,7 +243,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 func (tdb *TagDB) GetTags(imagePath string) ([]string, error) {
 	var tags []string
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(imagesToTagsBucket))
+		bucket := tx.Bucket([]byte(ImagesToTagsBucket))
 		tagsBytes := bucket.Get([]byte(imagePath))
 		if tagsBytes == nil {
 			tags = []string{} // No tags found, return empty list
@@ -263,7 +264,7 @@ func (tdb *TagDB) GetTags(imagePath string) ([]string, error) {
 func (tdb *TagDB) GetImages(tag string) ([]string, error) {
 	var images []string
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(tagsToImagesBucket))
+		bucket := tx.Bucket([]byte(TagsToImagesBucket))
 		imagesBytes := bucket.Get([]byte(tag))
 		if imagesBytes == nil {
 			images = []string{} // No images found, return empty list
@@ -285,7 +286,7 @@ func (tdb *TagDB) GetImages(tag string) ([]string, error) {
 func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
 	var allTagsInfo []TagWithCount
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(tagsToImagesBucket))
+		bucket := tx.Bucket([]byte(TagsToImagesBucket))
 		return bucket.ForEach(func(k, v []byte) error { // k is tag name, v is list of image paths
 			tagName := string(k)
 			imageList, err := decodeList(v)
@@ -317,8 +318,8 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 		return fmt.Errorf("image path cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(tagsToImagesBucket))
+		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
 
 		// 1. Get all tags currently associated with the image
 		currentTagsBytes := imgBucket.Get([]byte(imagePath))
@@ -355,7 +356,7 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 						return fmt.Errorf("failed to delete empty image list for tag %s: %w", tag, err)
 					}
 				} else {
-					updatedImagesBytes, err := encodeList(updatedImages)
+					updatedImagesBytes, err := EncodeList(updatedImages)
 					if err != nil {
 						return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 					}
@@ -372,4 +373,46 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 		}
 		return nil
 	})
+}
+
+// DeleteOrphanedTagKey directly removes a tag key from the TagsToImages bucket.
+// This is intended for cleanup scenarios where a tag is known to be orphaned
+// (i.e., its list of associated images is empty, as determined by the caller).
+func (tdb *TagDB) DeleteOrphanedTagKey(tag string) error {
+	if tag == "" {
+		return fmt.Errorf("tag cannot be empty for DeleteOrphanedTagKey")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
+		if tagBucket == nil {
+			// This should not happen if DB is initialized correctly
+			return fmt.Errorf("bucket %s not found during DeleteOrphanedTagKey", TagsToImagesBucket)
+		}
+		// We trust that the caller has determined this tag is orphaned.
+		// If the key doesn't exist, Delete does nothing and returns nil.
+		if err := tagBucket.Delete([]byte(tag)); err != nil {
+			return fmt.Errorf("failed to delete orphaned tag key '%s' from %s bucket: %w", tag, TagsToImagesBucket, err)
+		}
+		return nil
+	})
+}
+
+// GetAllImagePaths retrieves all image paths stored in the ImagesToTagsBucket.
+func (tdb *TagDB) GetAllImagePaths() ([]string, error) {
+	var paths []string
+	err := tdb.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		if bucket == nil {
+			// Bucket doesn't exist, which means no images are tagged.
+			return nil // Not an error, just no paths.
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			paths = append(paths, string(k))
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all image paths: %w", err)
+	}
+	return paths, nil
 }

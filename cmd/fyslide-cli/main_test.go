@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fyslide/internal/tagging"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt" // Import the bolt package
 )
 
 // setupTestDB creates a temporary database file for testing and returns its path
@@ -480,5 +482,146 @@ func TestBatchRemoveCommand(t *testing.T) {
 		tdbVerify.Close()
 		assert.NotContains(t, tags1, "commonTag")
 		assert.NotContains(t, tags2, "commonTag")
+	})
+}
+
+func TestCleanCommand(t *testing.T) {
+	dbPath, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	testDir := t.TempDir()
+	realFile1Path := filepath.Join(testDir, "realfile1.jpg")
+	realFile2Path := filepath.Join(testDir, "realfile2.png") // Will exist but have no tags initially
+	fakeFile1Path := filepath.Join(testDir, "fakefile1.jpg") // Will not exist on disk
+
+	absRealFile1, _ := filepath.Abs(realFile1Path)
+	absFakeFile1, _ := filepath.Abs(fakeFile1Path)
+
+	// Create real file
+	err := os.WriteFile(realFile1Path, []byte("real content 1"), 0644)
+	require.NoError(t, err)
+	err = os.WriteFile(realFile2Path, []byte("real content 2"), 0644)
+	require.NoError(t, err)
+
+	// Setup initial DB state
+	tdb, err := tagging.NewTagDB(dbPath)
+	require.NoError(t, err)
+	// Tags for a real file
+	require.NoError(t, tdb.AddTag(absRealFile1, "tagForRealFile"))
+	require.NoError(t, tdb.AddTag(absRealFile1, "commonTag"))
+	// Tags for a file that will be "non-existent"
+	require.NoError(t, tdb.AddTag(absFakeFile1, "tagForFakeFile"))
+	require.NoError(t, tdb.AddTag(absFakeFile1, "commonTag"))
+	// Create an orphaned tag (add it, then ensure no files reference it)
+	// For this test, we'll add it to fakeFile1, then fakeFile1 is "deleted"
+	// The clean command should then find "tagForFakeFile" and "commonTag" (if only on fakeFile1) as orphaned
+	// Let's add a truly orphaned tag manually for clarity in testing phase 2
+	// To do this, we add it to a dummy path and then remove that path from the tag's list
+	// or more simply, add a tag that is never associated with any file that exists or is in tagging.ImagesToTagsBucket.
+	// Forcing an orphan: Add tag "orphanedTagDirectly" to TagsToImages with an empty image list
+	// We need to open the bolt.DB directly for this low-level setup.
+	boltDB, err := bolt.Open(dbPath, 0600, nil)
+	require.NoError(t, err, "Failed to open bolt DB directly for test setup")
+	err = boltDB.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(tagging.TagsToImagesBucket))
+		require.NotNil(t, b, "TagsToImagesBucket not found during direct bolt update")
+		emptyListBytes, _ := json.Marshal([]string{}) // Use json.Marshal directly
+		return b.Put([]byte("orphanedtagdirectly"), emptyListBytes)
+	})
+	require.NoError(t, err) // Check error from Update before closing
+	require.NoError(t, boltDB.Close())
+	tdb.Close()
+
+	t.Run("clean dry run", func(t *testing.T) {
+		stdout, stderr, err := executeCommandC(rootCmd, "--dbpath", dbPath, "clean", "--dry-run")
+		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
+
+		assert.Contains(t, stdout, "DRY RUN: No changes will be made to the database.")
+		assert.Contains(t, stdout, "DRY RUN: Would remove all tags for non-existent file: "+absFakeFile1)
+		assert.Contains(t, stdout, "DRY RUN: Would remove orphaned tag: orphanedtagdirectly")
+		// "commonTag" might also be listed as orphaned if absFakeFile1 was its only association after its removal.
+		// "tagForFakeFile" will also be listed as orphaned after absFakeFile1 is processed.
+		assert.Contains(t, stdout, "Non-existent image file entries that would be processed: 1")
+		// The number of orphaned tags can be 1, 2 or 3 depending on how "commonTag" and "tagForFakeFile" are handled
+		// after fakefile1 is processed. The test ensures "orphanedtagdirectly" is definitely one.
+		// Let's check for at least 1. A more precise count would require simulating the multi-stage cleanup.
+		assert.Regexp(t, `Orphaned tags that would be removed: [1-3]`, stdout) // commonTag, tagForFakeFile, orphanedtagdirectly
+
+		// Verify DB is unchanged
+		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tagsReal, _ := tdbVerify.GetTags(absRealFile1)
+		assert.Contains(t, tagsReal, "tagForRealFile")
+		tagsFake, _ := tdbVerify.GetTags(absFakeFile1)
+		assert.Contains(t, tagsFake, "tagForFakeFile")
+		allTags, _ := tdbVerify.GetAllTags()
+		foundOrphaned := false
+		for _, ti := range allTags {
+			if ti.Name == "orphanedtagdirectly" {
+				foundOrphaned = true
+				break
+			}
+		}
+		assert.True(t, foundOrphaned, "orphanedtagdirectly should still exist after dry run")
+		tdbVerify.Close()
+	})
+
+	t.Run("clean actual run", func(t *testing.T) {
+		// Re-setup DB state as dry run might have been run before, ensure clean state for actual run
+		tdbSetup, err := tagging.NewTagDB(dbPath)
+		require.NoError(t, err)
+		// Clear and re-add
+		tdbSetup.RemoveAllTagsForImage(absRealFile1)
+		tdbSetup.RemoveAllTagsForImage(absFakeFile1)
+		tdbSetup.DeleteOrphanedTagKey("orphanedtagdirectly") // Clean from previous test if any
+		tdbSetup.DeleteOrphanedTagKey("commonTag")
+		tdbSetup.DeleteOrphanedTagKey("tagForFakeFile")
+
+		require.NoError(t, tdbSetup.AddTag(absRealFile1, "tagForRealFile"))
+		require.NoError(t, tdbSetup.AddTag(absRealFile1, "commontag"))      // Use lowercase for consistency
+		require.NoError(t, tdbSetup.AddTag(absFakeFile1, "tagForFakeFile")) // For non-existent file
+		require.NoError(t, tdbSetup.AddTag(absFakeFile1, "commontag"))      // For non-existent file
+
+		boltDBSetup, err := bolt.Open(dbPath, 0600, nil) // Open bolt DB directly for setup
+		require.NoError(t, err)
+		err = boltDBSetup.Update(func(tx *bolt.Tx) error { // Explicitly orphaned tag
+			b := tx.Bucket([]byte(tagging.TagsToImagesBucket))
+			require.NotNil(t, b, "TagsToImagesBucket not found during direct bolt update for actual run setup")
+			emptyListBytes, _ := json.Marshal([]string{}) // Use json.Marshal directly
+			return b.Put([]byte("orphanedtagdirectly"), emptyListBytes)
+		})
+		require.NoError(t, err)                 // Check error from Update
+		require.NoError(t, boltDBSetup.Close()) // Close the directly opened bolt.DB
+		tdbSetup.Close()                        // Close the tagging.TagDB wrapper
+
+		stdout, stderr, err := executeCommandC(rootCmd, "--dbpath", dbPath, "clean")
+		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
+
+		assert.Contains(t, stdout, "Removing all tags for non-existent file: "+absFakeFile1)
+		assert.Contains(t, stdout, "Removing orphaned tag: orphanedtagdirectly")
+		assert.Contains(t, stdout, "Removing orphaned tag: tagforfakefile") // Became orphaned after fakefile1 processing
+		// commonTag might also be removed if absFakeFile1 was its only remaining reference after realFile1's commonTag
+		// The summary counts are key here.
+		assert.Contains(t, stdout, "Non-existent image file entries processed: 1")
+		assert.Regexp(t, `Orphaned tags removed: [1-3]`, stdout) // orphanedtagdirectly, tagforfakefile, potentially commonTag
+
+		// Verify DB state
+		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tagsReal, _ := tdbVerify.GetTags(absRealFile1)
+		assert.ElementsMatch(t, []string{"commontag", "tagforrealfile"}, tagsReal, "Real file should retain its tags")
+
+		tagsFake, _ := tdbVerify.GetTags(absFakeFile1)
+		assert.Empty(t, tagsFake, "Tags for fake file should be gone")
+
+		allTags, _ := tdbVerify.GetAllTags()
+		tagNames := []string{}
+		for _, ti := range allTags {
+			tagNames = append(tagNames, ti.Name)
+		}
+		assert.NotContains(t, tagNames, "tagForFakeFile")
+		assert.NotContains(t, tagNames, "orphanedtagdirectly")
+		// commonTag should still exist if it was on realFile1
+		assert.Contains(t, tagNames, "commontag")
+		assert.Contains(t, tagNames, "tagforrealfile")
+		tdbVerify.Close()
 	})
 }

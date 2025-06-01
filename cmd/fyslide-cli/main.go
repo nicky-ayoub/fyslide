@@ -406,6 +406,98 @@ found directly within the given directory. This command does not recurse into su
 	},
 }
 
+// cleanCmd represents the database cleanup command
+var cleanCmd = &cobra.Command{
+	Use:   "clean",
+	Short: "Clean the tag database by removing stale entries",
+	Long: `Performs cleanup operations on the tag database:
+1. Removes tag entries for image files that no longer exist on the filesystem.
+2. Removes tags that are no longer associated with any images (orphaned tags).`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.Println("Starting database cleanup...")
+		if dryRunFlag {
+			cmd.Println("DRY RUN: No changes will be made to the database.")
+		}
+
+		var firstError error
+		actualFilesCleaned := 0
+		actualTagsCleaned := 0
+		potentialFilesToClean := 0
+		potentialTagsToClean := 0
+
+		// Phase 1: Clean tags for non-existent image files
+		cmd.Println("\nPhase 1: Checking for non-existent image files and their tags...")
+		imagePathsFromDB, err := tagDB.GetAllImagePaths()
+		if err != nil {
+			cmd.PrintErrf("  Error reading image paths from DB: %v\n", err)
+			return fmt.Errorf("failed to get image paths for cleanup: %w", err)
+		}
+
+		for _, imagePath := range imagePathsFromDB {
+			_, statErr := os.Stat(imagePath)
+			if os.IsNotExist(statErr) {
+				potentialFilesToClean++
+				if dryRunFlag {
+					cmd.Printf("  DRY RUN: Would remove all tags for non-existent file: %s\n", imagePath)
+				} else {
+					cmd.Printf("  Removing all tags for non-existent file: %s\n", imagePath)
+					if err := tagDB.RemoveAllTagsForImage(imagePath); err != nil {
+						cmd.PrintErrf("    Error removing tags for %s: %v\n", imagePath, err)
+						if firstError == nil {
+							firstError = err
+						}
+					} else {
+						cmd.Printf("    Successfully removed tags for %s.\n", imagePath)
+						actualFilesCleaned++
+					}
+				}
+			}
+		}
+
+		// Phase 2: Clean orphaned tags (tags with no images)
+		cmd.Println("\nPhase 2: Checking for orphaned tags...")
+		allTagsWithCounts, err := tagDB.GetAllTags() // This reads from TagsToImages
+		if err != nil {
+			cmd.PrintErrf("  Error getting all tags for orphan check: %v\n", err)
+			if firstError == nil {
+				firstError = err
+			}
+		} else {
+			for _, tagInfo := range allTagsWithCounts {
+				if tagInfo.Count == 0 { // Tag exists in TagsToImages but has an empty image list
+					potentialTagsToClean++
+					if dryRunFlag {
+						cmd.Printf("  DRY RUN: Would remove orphaned tag: %s\n", tagInfo.Name)
+					} else {
+						cmd.Printf("  Removing orphaned tag: %s\n", tagInfo.Name)
+						if errDel := tagDB.DeleteOrphanedTagKey(tagInfo.Name); errDel != nil {
+							cmd.PrintErrf("    Error removing orphaned tag '%s': %v\n", tagInfo.Name, errDel)
+							if firstError == nil {
+								firstError = errDel
+							}
+						} else {
+							cmd.Printf("    Successfully removed orphaned tag: %s\n", tagInfo.Name)
+							actualTagsCleaned++
+						}
+					}
+				}
+			}
+		}
+
+		cmd.Printf("\nCleanup process complete.\n")
+		cmd.Printf("Summary:\n")
+		if dryRunFlag {
+			cmd.Printf("  Non-existent image file entries that would be processed: %d\n", potentialFilesToClean)
+			cmd.Printf("  Orphaned tags that would be removed: %d\n", potentialTagsToClean)
+		} else {
+			cmd.Printf("  Non-existent image file entries processed: %d\n", actualFilesCleaned)
+			cmd.Printf("  Orphaned tags removed: %d\n", actualTagsCleaned)
+		}
+		return firstError
+	},
+}
+
 func init() {
 	// Add persistent flags to the root command (available to all subcommands)
 	// The default value for dbPathFlag is "", which means tagging.NewTagDB will use its internal default.
@@ -417,6 +509,7 @@ func init() {
 	batchRemoveCmd.Flags().BoolVar(&forceFlag, "force", false, "Force batch removal without confirmation.")
 	normalizeCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the normalization process without making changes.")
 	replaceTagCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the tag replacement process without making changes.")
+	cleanCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the cleanup process without making changes.")
 
 	// Add subcommands to the root command
 	rootCmd.AddCommand(addCmd)
@@ -428,6 +521,7 @@ func init() {
 	rootCmd.AddCommand(batchRemoveCmd)
 	rootCmd.AddCommand(replaceTagCmd)
 	rootCmd.AddCommand(normalizeCmd)
+	rootCmd.AddCommand(cleanCmd)
 }
 
 // processFilesInDirectory is a helper function to reduce duplication between batch-add and batch-remove
