@@ -83,7 +83,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 			a.selectStackView(tagsViewIndex) // Switch to tags view
 		}),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
-			a.addLogMessage("Help documentation is not yet available.")
+			a.showHelpDialog()
 		}),
 	)
 
@@ -268,6 +268,48 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	return content, loadAndFilterTagData
 }
 
+// showHelpDialog displays a simple help dialog with application features.
+func (a *App) showHelpDialog() {
+	helpText := `
+## FySlide Help
+
+FySlide is an image viewer with tagging capabilities.
+
+**Core Features:**
+*   **Image Viewing:** Navigate through images using toolbar buttons or keyboard shortcuts.
+    *   **Slideshow:** Automatically cycles through images. Play/Pause with the toolbar button or 'P'/Space.
+    *   **Navigation:** Next/Previous, First/Last, Skip (PageUp/PageDown).
+    *   **Random Mode:** Toggle random image display with the dice icon.
+*   **Tagging:**
+    *   **Add Tags:** Assign tags to the current image or all images in the current directory.
+    *   **Remove Tags:** Remove tags from the current image or all images in the current directory.
+    *   **Global Tag Removal:** Remove a specific tag from all images in the database (via Tags View).
+*   **Filtering:**
+    *   Filter the displayed images by selecting a tag (via Menu > View > Filter by Tag... or by clicking a tag in the Tags View).
+    *   Clear the filter to see all images again.
+*   **Image Deletion:** Delete the currently viewed image (with confirmation).
+*   **History:** Navigate back and forward through your viewing history.
+
+**User Interface:**
+*   **Toolbar:** Provides quick access to common actions.
+*   **Image View:** Displays the current image and an information panel (stats, tags).
+*   **Tags View:** Lists all tags in the database, allows searching, global tag removal, and filtering by clicking a tag.
+*   **Status Bar:**
+    *   Shows the current image path, count, and filter status.
+    *   Displays log messages (use up/down arrows next to the log to scroll through messages).
+*   **Info Panel:** Shows details about the current image, including its tags.
+
+**Keyboard Shortcuts:**
+*   A comprehensive list of keyboard shortcuts can be found via Menu > Edit > Keyboard Shortcuts.
+*   Common shortcuts:
+    *   Arrow Keys: Next/Previous image.
+    *   Q: Quit.
+    *   P or Space: Toggle Play/Pause.
+    *   Delete: Delete current image.
+`
+	dialog.ShowCustom("FySlide Help", "Close", widget.NewRichTextFromMarkdown(helpText), a.UI.MainWin)
+}
+
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
@@ -296,6 +338,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 
 		),
 		fyne.NewMenu("Help",
+			fyne.NewMenuItem("Help", a.showHelpDialog),
 			fyne.NewMenuItem("About", func() {
 				aboutDialog := NewAbout(&a.UI.MainWin, "About FySlide", resourceIconPng)
 				aboutDialog.Show()
