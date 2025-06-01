@@ -69,7 +69,8 @@ var addCmd = &cobra.Command{
 		}
 
 		var firstError error
-		for _, tag := range tagsToAdd {
+		for _, tagRaw := range tagsToAdd {
+			tag := strings.ToLower(tagRaw) // Normalize tag to lowercase
 			if err := tagDB.AddTag(absPath, tag); err != nil {
 				cmd.PrintErrf("Error adding tag '%s' to %s: %v\n", tag, absPath, err)
 				if firstError == nil {
@@ -99,7 +100,8 @@ var removeCmd = &cobra.Command{
 		}
 
 		var firstError error
-		for _, tag := range tagsToRemove {
+		for _, tagRaw := range tagsToRemove {
+			tag := strings.ToLower(tagRaw) // Normalize tag to lowercase
 			if err := tagDB.RemoveTag(absPath, tag); err != nil {
 				cmd.PrintErrf("Error removing tag '%s' from %s: %v\n", tag, absPath, err)
 				if firstError == nil {
@@ -147,7 +149,8 @@ var findByTagCmd = &cobra.Command{
 	Long:  "Finds and displays all image files that have the given tag.",
 	Args:  cobra.ExactArgs(1), // Requires exactly one tag
 	RunE: func(cmd *cobra.Command, args []string) error {
-		tagToFind := args[0]
+		tagToFindRaw := args[0]
+		tagToFind := strings.ToLower(tagToFindRaw) // Normalize tag to lowercase
 		images, err := tagDB.GetImages(tagToFind)
 		if err != nil {
 			return fmt.Errorf("error finding images for tag '%s': %w", tagToFind, err)
@@ -184,10 +187,176 @@ var listAllTagsCmd = &cobra.Command{
 		}
 
 		cmd.Println("All tags in database:")
-		for _, tag := range tags {
-			cmd.Println(tag)
+		for _, tagInfo := range tags { // tags is []tagging.TagWithCount
+			cmd.Printf("%s (Count: %d)\n", tagInfo.Name, tagInfo.Count)
 		}
 		return nil
+	},
+}
+
+// normalizeCmd represents the command to normalize all tags to lowercase
+var normalizeCmd = &cobra.Command{
+	Use:   "normalize",
+	Short: "Normalize all tags in the database to lowercase",
+	Long: `Iterates through all tags in the database. If a tag is found that is not
+entirely in lowercase, it will be normalized. This involves:
+1. Identifying all images associated with the mixed-case tag.
+2. For each such image, removing the mixed-case tag.
+3. For each such image, adding the lowercase version of the tag.
+This ensures all tag references are consistently lowercase.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		allTagsWithCounts, err := tagDB.GetAllTags() // Fetches []tagging.TagWithCount
+		if err != nil {
+			return fmt.Errorf("error fetching all tags: %w", err)
+		}
+
+		if len(allTagsWithCounts) == 0 {
+			cmd.Println("No tags found in the database. Nothing to normalize.")
+			return nil
+		}
+
+		cmd.Printf("Starting tag normalization process...\n")
+		if dryRunFlag {
+			cmd.Println("DRY RUN: No changes will be made to the database.")
+		}
+
+		mixedCaseTagsFound := 0
+		imageTagUpdatesCount := 0
+		var firstError error
+
+		// Create a set of unique tag names to process
+		uniqueTagNames := make(map[string]struct{})
+		for _, tagInfo := range allTagsWithCounts {
+			uniqueTagNames[tagInfo.Name] = struct{}{}
+		}
+
+		for originalTag := range uniqueTagNames {
+			lowerTag := strings.ToLower(originalTag)
+
+			if originalTag == lowerTag {
+				// Tag is already lowercase, skip
+				continue
+			}
+
+			cmd.Printf("Found mixed-case tag: '%s'. Normalizing to '%s'.\n", originalTag, lowerTag)
+			mixedCaseTagsFound++
+
+			imagePaths, errGetImages := tagDB.GetImages(originalTag)
+			if errGetImages != nil {
+				cmd.PrintErrf("  Error getting images for original tag '%s': %v. Skipping this tag.\n", originalTag, errGetImages)
+				if firstError == nil {
+					firstError = errGetImages
+				}
+				continue
+			}
+
+			for _, imgPath := range imagePaths {
+				if dryRunFlag {
+					cmd.Printf("  DRY RUN: Would update tag for %s: '%s' -> '%s'\n", imgPath, originalTag, lowerTag)
+					imageTagUpdatesCount++
+				} else {
+					if err := tagDB.RemoveTag(imgPath, originalTag); err != nil {
+						cmd.PrintErrf("  Error removing original tag '%s' from %s: %v\n", originalTag, imgPath, err)
+						if firstError == nil {
+							firstError = err
+						}
+					}
+					if err := tagDB.AddTag(imgPath, lowerTag); err != nil {
+						cmd.PrintErrf("  Error adding lowercase tag '%s' to %s: %v\n", lowerTag, imgPath, err)
+						if firstError == nil {
+							firstError = err
+						}
+					} else {
+						cmd.Printf("  Normalized tag for %s: '%s' -> '%s'\n", imgPath, originalTag, lowerTag)
+						imageTagUpdatesCount++
+					}
+				}
+			}
+		}
+
+		cmd.Printf("\nNormalization process complete.\n")
+		cmd.Printf("Summary:\n")
+		cmd.Printf("  Unique mixed-case tags processed for normalization: %d\n", mixedCaseTagsFound)
+		cmd.Printf("  Image-tag associations updated/would be updated: %d\n", imageTagUpdatesCount)
+		if firstError != nil {
+			cmd.PrintErrf("Errors were encountered during the process. Please check the log. First error: %v\n", firstError)
+		}
+		return firstError
+	},
+}
+
+// replaceTagCmd represents the command to replace an old tag with a new tag
+var replaceTagCmd = &cobra.Command{
+	Use:   "replace-tag <oldTag> <newTag>",
+	Short: "Replace an existing tag with a new tag across all relevant images",
+	Long: `Finds all images tagged with <oldTag>, removes <oldTag>, and adds <newTag> to them.
+Both oldTag and newTag are treated as case-insensitive (normalized to lowercase).
+If, after normalization, oldTag and newTag are identical, no action is taken.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		oldTagRaw := args[0]
+		newTagRaw := args[1]
+
+		oldTag := strings.ToLower(oldTagRaw)
+		newTag := strings.ToLower(newTagRaw)
+
+		if oldTag == newTag {
+			cmd.Printf("Old tag ('%s') and new tag ('%s') are the same after normalization. No action taken.\n", oldTagRaw, newTagRaw)
+			return nil
+		}
+
+		cmd.Printf("Replacing tag '%s' with '%s' (normalized from '%s' and '%s').\n", oldTag, newTag, oldTagRaw, newTagRaw)
+		if dryRunFlag {
+			cmd.Println("DRY RUN: No changes will be made to the database.")
+		}
+
+		imagePaths, err := tagDB.GetImages(oldTag)
+		if err != nil {
+			return fmt.Errorf("error fetching images for old tag '%s': %w", oldTag, err)
+		}
+
+		if len(imagePaths) == 0 {
+			cmd.Printf("No images found with the old tag '%s'. Nothing to replace.\n", oldTag)
+			return nil
+		}
+
+		cmd.Printf("Found %d image(s) with tag '%s'. Proceeding with replacement...\n", len(imagePaths), oldTag)
+		var firstError error
+		successfulReplacements := 0
+
+		for _, imgPath := range imagePaths {
+			if dryRunFlag {
+				cmd.Printf("  DRY RUN: Would replace tag on %s: remove '%s', add '%s'\n", imgPath, oldTag, newTag)
+				successfulReplacements++
+			} else {
+				if err := tagDB.RemoveTag(imgPath, oldTag); err != nil {
+					cmd.PrintErrf("  Error removing old tag '%s' from %s: %v\n", oldTag, imgPath, err)
+					if firstError == nil {
+						firstError = err
+					}
+					continue // Skip adding new tag if old one couldn't be removed
+				}
+				if err := tagDB.AddTag(imgPath, newTag); err != nil {
+					cmd.PrintErrf("  Error adding new tag '%s' to %s: %v\n", newTag, imgPath, err)
+					if firstError == nil {
+						firstError = err
+					}
+				} else {
+					cmd.Printf("  Successfully replaced tag on %s: removed '%s', added '%s'\n", imgPath, oldTag, newTag)
+					successfulReplacements++
+				}
+			}
+		}
+
+		cmd.Printf("\nTag replacement process complete.\n")
+		cmd.Printf("Summary:\n")
+		cmd.Printf("  Images processed for replacement: %d\n", len(imagePaths))
+		cmd.Printf("  Tag replacements performed/would be performed: %d\n", successfulReplacements)
+		if firstError != nil {
+			cmd.PrintErrf("Errors were encountered during the process. Please check the log. First error: %v\n", firstError)
+		}
+		return firstError
 	},
 }
 
@@ -204,8 +373,12 @@ found directly within the given directory. This command does not recurse into su
 		if err != nil {
 			return fmt.Errorf("error getting absolute path for directory %s: %w", dirPath, err)
 		}
-		tags := args[1:]
-		return processFilesInDirectory(cmd, absDirPath, tags, tagDB.AddTag, "Added", "add", dryRunFlag, false /* no confirmation for add */, forceFlag)
+		tagsRaw := args[1:]
+		var tagsNormalized []string
+		for _, tRaw := range tagsRaw {
+			tagsNormalized = append(tagsNormalized, strings.ToLower(tRaw)) // Normalize tags
+		}
+		return processFilesInDirectory(cmd, absDirPath, tagsNormalized, tagDB.AddTag, "Added", "add", dryRunFlag, false /* no confirmation for add */, forceFlag)
 	},
 }
 
@@ -218,14 +391,18 @@ found directly within the given directory. This command does not recurse into su
 	Args: cobra.MinimumNArgs(2), // Requires directory and at least one tag
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dirPath := args[0]
-		tagsToRemove := args[1:]
+		tagsToRemoveRaw := args[1:]
+		var tagsToRemoveNormalized []string
+		for _, tRaw := range tagsToRemoveRaw {
+			tagsToRemoveNormalized = append(tagsToRemoveNormalized, strings.ToLower(tRaw)) // Normalize tags
+		}
 
 		absDirPath, err := filepath.Abs(dirPath)
 		if err != nil {
 			return fmt.Errorf("error getting absolute path for directory %s: %w", dirPath, err)
 		}
 
-		return processFilesInDirectory(cmd, absDirPath, tagsToRemove, tagDB.RemoveTag, "Removed", "remove", dryRunFlag, true /* needs confirmation */, forceFlag)
+		return processFilesInDirectory(cmd, absDirPath, tagsToRemoveNormalized, tagDB.RemoveTag, "Removed", "remove", dryRunFlag, true /* needs confirmation */, forceFlag)
 	},
 }
 
@@ -238,6 +415,8 @@ func init() {
 	batchAddCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the batch add operation without making changes.")
 	batchRemoveCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the batch remove operation without making changes.")
 	batchRemoveCmd.Flags().BoolVar(&forceFlag, "force", false, "Force batch removal without confirmation.")
+	normalizeCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the normalization process without making changes.")
+	replaceTagCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the tag replacement process without making changes.")
 
 	// Add subcommands to the root command
 	rootCmd.AddCommand(addCmd)
@@ -247,6 +426,8 @@ func init() {
 	rootCmd.AddCommand(listAllTagsCmd)
 	rootCmd.AddCommand(batchAddCmd)
 	rootCmd.AddCommand(batchRemoveCmd)
+	rootCmd.AddCommand(replaceTagCmd)
+	rootCmd.AddCommand(normalizeCmd)
 }
 
 // processFilesInDirectory is a helper function to reduce duplication between batch-add and batch-remove

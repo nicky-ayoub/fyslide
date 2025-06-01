@@ -145,9 +145,10 @@ func (a *App) updateStatusBar() {
 		return
 	}
 	currentItem := a.getCurrentItem()
+	path := a.GetImageFullPath()
 	statusText := "Ready"
-	if currentItem != nil && a.img.Path != "" {
-		statusText = fmt.Sprintf("%s  |  Image %d / %d", filepath.Base(a.img.Path), a.index+1, a.getCurrentImageCount()) // Shorter path
+	if currentItem != nil && path != "" {
+		statusText = fmt.Sprintf("%s  |  Image %d / %d", path, a.index+1, a.getCurrentImageCount()) // Shorter path
 		if a.isFiltered {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
 		}
@@ -310,12 +311,17 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 		a.addLogMessage(msg)
 	}
 }
+func (a *App) GetImageFullPath() string {
+	currentList := a.getCurrentList() // Use helper
+	imagePath := currentList[a.index].Path
+	return imagePath
+}
 
 // DisplayImage displays the image on the canvas at the current index
 func (a *App) DisplayImage() error {
 	// decode and update the image + get image path
 	var err error
-	currentList := a.getCurrentList() // Use helper
+	imagePath := a.GetImageFullPath() // Get the full path of the current image
 	count := a.getCurrentImageCount() // Use helper
 
 	if count == 0 { // Handle empty list (either full or filtered)
@@ -349,8 +355,6 @@ func (a *App) DisplayImage() error {
 		}
 	}
 
-	imagePath := currentList[a.index].Path // Get path from current list
-
 	file, err := os.Open(imagePath) // Use imagePath
 	if err != nil {
 		a.handleImageDisplayError(imagePath, "Loading", err, "") // No formatName for loading errors
@@ -372,7 +376,7 @@ func (a *App) DisplayImage() error {
 	a.image.Refresh()
 
 	// --- Update Title, Status Bar, and Info Text ---
-	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", filepath.Base(a.img.Path)))
+	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", imagePath))
 	a.updateStatusBar()
 	a.updateInfoText() // Call the function to update the info panel
 
@@ -1294,8 +1298,8 @@ func (a *App) addTag() {
 		var tagsToAdd []string
 		uniqueTags := make(map[string]bool) // Use a map to handle duplicates in input
 		for _, pt := range potentialTags {
-			tag := strings.TrimSpace(pt)
-			if tag != "" && !uniqueTags[tag] { // Only add non-empty, unique tags
+			tag := strings.ToLower(strings.TrimSpace(pt)) // Normalize to lowercase
+			if tag != "" && !uniqueTags[tag] {            // Only add non-empty, unique tags
 				tagsToAdd = append(tagsToAdd, tag)
 				uniqueTags[tag] = true
 			}
@@ -1384,7 +1388,9 @@ func (a *App) addTag() {
 			}
 		}
 		if showMessage { // This is for partial success messages or full success
-			dialog.ShowInformation("Tagging Status", statusMessage, a.UI.MainWin)
+			// dialog.ShowInformation("Tagging Status", statusMessage, a.UI.MainWin)
+			// Replace dialog with status bar message
+			a.addLogMessage(fmt.Sprintf("Tagging Status: %s", statusMessage))
 		}
 	}, a.UI.MainWin)
 }
@@ -1528,7 +1534,8 @@ func (a *App) removeTag() {
 			a.addLogMessage(fmt.Sprintf("Error removing tag '%s': %v", selectedTag, errRemoveOp))
 		} else {
 			if statusMessage != "" { // Show success or partial success summary
-				dialog.ShowInformation("Tag Removal Status", statusMessage, a.UI.MainWin)
+				// dialog.ShowInformation("Tag Removal Status", statusMessage, a.UI.MainWin)
+				a.addLogMessage(fmt.Sprintf("Tag Removal Status: %s", statusMessage))
 			}
 			a.updateInfoText()
 		}

@@ -14,6 +14,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+const (
+	imageViewIndex = 0
+	tagsViewIndex  = 1
+)
+
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
 func (a *App) selectStackView(index int) {
 	if a.UI.contentStack == nil {
@@ -22,9 +27,9 @@ func (a *App) selectStackView(index int) {
 	}
 
 	var targetView fyne.CanvasObject
-	if index == 0 {
+	if index == imageViewIndex {
 		targetView = a.UI.imageContentView
-	} else if index == 1 {
+	} else if index == tagsViewIndex {
 		targetView = a.UI.tagsContentView
 	} else {
 		log.Printf("ERROR: selectStackView called with invalid index: %d", index)
@@ -49,7 +54,7 @@ func (a *App) selectStackView(index int) {
 	log.Printf("DEBUG: Switched stack view to index %d", index)
 
 	// Special case: Refresh tags when switching TO the tags view
-	if index == 1 && a.refreshTagsFunc != nil {
+	if index == tagsViewIndex && a.refreshTagsFunc != nil {
 		log.Println("DEBUG: Refreshing tags data on view switch.")
 		a.refreshTagsFunc()
 	}
@@ -73,10 +78,10 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 
 		widget.NewToolbarAction(theme.FileImageIcon(), func() { // Button for Image View
-			a.selectStackView(0) // Switch to image view
+			a.selectStackView(imageViewIndex) // Switch to image view
 		}),
 		widget.NewToolbarAction(theme.ListIcon(), func() { // Button for Tags View
-			a.selectStackView(1) // Switch to tags view
+			a.selectStackView(tagsViewIndex) // Switch to tags view
 		}),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
 			log.Println("Display help")
@@ -246,7 +251,7 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
 		a.applyFilter(selectedItem.Name) // Apply filter using only the tag name
 		if a.UI.contentStack != nil {
-			a.selectStackView(0)
+			a.selectStackView(imageViewIndex)
 		}
 	}
 
