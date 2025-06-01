@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"log"
 	"runtime"
 	"strings"
 
@@ -22,7 +21,7 @@ const (
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
 func (a *App) selectStackView(index int) {
 	if a.UI.contentStack == nil {
-		log.Println("ERROR: selectStackView called but contentStack is nil")
+		a.addLogMessage("Internal UI Error: Cannot switch view, content stack not initialized.")
 		return
 	}
 
@@ -32,12 +31,12 @@ func (a *App) selectStackView(index int) {
 	} else if index == tagsViewIndex {
 		targetView = a.UI.tagsContentView
 	} else {
-		log.Printf("ERROR: selectStackView called with invalid index: %d", index)
+		a.addLogMessage(fmt.Sprintf("Internal UI Error: Invalid view index %d.", index))
 		return
 	}
 
 	if targetView == nil {
-		log.Printf("ERROR: selectStackView - target view for index %d is nil", index)
+		a.addLogMessage(fmt.Sprintf("Internal UI Error: Target view for index %d is not available.", index))
 		return
 	}
 
@@ -51,11 +50,11 @@ func (a *App) selectStackView(index int) {
 
 	// Refresh the stack container to apply visibility changes
 	a.UI.contentStack.Refresh()
-	log.Printf("DEBUG: Switched stack view to index %d", index)
+	// log.Printf("DEBUG: Switched stack view to index %d", index)
 
 	// Special case: Refresh tags when switching TO the tags view
 	if index == tagsViewIndex && a.refreshTagsFunc != nil {
-		log.Println("DEBUG: Refreshing tags data on view switch.")
+		// log.Println("DEBUG: Refreshing tags data on view switch.")
 		a.refreshTagsFunc()
 	}
 }
@@ -84,7 +83,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 			a.selectStackView(tagsViewIndex) // Switch to tags view
 		}),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
-			log.Println("Display help")
+			a.addLogMessage("Help documentation is not yet available.")
 		}),
 	)
 
@@ -144,7 +143,7 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		// a.tagDB.GetAllTags() now returns []tagging.TagWithCount, error
 		fetchedTagsWithCounts, err := a.tagDB.GetAllTags()
 		if err != nil {
-			log.Printf("Error loading/refreshing tags: %v", err)
+			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
 			allTags = []tagListItem{} // Ensure allTags is empty on error
 			filteredData = []tagListItem{{Name: "Error loading tags", Count: -1}}
 		} else if len(fetchedTagsWithCounts) == 0 { // Check length of fetched data
@@ -233,22 +232,22 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 
 	tagList.OnSelected = func(id widget.ListItemID) {
 		if id < 0 || id >= len(filteredData) { // Bounds check on filteredData
-			log.Println("DEBUG: Tag selection out of bounds or filteredData empty.")
+			// log.Println("DEBUG: Tag selection out of bounds or filteredData empty.")
 			selectedTagForAction = ""
 			removeButton.Disable()
 			return
 		}
 		selectedItem := filteredData[id]
-
 		if selectedItem.Count == -1 { // Check if it's a placeholder
-			log.Printf("DEBUG: Placeholder item selected: %s", selectedItem.Name)
+			// log.Printf("DEBUG: Placeholder item selected: %s", selectedItem.Name)
 			selectedTagForAction = ""
 			removeButton.Disable()
+			tagList.Unselect(id) // Unselect the placeholder
 			return
 		}
 		selectedTagForAction = selectedItem.Name // Store only the name for actions
 		removeButton.Enable()
-		log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
+		// log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
 		a.applyFilter(selectedItem.Name) // Apply filter using only the tag name
 		if a.UI.contentStack != nil {
 			a.selectStackView(imageViewIndex)
