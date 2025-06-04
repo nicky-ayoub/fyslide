@@ -1195,34 +1195,35 @@ func ternary(condition bool, trueVal, falseVal string) string {
 	return falseVal
 }
 
-// _addTagsToDirectory is now fully asynchronous: call it in a goroutine from the UI.
-// It processes images sequentially in the background and updates the UI when done.
-func (a *App) _addTagsToDirectory(
-	tagsToAdd []string,
-	currentDir string,
-	firstError *error,
-	totalTagsAttempted *int,
-	successfulAdditions *int,
-	errorsEncountered *int,
-	imagesProcessed *int,
-	filesAffected map[string]bool,
-) {
-	go func() {
-		a.addLogMessage(fmt.Sprintf("Batch tagging directory: %s with [%s]", filepath.Base(currentDir), strings.Join(tagsToAdd, ", ")))
+// _addTagsToDirectory is a helper to apply a list of tags to all images in a given directory.
+// It uses goroutines for concurrent database operations.
+func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
+	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
+	totalTagsAttempted *int, successfulAdditions *int, errorsEncountered *int, imagesProcessed *int, filesAffected map[string]bool) {
 
-		for _, imageItem := range a.images {
-			itemPath := imageItem.Path
-			itemDir := filepath.Dir(itemPath)
-			if itemDir == currentDir {
+	a.addLogMessage(fmt.Sprintf("Batch tagging directory: %s with [%s]", filepath.Base(currentDir), strings.Join(tagsToAdd, ", ")))
+
+	for _, imageItem := range a.images { // Iterate through the original full list
+		// Capture loop variables for the goroutine
+		itemPath := imageItem.Path
+		currentTagsToAdd := tagsToAdd // Capture for goroutine
+
+		itemDir := filepath.Dir(itemPath)
+		if itemDir == currentDir {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
 				localTagsAttemptedOnThisImage := 0
 				localSuccessfulAdditionsOnThisImage := 0
 				localErrorsOnThisImage := 0
 				var localFirstErrorForThisImage error
 
-				for _, tag := range tagsToAdd {
+				for _, tag := range currentTagsToAdd {
 					localTagsAttemptedOnThisImage++
 					errAdd := a.tagDB.AddTag(itemPath, tag)
 					if errAdd != nil {
+						// Logged via addLogMessage by the calling function's summary
 						localErrorsOnThisImage++
 						if localFirstErrorForThisImage == nil {
 							localFirstErrorForThisImage = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(itemPath), tag, errAdd)
@@ -1233,26 +1234,22 @@ func (a *App) _addTagsToDirectory(
 					}
 				}
 
-				// Update shared counters (no need for mutex, as this goroutine is the only writer)
-				*imagesProcessed++
+				mu.Lock()
+				(*imagesProcessed)++
 				*totalTagsAttempted += localTagsAttemptedOnThisImage
 				*successfulAdditions += localSuccessfulAdditionsOnThisImage
 				*errorsEncountered += localErrorsOnThisImage
 				if localFirstErrorForThisImage != nil && *firstError == nil {
 					*firstError = localFirstErrorForThisImage
 				}
-			}
+				mu.Unlock()
+			}()
 		}
-		time.AfterFunc(0, func() {
-			a.addLogMessage(fmt.Sprintf("Batch tagging for [%s] in '%s' complete. Images processed: %d. Attempts: %d, Successes: %d, Errors: %d.",
-				strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
-			a.updateInfoText()
-			if a.refreshTagsFunc != nil {
-				a.refreshTagsFunc()
-			}
-		})
+	}
+	wg.Wait() // Wait for all goroutines to finish
 
-	}()
+	a.addLogMessage(fmt.Sprintf("Batch tagging for [%s] in '%s' complete. Images processed: %d. Attempts: %d, Successes: %d, Errors: %d.",
+		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
 }
 
 // addTag shows a dialog to add a new tag to the current image
@@ -1340,9 +1337,11 @@ func (a *App) addTag() {
 		// --- It correctly iterates through the 'tagsToAdd' slice ---
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
+			var wg sync.WaitGroup
+			var mu sync.Mutex // Mutex to protect shared variables
 			imagesProcessed := 0
 			a.addLogMessage(fmt.Sprintf("Adding tag(s) [%s] to all images in %s...", strings.Join(tagsToAdd, ", "), filepath.Base(currentDir)))
-			a._addTagsToDirectory(tagsToAdd, currentDir, &errAddOp, &totalTagsAttempted, &successfulAdditions, &errorsEncountered, &imagesProcessed, filesAffected)
+			a._addTagsToDirectory(tagsToAdd, currentDir, &wg, &mu, &errAddOp, &totalTagsAttempted, &successfulAdditions, &errorsEncountered, &imagesProcessed, filesAffected)
 
 			logMessage = fmt.Sprintf("Added tag(s) [%s] to %d images in %s. Successes: %d, Errors: %d",
 				strings.Join(tagsToAdd, ", "), imagesProcessed, filepath.Base(currentDir), successfulAdditions, errorsEncountered)
