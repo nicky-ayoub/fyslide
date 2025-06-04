@@ -317,12 +317,11 @@ func (a *App) GetImageFullPath() string {
 	return imagePath
 }
 
-// DisplayImage displays the image on the canvas at the current index
-func (a *App) DisplayImage() error {
-	// decode and update the image + get image path
-	var err error
-	imagePath := a.GetImageFullPath() // Get the full path of the current image
-	count := a.getCurrentImageCount() // Use helper
+// loadAndDisplayCurrentImage loads the image at the current index in the active list
+// in a background goroutine and updates the UI on the main Fyne thread.
+func (a *App) loadAndDisplayCurrentImage() {
+	count := a.getCurrentImageCount()
+	// Handle empty list (either full or filtered)
 
 	if count == 0 { // Handle empty list (either full or filtered)
 		a.image.Image = nil
@@ -332,8 +331,7 @@ func (a *App) DisplayImage() error {
 		a.updateStatusBar()
 		a.updateInfoText()
 		a.addLogMessage("No images available.")
-
-		return fmt.Errorf("no images available in the current list")
+		return // Exit the function, no image to load
 	}
 
 	if a.random && !a.isNavigatingHistory {
@@ -344,6 +342,7 @@ func (a *App) DisplayImage() error {
 			a.index = randomNumber
 		}
 	}
+	imagePath := a.GetImageFullPath() // Get the full path of the current image
 
 	// Check index bounds again after potential random selection or if not random
 	if a.index < 0 || a.index >= count { // Use current count
@@ -351,67 +350,88 @@ func (a *App) DisplayImage() error {
 		a.index = 0     // Reset to first image
 		if count == 0 { // Double check after reset attempt
 			// Already handled above, but defensive check
-			return fmt.Errorf("image index out of bounds and no images available")
+			// This path should ideally not be hit if the initial count == 0 check is robust.
+			// For safety, ensure UI reflects no images.
+			fyne.Do(func() {
+				a.image.Image = nil
+				a.img = Img{}
+				a.image.Refresh()
+				a.UI.MainWin.SetTitle("FySlide")
+				a.updateStatusBar()
+				a.updateInfoText()
+				a.addLogMessage("No images available after index reset.")
+			})
+			return
 		}
+		// If count > 0 after reset, update imagePath as index changed
+		imagePath = a.GetImageFullPath()
 	}
 
-	file, err := os.Open(imagePath) // Use imagePath
-	if err != nil {
-		a.handleImageDisplayError(imagePath, "Loading", err, "") // No formatName for loading errors
-		// handleImageDisplayError now calls addLogMessage
-		return fmt.Errorf("unable to open image '%s': %w", imagePath, err)
-	}
-	defer file.Close()
-	imageDecoded, formatName, err := image.Decode(file)
-	if err != nil {
-		// handleImageDisplayError now calls addLogMessage
-		a.handleImageDisplayError(file.Name(), "Decoding", err, formatName)
-		return fmt.Errorf("unable to decode image %s: %w", file.Name(), err)
-	}
+	isHistoryNav := a.isNavigatingHistory // Capture the flag state
 
-	// Successfully decoded image
-	a.img.OriginalImage = imageDecoded
-	a.img.Path = file.Name()
-	a.image.Image = a.img.OriginalImage
-	a.image.Refresh()
+	// Launch goroutine for loading and decoding
+	go func(path string, historyNav bool) {
+		file, err := os.Open(path)
+		if err != nil {
+			fyne.Do(func() {
+				a.handleImageDisplayError(path, "Loading", err, "")
+			})
+			return // Exit goroutine
+		}
+		defer file.Close()
 
-	// --- Update Title, Status Bar, and Info Text ---
-	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", imagePath))
-	a.updateStatusBar()
-	a.updateInfoText() // Call the function to update the info panel
-
-	// --- Ensure buttons are enabled (if count > 0) ---
-	// a.UI.tagBtn.Enable()
-	// a.UI.removeTagBtn.Enable()
-	// --- History Update ---
-	if a.historyCapacity > 0 && !a.isNavigatingHistory {
-		// If currentHistoryIndex is not at the end of the stack (e.g., user went back, then chose a new path),
-		// truncate the "future" part of history.
-		if a.currentHistoryIndex != -1 && a.currentHistoryIndex < len(a.historyStack)-1 {
-			a.historyStack = a.historyStack[:a.currentHistoryIndex+1]
+		imageDecoded, formatName, err := image.Decode(file)
+		if err != nil {
+			fyne.Do(func() {
+				a.handleImageDisplayError(file.Name(), "Decoding", err, formatName)
+			})
+			return // Exit goroutine
 		}
 
-		// Add current image to history.
-		// Avoid adding if it's the exact same path as the last entry AND we are at the end of history.
-		// This prevents duplicates if DisplayImage is called for a refresh without actual navigation.
-		// If we branched (currentHistoryIndex < len(historyStack)-1), we always add.
-		addToHistory := true
-		if len(a.historyStack) > 0 && a.currentHistoryIndex == len(a.historyStack)-1 && a.historyStack[a.currentHistoryIndex] == a.img.Path {
-			addToHistory = false
-		}
+		// Successfully decoded image - perform UI updates on the Fyne thread
+		fyne.Do(func() {
+			a.img.OriginalImage = imageDecoded
+			a.img.Path = file.Name() // Update the path in the Img struct
+			a.image.Image = a.img.OriginalImage
+			a.image.Refresh()
 
-		if addToHistory {
-			a.historyStack = append(a.historyStack, a.img.Path)
-		}
+			// Update Title, Status Bar, and Info Text
+			a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", a.img.Path))
+			a.updateStatusBar()
+			a.updateInfoText()
 
-		// Trim history if it exceeds capacity (remove from the beginning)
-		if len(a.historyStack) > a.historyCapacity {
-			a.historyStack = a.historyStack[len(a.historyStack)-a.historyCapacity:]
-		}
-		// After adding/trimming, the current history index points to the last item.
-		a.currentHistoryIndex = len(a.historyStack) - 1
-	}
-	return nil
+			// History Update (only if not navigating history)
+			// Use the flag captured before the goroutine was launched
+			if a.historyCapacity > 0 && !historyNav {
+				// If currentHistoryIndex is not at the end of the stack (e.g., user went back, then chose a new path),
+				// truncate the "future" part of history.
+				if a.currentHistoryIndex != -1 && a.currentHistoryIndex < len(a.historyStack)-1 {
+					a.historyStack = a.historyStack[:a.currentHistoryIndex+1]
+				}
+
+				// Add current image to history.
+				// Avoid adding if it's the exact same path as the last entry AND we are at the end of history.
+				// This prevents duplicates if loadAndDisplayCurrentImage is called for a refresh without actual navigation.
+				// If we branched (currentHistoryIndex < len(historyStack)-1), we always add.
+				addToHistory := true
+				if len(a.historyStack) > 0 && a.currentHistoryIndex == len(a.historyStack)-1 && a.historyStack[a.currentHistoryIndex] == a.img.Path {
+					addToHistory = false
+				}
+
+				if addToHistory {
+					a.historyStack = append(a.historyStack, a.img.Path)
+				}
+
+				// Trim history if it exceeds capacity (remove from the beginning)
+				if len(a.historyStack) > a.historyCapacity {
+					a.historyStack = a.historyStack[len(a.historyStack)-a.historyCapacity:]
+				}
+				// After adding/trimming, the current history index points to the last item.
+				a.currentHistoryIndex = len(a.historyStack) - 1
+			}
+			// The isNavigatingHistory flag on the App struct is reset by the caller function if needed.
+		})
+	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
 }
 
 // showFilterDialog displays a dialog to select a tag for filtering.
@@ -512,9 +532,9 @@ func (a *App) applyFilter(tag string) {
 	a.direction = 1 // Default direction
 	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tag '%s'.", len(a.filteredImages), tag))
 
-	a.isNavigatingHistory = false // Applying a filter is a new view, not history navigation
-	a.DisplayImage()              // Display the first image in the filtered set
-	a.updateInfoText()            // Update info panel immediately
+	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
+	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
+	a.updateInfoText()             // Update info panel immediately
 	a.updateStatusBar()
 }
 
@@ -530,9 +550,9 @@ func (a *App) clearFilter() {
 	a.index = 0            // Reset index to the start of the full list
 	a.direction = 1
 
-	a.isNavigatingHistory = false // Clearing a filter is a new view state
-	a.DisplayImage()              // Display the first image in the full set
-	a.updateInfoText()            // Update info panel immediately
+	a.isNavigatingHistory = false  // Clearing a filter is a new view state
+	a.loadAndDisplayCurrentImage() // Display the first image in the full set
+	a.updateInfoText()             // Update info panel immediately
 	a.updateStatusBar()
 }
 
@@ -542,7 +562,7 @@ func (a *App) firstImage() {
 		return
 	} // Add check
 	a.index = 0
-	a.DisplayImage()
+	a.loadAndDisplayCurrentImage()
 	a.direction = 1
 }
 
@@ -553,7 +573,7 @@ func (a *App) lastImage() {
 		return
 	} // Add check
 	a.index = count - 1
-	a.DisplayImage()
+	a.loadAndDisplayCurrentImage()
 	a.direction = -1
 }
 
@@ -579,7 +599,7 @@ func (a *App) nextImage() {
 	a.index += a.direction              // This might go out of bounds
 	a.index = (a.index + count) % count // Wrap around using modulo
 
-	a.DisplayImage() // Display the image at the calculated index
+	a.loadAndDisplayCurrentImage() // Display the image at the calculated index
 
 }
 
@@ -654,14 +674,8 @@ func (a *App) ShowNextImageFromHistory() bool {
 	a.index = foundIndexInActiveList
 	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
 
-	err := a.DisplayImage() // DisplayImage will respect a.isNavigatingHistory
-	if err != nil {
-		a.addLogMessage(fmt.Sprintf("Error displaying image %s from history during forward navigation: %v", filepath.Base(imagePathFromHistory), err))
-		// Consider how to handle display errors for historical items (e.g., remove from history)
-		a.isNavigatingHistory = false // Reset flag on error
-		return false                  // Failed to display
-	}
-
+	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
+	// Error handling is now internal to loadAndDisplayCurrentImage
 	a.isNavigatingHistory = false // Reset flag after the operation is complete
 	return true                   // Successfully displayed historical image
 }
@@ -752,10 +766,8 @@ func (a *App) ShowPreviousImage() {
 	a.index = foundIndexInActiveList
 	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
 
-	err := a.DisplayImage() // DisplayImage will respect a.isNavigatingHistory
-	if err != nil {
-		a.addLogMessage(fmt.Sprintf("Error displaying image %s from history: %v", filepath.Base(imagePathFromHistory), err))
-	}
+	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
+	// Error handling is now internal to loadAndDisplayCurrentImage
 	a.isNavigatingHistory = false // Reset flag after the operation is complete
 }
 
@@ -773,11 +785,6 @@ func (a *App) showNextLogMessage() {
 	}
 	a.currentLogIndex++
 	a.updateLogDisplay()
-}
-
-func (a *App) updateTime() {
-	formatted := time.Now().Format("Time: 03:04:05")
-	a.UI.clockLabel.SetText(formatted)
 }
 
 // Delete file
@@ -874,8 +881,8 @@ func (a *App) deleteFile() {
 	count := a.getCurrentImageCount()
 	if count == 0 {
 		// No images left at all (or in filter)
-		a.index = -1     // Indicate no valid index
-		a.DisplayImage() // Will show "No images" state
+		a.index = -1                   // Indicate no valid index
+		a.loadAndDisplayCurrentImage() // Will show "No images" state
 	} else {
 		// Adjust index carefully
 		if a.index >= count { // If we deleted the last item
@@ -888,7 +895,7 @@ func (a *App) deleteFile() {
 			a.index = 0
 		}
 
-		a.DisplayImage() // Display the image at the (potentially adjusted) index
+		a.loadAndDisplayCurrentImage() // Display the image at the (potentially adjusted) index
 	}
 	a.updateInfoText() // Update counts etc.
 	a.updateStatusBar()
@@ -909,7 +916,10 @@ func (a *App) loadImages(root string) {
 		// Optionally, you could update a progress indicator here
 		// if the GUI needs to show loading progress.
 	}
-	a.addLogMessage(fmt.Sprintf("Loaded %d images from %s", len(a.images), root))
+	msg := fmt.Sprintf("Loaded %d images from %s", len(a.images), root)
+	fyne.Do(func() {
+		a.addLogMessage(msg)
+	})
 }
 
 func (a *App) imageCount() int {
@@ -1068,9 +1078,9 @@ func CreateApplication() {
 	if ui.imageCount() > 0 {
 		ticker := time.NewTicker(ui.slideshowInterval)
 		ui.isNavigatingHistory = false // Initial display is not from history
-		go ui.pauser(ticker)
+		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do
 		go ui.updateTimer()
-		ui.DisplayImage()
+		ui.loadAndDisplayCurrentImage()
 	} else {
 		// This case is also hit on timeout if no images loaded.
 		ui.updateStatusBar() // Will show "No images available" or similar.
@@ -1086,7 +1096,10 @@ func (a *App) updateTimer() {
 		if a.UI.MainWin == nil || a.UI.clockLabel == nil { // Check if UI elements are still valid
 			return // Exit goroutine if window is closed
 		}
-		a.updateTime()
+		fyne.Do(func() {
+			formatted := time.Now().Format("Time: 03:04:05")
+			a.UI.clockLabel.SetText(formatted)
+		})
 	}
 }
 
@@ -1097,8 +1110,10 @@ func (a *App) pauser(ticker *time.Ticker) {
 			return        // Exit goroutine
 		}
 		if !a.paused {
-			a.isNavigatingHistory = false // Standard "next" is not history navigation
-			a.nextImage()
+			fyne.Do(func() {
+				a.isNavigatingHistory = false // Standard "next" is not history navigation
+				a.nextImage()
+			})
 		}
 	}
 }
