@@ -4,6 +4,7 @@ package ui
 import (
 	"flag"
 	"fmt"
+	"fyslide/internal/history"
 	"fyslide/internal/scan"
 	"fyslide/internal/tagging"
 	"image"
@@ -79,11 +80,8 @@ type App struct {
 	img            Img
 	image          *canvas.Image
 
-	// --- New History Fields ---
-	historyStack        []string // Stores paths of viewed images
-	currentHistoryIndex int      // Points to the current image in historyStack (-1 if empty or before first)
-	historyCapacity     int      // Max number of images to remember
-	isNavigatingHistory bool     // True if DisplayImage is called from a history action
+	historyManager      *history.HistoryManager // Manages navigation history
+	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
 
 	paused    bool
 	direction int
@@ -401,35 +399,9 @@ func (a *App) loadAndDisplayCurrentImage() {
 			a.updateInfoText()
 
 			// History Update (only if not navigating history)
-			// Use the flag captured before the goroutine was launched
-			if a.historyCapacity > 0 && !historyNav {
-				// If currentHistoryIndex is not at the end of the stack (e.g., user went back, then chose a new path),
-				// truncate the "future" part of history.
-				if a.currentHistoryIndex != -1 && a.currentHistoryIndex < len(a.historyStack)-1 {
-					a.historyStack = a.historyStack[:a.currentHistoryIndex+1]
-				}
-
-				// Add current image to history.
-				// Avoid adding if it's the exact same path as the last entry AND we are at the end of history.
-				// This prevents duplicates if loadAndDisplayCurrentImage is called for a refresh without actual navigation.
-				// If we branched (currentHistoryIndex < len(historyStack)-1), we always add.
-				addToHistory := true
-				if len(a.historyStack) > 0 && a.currentHistoryIndex == len(a.historyStack)-1 && a.historyStack[a.currentHistoryIndex] == a.img.Path {
-					addToHistory = false
-				}
-
-				if addToHistory {
-					a.historyStack = append(a.historyStack, a.img.Path)
-				}
-
-				// Trim history if it exceeds capacity (remove from the beginning)
-				if len(a.historyStack) > a.historyCapacity {
-					a.historyStack = a.historyStack[len(a.historyStack)-a.historyCapacity:]
-				}
-				// After adding/trimming, the current history index points to the last item.
-				a.currentHistoryIndex = len(a.historyStack) - 1
+			if a.historyManager != nil && !historyNav {
+				a.historyManager.RecordNavigation(a.img.Path)
 			}
-			// The isNavigatingHistory flag on the App struct is reset by the caller function if needed.
 		})
 	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
 }
@@ -606,18 +578,10 @@ func (a *App) nextImage() {
 // ShowNextImageFromHistory attempts to move forward in the history stack.
 // Returns true if successful, false otherwise (e.g., at end of history or history disabled).
 func (a *App) ShowNextImageFromHistory() bool {
-	if a.historyCapacity == 0 || a.currentHistoryIndex == -1 || a.currentHistoryIndex >= len(a.historyStack)-1 {
-		// Cannot go forward in history
+	imagePathFromHistory, ok := a.historyManager.NavigateForward()
+	if !ok {
 		return false
 	}
-
-	targetHistoryIndex := a.currentHistoryIndex + 1
-	// Bounds check (should be <= len(a.historyStack)-1)
-	if targetHistoryIndex >= len(a.historyStack) {
-		a.addLogMessage("Already at the newest image in history.")
-		return false
-	}
-	imagePathFromHistory := a.historyStack[targetHistoryIndex]
 
 	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
 
@@ -660,19 +624,13 @@ func (a *App) ShowNextImageFromHistory() bool {
 	if foundIndexInActiveList == -1 {
 		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in current active list during forward navigation. Removing from history.", filepath.Base(imagePathFromHistory)))
 		// Image might have been deleted or is otherwise inaccessible.
-		// Remove the problematic item from history.
-		if targetHistoryIndex >= 0 && targetHistoryIndex < len(a.historyStack) {
-			a.historyStack = append(a.historyStack[:targetHistoryIndex], a.historyStack[targetHistoryIndex+1:]...)
-			// currentHistoryIndex stays the same, effectively now pointing to the item that was after the removed one.
-			// If the removed item was the last one, currentHistoryIndex will now be len(historyStack), which is handled by the check at the start of this function.
-		}
+		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
 		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
 		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
 		return false                  // Failed to show the historical image
 	}
 
 	a.index = foundIndexInActiveList
-	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
 	// Error handling is now internal to loadAndDisplayCurrentImage
@@ -682,10 +640,6 @@ func (a *App) ShowNextImageFromHistory() bool {
 
 // ShowPreviousImage handles the "back" button logic using history.
 func (a *App) ShowPreviousImage() {
-	if a.historyCapacity == 0 {
-		a.addLogMessage("History is disabled.")
-		return
-	}
 
 	// --- Turn off random mode if active ---
 	if a.random {
@@ -697,20 +651,11 @@ func (a *App) ShowPreviousImage() {
 		a.togglePlay() // This function handles icon update and state change
 	}
 
-	if a.currentHistoryIndex <= 0 || len(a.historyStack) < 2 { // Need at least 2 items to go "back" to a different one
+	imagePathFromHistory, ok := a.historyManager.NavigateBack()
+	if !ok {
 		a.addLogMessage("No previous image in history.")
 		return
 	}
-
-	targetHistoryIndex := a.currentHistoryIndex - 1
-	// Bounds check for targetHistoryIndex (should be >= 0)
-	// This check is somewhat redundant due to `a.currentHistoryIndex <= 0` above, but good for safety.
-	if targetHistoryIndex < 0 { // This condition implies currentHistoryIndex was 0, and we tried to go to -1
-		a.addLogMessage("Already at the oldest image in history (targetHistoryIndex < 0).")
-		return
-	}
-	imagePathFromHistory := a.historyStack[targetHistoryIndex]
-
 	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
 
 	mustClearFilter := false
@@ -747,24 +692,13 @@ func (a *App) ShowPreviousImage() {
 
 	if foundIndexInActiveList == -1 {
 		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in current active list. Removing from history.", filepath.Base(imagePathFromHistory)))
-		if targetHistoryIndex >= 0 && targetHistoryIndex < len(a.historyStack) {
-			a.historyStack = append(a.historyStack[:targetHistoryIndex], a.historyStack[targetHistoryIndex+1:]...)
-			a.currentHistoryIndex-- // Adjust pointer to currently displayed image
-			// Ensure index is valid after removal
-			if a.currentHistoryIndex >= len(a.historyStack) {
-				a.currentHistoryIndex = len(a.historyStack) - 1
-			}
-			if a.currentHistoryIndex < 0 {
-				a.currentHistoryIndex = -1
-			}
-		}
+		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
 		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
 		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
 		return
 	}
 
 	a.index = foundIndexInActiveList
-	a.currentHistoryIndex = targetHistoryIndex // Update to the index of the image we are now showing
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
 	// Error handling is now internal to loadAndDisplayCurrentImage
@@ -834,30 +768,8 @@ func (a *App) deleteFile() {
 	a.images = newImages
 
 	// 3.5. Remove from historyStack
-	if a.historyCapacity > 0 {
-		newHistoryStack := make([]string, 0, len(a.historyStack))
-		deletedFromHistoryIndex := -1
-		for i, p := range a.historyStack {
-			if p == deletedPath {
-				if i <= a.currentHistoryIndex {
-					// If the deleted item was at or before the current history pointer,
-					// the pointer needs to shift left.
-					deletedFromHistoryIndex = i // Mark that a relevant history item was deleted
-				}
-			} else {
-				newHistoryStack = append(newHistoryStack, p)
-			}
-		}
-		a.historyStack = newHistoryStack
-		if deletedFromHistoryIndex != -1 && a.currentHistoryIndex >= deletedFromHistoryIndex {
-			a.currentHistoryIndex-- // Adjust index
-		}
-		if a.currentHistoryIndex < 0 && len(a.historyStack) > 0 {
-			a.currentHistoryIndex = 0
-		}
-		if len(a.historyStack) == 0 {
-			a.currentHistoryIndex = -1
-		}
+	if a.historyManager != nil {
+		a.historyManager.RemovePath(deletedPath)
 	}
 
 	// 4. Remove from the filtered list (a.filteredImages) if filtering is active
@@ -928,19 +840,10 @@ func (a *App) imageCount() int {
 
 func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{}
-	a.historyCapacity = historyCap
+	a.historyManager = history.NewHistoryManager(historyCap)
 	a.slideshowInterval = time.Duration(slideshowIntervalSec*1000) * time.Millisecond
 	a.skipCount = skipNum
-	if a.historyCapacity < 0 {
-		a.addLogMessage("Warning: History capacity cannot be negative. Setting to 0 (disabled).")
-		a.historyCapacity = 0
-	}
-	if a.historyCapacity > 0 {
-		a.historyStack = make([]string, 0, a.historyCapacity) // Initialize with capacity
-	}
-	a.currentHistoryIndex = -1
 	a.isNavigatingHistory = false
-
 	a.maxLogMessages = 100 // Max number of log messages to store in UI
 	a.logMessages = make([]string, 0, a.maxLogMessages)
 	a.currentLogIndex = -1 // No logs initially
