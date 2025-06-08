@@ -59,11 +59,16 @@ func (a *App) showShortcuts() {
 		"P or Space", "Delete", "Esc",
 	}
 	descriptions := []string{
-		"Quit Application (Ctrl+Q or Q)",
+		"Quit Application", // Simplified, as Ctrl+Q is also listed
 		"Next Image", "Previous Image",
-		"Skip 20 Images Back", "Skip 20 Images Forward",
+		"Skip Images Back (Page Up)", "Skip Images Forward (Page Down)",
+		"Skip Images Back (Arrow Up)", "Skip Images Forward (Arrow Down)", // Descriptions for Arrow Up/Down
 		"First Image", "Last Image",
+		"Toggle Play/Pause Slideshow", "Delete Current Image", "Close Dialog/Overlay",
 	}
+	// Ensure shortcuts and descriptions have the same length for safety
+	// This is a defensive check; ideally, they are maintained to be equal.
+	minLen := min(len(shortcuts), len(descriptions))
 
 	win := a.app.NewWindow("Keyboard Shortcuts")
 	table := widget.NewTable(
@@ -76,10 +81,14 @@ func (a *App) showShortcuts() {
 			isHeader := id.Row == 0 // First row is header
 			dataRowIndex := id.Row - 1
 
+			if !isHeader && dataRowIndex >= minLen { // Safety break
+				label.SetText("") // Avoid panic
+				return
+			}
 			if id.Col == 0 { // Description column
-				label.SetText(ternary(isHeader, "Description", descriptions[dataRowIndex]))
+				label.SetText(ternaryString(isHeader, "Description", descriptions[dataRowIndex]))
 			} else { // Shortcut column
-				label.SetText(ternary(isHeader, "Shortcut", shortcuts[dataRowIndex]))
+				label.SetText(ternaryString(isHeader, "Shortcut", shortcuts[dataRowIndex]))
 			}
 			label.TextStyle.Bold = isHeader
 		},
@@ -89,4 +98,13 @@ func (a *App) showShortcuts() {
 	win.SetContent(table)
 	win.Resize(fyne.NewSize(500, 500))
 	win.Show()
+}
+
+// ternaryString is a helper, assuming it's defined elsewhere or should be local.
+// If it's the one from app.go, ensure it's accessible or duplicate if needed.
+func ternaryString(condition bool, trueVal, falseVal string) string {
+	if condition {
+		return trueVal
+	}
+	return falseVal
 }
