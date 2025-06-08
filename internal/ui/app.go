@@ -793,23 +793,20 @@ func (a *App) deleteFile() {
 	count := a.getCurrentImageCount()
 	if count == 0 {
 		// No images left at all (or in filter)
-		a.index = -1                   // Indicate no valid index
-		a.loadAndDisplayCurrentImage() // Will show "No images" state
+		a.index = -1 // Indicate no valid index
 	} else {
 		// Adjust index carefully
 		if a.index >= count { // If we deleted the last item
 			a.index = count - 1
 		}
-		// If we deleted an item before the current index, the index is now implicitly correct
-		// If we deleted the item *at* the current index, the next item shifts into this index
-		// So, just ensure index is within bounds [0, count-1]
+		// Ensure index is within bounds [0, count-1]
 		if a.index < 0 {
 			a.index = 0
 		}
-
-		a.loadAndDisplayCurrentImage() // Display the image at the (potentially adjusted) index
 	}
-	a.updateInfoText() // Update counts etc.
+	// Common call after index adjustment
+	a.loadAndDisplayCurrentImage()
+	a.updateInfoText()
 	a.updateStatusBar()
 }
 
