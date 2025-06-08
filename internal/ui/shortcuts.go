@@ -72,7 +72,7 @@ func (a *App) showShortcuts() {
 
 	win := a.app.NewWindow("Keyboard Shortcuts")
 	table := widget.NewTable(
-		func() (int, int) { return len(descriptions) + 1, 2 }, // +1 for header row
+		func() (int, int) { return minLen + 1, 2 }, // +1 for header row, use minLen
 		func() fyne.CanvasObject {
 			return widget.NewLabel("")
 		},
@@ -86,9 +86,17 @@ func (a *App) showShortcuts() {
 				return
 			}
 			if id.Col == 0 { // Description column
-				label.SetText(ternaryString(isHeader, "Description", descriptions[dataRowIndex]))
+				if isHeader {
+					label.SetText("Description")
+				} else {
+					label.SetText(descriptions[dataRowIndex])
+				}
 			} else { // Shortcut column
-				label.SetText(ternaryString(isHeader, "Shortcut", shortcuts[dataRowIndex]))
+				if isHeader {
+					label.SetText("Shortcut")
+				} else {
+					label.SetText(shortcuts[dataRowIndex])
+				}
 			}
 			label.TextStyle.Bold = isHeader
 		},
@@ -107,4 +115,12 @@ func ternaryString(condition bool, trueVal, falseVal string) string {
 		return trueVal
 	}
 	return falseVal
+}
+
+// min returns the smaller of x or y.
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
 }
