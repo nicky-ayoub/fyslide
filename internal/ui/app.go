@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"fyslide/internal/history"
 	"fyslide/internal/scan"
+	"fyslide/internal/slideshow" // Import the new package
 	"fyslide/internal/tagging"
 	"image"
 	"log"
@@ -83,8 +84,8 @@ type App struct {
 	historyManager      *history.HistoryManager // Manages navigation history
 	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
 
-	paused    bool
-	direction int
+	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
+	direction        int
 
 	random bool
 
@@ -95,8 +96,7 @@ type App struct {
 
 	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
 
-	slideshowInterval time.Duration // NEW: Configurable slideshow interval
-	skipCount         int           // NEW: Configurable skip count for PageUp/PageDown
+	skipCount int // NEW: Configurable skip count for PageUp/PageDown
 
 	// --- Log Bar ---
 	logMessages     []string // To store log messages for the status bar
@@ -151,7 +151,7 @@ func (a *App) updateStatusBar() {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
 		}
 	}
-	statusText += ternary(a.paused, " | Paused", " | Playing")
+	statusText += ternary(a.slideshowManager.IsPaused(), " | Paused", " | Playing")
 	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
 }
 
@@ -646,9 +646,9 @@ func (a *App) ShowPreviousImage() {
 		a.toggleRandom() // This function handles icon update and state change
 	}
 
-	// --- Pause slideshow if it's playing ---
-	if !a.paused {
-		a.togglePlay() // This function handles icon update and state change
+	// --- Pause slideshow if it's playing (user is navigating back) ---
+	if !a.slideshowManager.IsPaused() {
+		a.togglePlay() // This effectively pauses it via user action
 	}
 
 	imagePathFromHistory, ok := a.historyManager.NavigateBack()
@@ -841,17 +841,16 @@ func (a *App) imageCount() int {
 func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{}
 	a.historyManager = history.NewHistoryManager(historyCap)
-	a.slideshowInterval = time.Duration(slideshowIntervalSec*1000) * time.Millisecond
 	a.skipCount = skipNum
+	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000) * time.Millisecond)
 	a.isNavigatingHistory = false
 	a.maxLogMessages = 100 // Max number of log messages to store in UI
 	a.logMessages = make([]string, 0, a.maxLogMessages)
 	a.currentLogIndex = -1 // No logs initially
 
-	if a.slideshowInterval <= 0 {
-		log.Printf("Warning: Slideshow interval must be positive. Defaulting to 2s. Got: %.2f", slideshowIntervalSec)
-		a.slideshowInterval = 2 * time.Second
-	}
+	// SlideshowManager's constructor handles default interval if slideshowIntervalSec is invalid
+	// So, no need for a separate check here for a.slideshowInterval.
+
 	if a.skipCount <= 0 {
 		log.Printf("Warning: Skip count must be positive. Defaulting to 20. Got: %d", skipNum)
 		a.skipCount = 20
@@ -860,14 +859,13 @@ func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 
 // Handle toggles
 func (a *App) togglePlay() {
-	a.paused = !a.paused // Toggle state first
-	if a.paused {
-		// Now paused, so button should offer to play
+	a.slideshowManager.TogglePlayPause() // Toggle state using the manager
+	if a.slideshowManager.IsPaused() {
 		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
 			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
 		}
 	} else {
-		// Now playing, so button should offer to pause
+		// Now playing (not paused), so button should offer to pause
 		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
 			a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
 		}
@@ -979,7 +977,7 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
-		ticker := time.NewTicker(ui.slideshowInterval)
+		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do
 		go ui.updateTimer()
@@ -1012,7 +1010,7 @@ func (a *App) pauser(ticker *time.Ticker) {
 			ticker.Stop() // Stop the ticker
 			return        // Exit goroutine
 		}
-		if !a.paused {
+		if !a.slideshowManager.IsPaused() {
 			fyne.Do(func() {
 				a.isNavigatingHistory = false // Standard "next" is not history navigation
 				a.nextImage()
@@ -1161,18 +1159,16 @@ func (a *App) addTag() {
 		dialog.ShowInformation("Add Tag", "No image loaded to tag.", a.UI.MainWin) // Updated title
 		return
 	}
-	// --- Pause Slideshow Logic ---
-	wasPaused := a.paused // Store the original pause state
-	if !wasPaused {
-		a.togglePlay() // Pause the slideshow if it was running
+
+	a.slideshowManager.Pause(true)     // Pause for the tagging operation
+	if a.slideshowManager.IsPaused() { // Check if it's actually paused now
 		a.addLogMessage("Slideshow paused for tagging.")
 	}
 
 	currentTags, err := a.tagDB.GetTags(a.img.Path)
 	if err != nil {
-		// If we paused, make sure to resume before showing the error and returning
-		if !wasPaused {
-			a.togglePlay()
+		a.slideshowManager.ResumeAfterOperation() // Ensure resume on error
+		if !a.slideshowManager.IsPaused() {
 			a.addLogMessage("Slideshow resumed.")
 		}
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), a.UI.MainWin)
@@ -1197,10 +1193,9 @@ func (a *App) addTag() {
 		widget.NewFormItem("", applyToAllCheck), // --- NEW: Add checkbox to form ---
 	}, func(confirm bool) {
 
-		// This will run when the callback function exits (after confirm/cancel/return)
 		defer func() {
-			if !wasPaused {
-				a.togglePlay() // Resume slideshow ONLY if it was running before
+			a.slideshowManager.ResumeAfterOperation()
+			if !a.slideshowManager.IsPaused() {
 				a.addLogMessage("Slideshow resumed.")
 			}
 		}()
@@ -1318,18 +1313,17 @@ func (a *App) removeTag() {
 		dialog.ShowInformation("Remove Tag", "No image loaded to remove tags from.", a.UI.MainWin)
 		return
 	}
-	wasPaused := a.paused // Store the original pause state
-	if !wasPaused {
-		a.togglePlay() // Pause the slideshow if it was running
-		a.addLogMessage("Slideshow paused for tag removal.")
 
+	a.slideshowManager.Pause(true) // Pause for the operation
+	if a.slideshowManager.IsPaused() {
+		a.addLogMessage("Slideshow paused for tag removal.")
 	}
+
 	// 1. Get current tags for the image to populate the selector
 	currentTags, err := a.tagDB.GetTags(a.img.Path)
 	if err != nil {
-		// If we paused, make sure to resume before showing the info and returning
-		if !wasPaused {
-			a.togglePlay()
+		a.slideshowManager.ResumeAfterOperation()
+		if !a.slideshowManager.IsPaused() {
 			a.addLogMessage("Slideshow resumed.")
 		}
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), a.UI.MainWin)
@@ -1338,9 +1332,8 @@ func (a *App) removeTag() {
 
 	// 2. Check if there are any tags to remove
 	if len(currentTags) == 0 {
-		// If we paused, make sure to resume before showing the info and returning
-		if !wasPaused {
-			a.togglePlay()
+		a.slideshowManager.ResumeAfterOperation()
+		if !a.slideshowManager.IsPaused() {
 			a.addLogMessage("Slideshow resumed.")
 		}
 		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", a.UI.MainWin)
@@ -1365,10 +1358,9 @@ func (a *App) removeTag() {
 		widget.NewFormItem("Select Tag to Remove", tagSelector),
 		widget.NewFormItem("", removeFromAllCheck), // --- NEW: Add checkbox to form ---
 	}, func(confirm bool) {
-		// This will run when the callback function exits
 		defer func() {
-			if !wasPaused {
-				a.togglePlay() // Resume slideshow ONLY if it was running before
+			a.slideshowManager.ResumeAfterOperation()
+			if !a.slideshowManager.IsPaused() {
 				a.addLogMessage("Slideshow resumed.")
 			}
 		}()

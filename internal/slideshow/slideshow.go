@@ -8,9 +8,10 @@ import (
 
 // SlideshowManager handles the slideshow functionality.
 type SlideshowManager struct {
-	mu       sync.Mutex
-	isPaused bool
-	interval time.Duration
+	mu                 sync.Mutex
+	isPaused           bool
+	wasPlayingBeforeOp bool // Tracks if slideshow was playing before a temp pause
+	interval           time.Duration
 }
 
 // NewSlideshowManager creates a new SlideshowManager.
@@ -20,8 +21,9 @@ func NewSlideshowManager(interval time.Duration) *SlideshowManager {
 		interval = 2 * time.Second // Default interval if invalid
 	}
 	return &SlideshowManager{
-		isPaused: true, // Start paused by default
-		interval: interval,
+		isPaused:           true, // Start paused by default
+		wasPlayingBeforeOp: false,
+		interval:           interval,
 	}
 }
 
@@ -30,15 +32,32 @@ func (sm *SlideshowManager) TogglePlayPause() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.isPaused = !sm.isPaused
-	// If it's now playing, and was previously paused due to an action,
-	// this toggle effectively resumes it.
+	sm.wasPlayingBeforeOp = false // User toggle overrides any operation-specific state
 }
 
 // Pause forces the slideshow to pause.
-func (sm *SlideshowManager) Pause() {
+// If forOperation is true, it remembers if the slideshow was playing.
+func (sm *SlideshowManager) Pause(forOperation bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+	if forOperation {
+		if !sm.isPaused { // If it's currently playing and we're pausing for an op
+			sm.wasPlayingBeforeOp = true
+		} else { // If it's already paused, it wasn't playing before this specific "operation pause"
+			sm.wasPlayingBeforeOp = false
+		}
+	}
 	sm.isPaused = true
+}
+
+// ResumeAfterOperation resumes the slideshow only if it was playing before Pause(true) was called.
+func (sm *SlideshowManager) ResumeAfterOperation() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.wasPlayingBeforeOp {
+		sm.isPaused = false
+	}
+	sm.wasPlayingBeforeOp = false // Reset the flag
 }
 
 // IsPaused returns true if the slideshow is currently paused.
