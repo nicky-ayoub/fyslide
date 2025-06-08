@@ -151,7 +151,7 @@ func (a *App) updateStatusBar() {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
 		}
 	}
-	statusText += ternary(a.slideshowManager.IsPaused(), " | Paused", " | Playing")
+	statusText += ternaryString(a.slideshowManager.IsPaused(), " | Paused", " | Playing")
 	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
 }
 
@@ -1087,13 +1087,6 @@ func (a *App) removeTagGlobally(tag string) error {
 
 	// 4. Return the first error encountered, if any
 	return firstError
-}
-
-func ternary(condition bool, trueVal, falseVal string) string {
-	if condition {
-		return trueVal
-	}
-	return falseVal
 }
 
 // _addTagsToDirectory is a helper to apply a list of tags to all images in a given directory.
