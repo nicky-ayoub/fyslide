@@ -69,8 +69,9 @@ func Run(dir string) <-chan FileItem {
 	go func() {
 		absDir, err := filepath.Abs(dir)
 		if err != nil {
-			log.Printf("Error getting absolute path for %s: %v. Scanning original path.", dir, err)
-			absDir = dir // Proceed with original if Abs fails
+			log.Printf("Error getting absolute path for %s: %v. Aborting scan.", dir, err)
+			close(out) // Close channel to signal error and stop processing
+			return     // Do not proceed with findImageFiles
 		}
 		findImageFiles(absDir, out)
 	}()

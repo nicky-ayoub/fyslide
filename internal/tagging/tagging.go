@@ -88,8 +88,8 @@ func (tdb *TagDB) Close() error {
 
 // --- Helper Functions ---
 
-// EncodeList marshals a list of strings into a JSON byte slice.
-func EncodeList(list []string) ([]byte, error) {
+// encodeList marshals a list of strings into a JSON byte slice.
+func encodeList(list []string) ([]byte, error) {
 	return json.Marshal(list)
 }
 
@@ -143,7 +143,7 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 
 		updatedTags, added := addToList(currentTags, tag)
 		if added { // Only update if the tag was actually added
-			updatedTagsBytes, err := EncodeList(updatedTags)
+			updatedTagsBytes, err := encodeList(updatedTags)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
 			}
@@ -161,7 +161,7 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 
 		updatedImages, added := addToList(currentImages, imagePath)
 		if added { // Only update if the image path was actually added
-			updatedImagesBytes, err := EncodeList(updatedImages)
+			updatedImagesBytes, err := encodeList(updatedImages)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 			}
@@ -193,7 +193,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		updatedTags := removeFromList(currentTags, tag)
 		// Only update if the list actually changed
 		if len(updatedTags) != len(currentTags) {
-			updatedTagsBytes, err := EncodeList(updatedTags)
+			updatedTagsBytes, err := encodeList(updatedTags)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
 			}
@@ -219,7 +219,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		updatedImages := removeFromList(currentImages, imagePath)
 		// Only update if the list actually changed
 		if len(updatedImages) != len(currentImages) {
-			updatedImagesBytes, err := EncodeList(updatedImages)
+			updatedImagesBytes, err := encodeList(updatedImages)
 			if err != nil {
 				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 			}
@@ -291,9 +291,9 @@ func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
 			tagName := string(k)
 			imageList, err := decodeList(v)
 			if err != nil {
-				// Log the error and continue if possible, or return to stop.
-				// For now, let's propagate the error, as malformed data is serious.
-				return fmt.Errorf("failed to decode image list for tag '%s': %w", tagName, err)
+				// Log the error and skip this tag, allowing others to be processed.
+				log.Printf("Error decoding image list for tag '%s', skipping: %v", tagName, err)
+				return nil // Continue to the next tag
 			}
 			count := len(imageList)
 			allTagsInfo = append(allTagsInfo, TagWithCount{Name: tagName, Count: count})
@@ -356,7 +356,7 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 						return fmt.Errorf("failed to delete empty image list for tag %s: %w", tag, err)
 					}
 				} else {
-					updatedImagesBytes, err := EncodeList(updatedImages)
+					updatedImagesBytes, err := encodeList(updatedImages)
 					if err != nil {
 						return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
 					}

@@ -16,6 +16,10 @@ import (
 const (
 	imageViewIndex = 0
 	tagsViewIndex  = 1
+
+	noTagsFoundMsg       = "No tags found."
+	noTagsMatchSearchMsg = "No tags match search."
+	errorLoadingTagsMsg  = "Error loading tags."
 )
 
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
@@ -61,7 +65,12 @@ func (a *App) selectStackView(index int) {
 
 func (a *App) buildToolbar() *widget.Toolbar {
 	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
-	a.UI.pauseAction = widget.NewToolbarAction(theme.MediaPauseIcon(), a.togglePlay)
+
+	initialPauseIcon := theme.MediaPlayIcon() // Default for paused state
+	if a.slideshowManager != nil && !a.slideshowManager.IsPaused() {
+		initialPauseIcon = theme.MediaPauseIcon()
+	}
+	a.UI.pauseAction = widget.NewToolbarAction(initialPauseIcon, a.togglePlay)
 
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
@@ -115,7 +124,7 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		if searchTerm == "" {
 			// If search is empty, show all tags
 			if len(allTags) == 0 {
-				filteredData = []tagListItem{{Name: "No tags found.", Count: -1}}
+				filteredData = []tagListItem{{Name: noTagsFoundMsg, Count: -1}}
 			} else {
 				filteredData = allTags
 			}
@@ -127,7 +136,7 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 				}
 			}
 			if len(filteredData) == 0 {
-				filteredData = []tagListItem{{Name: "No tags match search.", Count: -1}}
+				filteredData = []tagListItem{{Name: noTagsMatchSearchMsg, Count: -1}}
 			}
 		}
 
@@ -145,10 +154,10 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		if err != nil {
 			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
 			allTags = []tagListItem{} // Ensure allTags is empty on error
-			filteredData = []tagListItem{{Name: "Error loading tags", Count: -1}}
+			filteredData = []tagListItem{{Name: errorLoadingTagsMsg, Count: -1}}
 		} else if len(fetchedTagsWithCounts) == 0 { // Check length of fetched data
 			allTags = []tagListItem{}
-			filteredData = []tagListItem{{Name: "No tags found.", Count: -1}}
+			filteredData = []tagListItem{{Name: noTagsFoundMsg, Count: -1}}
 		} else {
 			// Convert []tagging.TagWithCount to []tagListItem for the UI
 			tempAllTags := make([]tagListItem, len(fetchedTagsWithCounts))

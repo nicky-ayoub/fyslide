@@ -1143,6 +1143,28 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
 }
 
+// _applyTagsToSingleImage applies a list of tags to a single image path.
+func (a *App) _applyTagsToSingleImage(imagePath string, tagsToAdd []string, filesAffected map[string]bool) (successfulAdditions int, errorsEncountered int, firstError error) {
+	a.addLogMessage(fmt.Sprintf("Applying tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(imagePath)))
+	for _, tag := range tagsToAdd {
+		errAdd := a.tagDB.AddTag(imagePath, tag)
+		if errAdd != nil {
+			errorsEncountered++
+			if firstError == nil {
+				firstError = fmt.Errorf("failed to add tag '%s' to %s: %w", tag, filepath.Base(imagePath), errAdd)
+			}
+		} else {
+			successfulAdditions++
+			filesAffected[imagePath] = true
+		}
+	}
+	if imagePath == a.img.Path && successfulAdditions > 0 { // If current image was affected
+		fyne.Do(func() { a.updateInfoText() })
+	}
+	a.addLogMessage(fmt.Sprintf("Applied tags to %s. Successes: %d, Errors: %d", filepath.Base(imagePath), successfulAdditions, errorsEncountered))
+	return
+}
+
 // addTag shows a dialog to add a new tag to the current image
 func (a *App) addTag() {
 	if a.img.Path == "" {
@@ -1243,22 +1265,10 @@ func (a *App) addTag() {
 			}
 		} else {
 			// Apply tags only to the current image
-			a.addLogMessage(fmt.Sprintf("Adding tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(a.img.Path)))
-			for _, tag := range tagsToAdd {
-				totalTagsAttempted++
-				errAdd := a.tagDB.AddTag(a.img.Path, tag)
-				if errAdd != nil {
-					// Error will be part of errAddOp and shown in dialog / logged
-					errorsEncountered++
-					if errAddOp == nil {
-						errAddOp = fmt.Errorf("failed to add tag '%s': %w", tag, errAdd)
-					}
-				} else {
-					successfulAdditions++
-					filesAffected[a.img.Path] = true
-				}
-			}
-			logMessage = fmt.Sprintf("Attempted to apply %d tag(s) to %s. Successes: %d, Errors: %d", len(tagsToAdd), a.img.Path, successfulAdditions, errorsEncountered)
+			successfulAdditions, errorsEncountered, errAddOp = a._applyTagsToSingleImage(a.img.Path, tagsToAdd, filesAffected)
+			totalTagsAttempted = len(tagsToAdd) // All tags were attempted on the single image
+
+			logMessage = fmt.Sprintf("Tagging %s: %d attempts, %d successes, %d errors.", filepath.Base(a.img.Path), totalTagsAttempted, successfulAdditions, errorsEncountered)
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("%d tag(s) applied partially.\n%d errors occurred (see logs).", len(tagsToAdd), errorsEncountered)
 				showMessage = true // Show message for partial success on single image too
@@ -1280,7 +1290,9 @@ func (a *App) addTag() {
 			// No critical error, logMessage already added by a.addLogMessage
 		}
 		if len(filesAffected) > 0 { // Only update info/refresh if something actually changed
-			a.updateInfoText() // Update info panel for the current image
+			if _, ok := filesAffected[a.img.Path]; ok { // If current image was affected
+				a.updateInfoText() // Update info panel for the current image
+			}
 			if a.refreshTagsFunc != nil {
 				// log.Println("Calling Tags tab refresh function.") // Developer log, not for UI
 				a.refreshTagsFunc()
@@ -1294,6 +1306,56 @@ func (a *App) addTag() {
 			a.addLogMessage(fmt.Sprintf("Tagging Status: %s", statusMessage))
 		}
 	}, a.UI.MainWin)
+}
+
+// _removeTagFromSingleImage removes a tag from a single image path.
+func (a *App) _removeTagFromSingleImage(imagePath string, tagToRemove string) (errRemove error) {
+	a.addLogMessage(fmt.Sprintf("Removing tag '%s' from %s", tagToRemove, filepath.Base(imagePath)))
+	errRemove = a.tagDB.RemoveTag(imagePath, tagToRemove)
+	if errRemove == nil {
+		a.addLogMessage(fmt.Sprintf("Successfully removed tag '%s' from %s.", tagToRemove, filepath.Base(imagePath)))
+		if imagePath == a.img.Path { // If current image was affected
+			fyne.Do(func() { a.updateInfoText() })
+		}
+	} else {
+		a.addLogMessage(fmt.Sprintf("Error removing tag '%s' from %s: %v", tagToRemove, filepath.Base(imagePath), errRemove))
+	}
+	return
+}
+
+// _removeTagFromDirectory is a helper to remove a tag from all images in a given directory.
+func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string,
+	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
+	imagesUntaggedCount *int, errorsEncountered *int) {
+
+	a.addLogMessage(fmt.Sprintf("Batch untagging directory: %s for tag [%s]", filepath.Base(currentDir), tagToRemove))
+
+	for _, imageItem := range a.images {
+		itemPath := imageItem.Path
+		itemDir := filepath.Dir(itemPath)
+
+		if itemDir == currentDir {
+			wg.Add(1)
+			go func(path string, tag string) { // Pass path and tag to goroutine
+				defer wg.Done()
+				errRemove := a.tagDB.RemoveTag(path, tag)
+				mu.Lock()
+				defer mu.Unlock()
+				if errRemove != nil {
+					(*errorsEncountered)++
+					if *firstError == nil {
+						*firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(path), errRemove)
+					}
+				} else {
+					(*imagesUntaggedCount)++
+				}
+			}(itemPath, tagToRemove) // Pass itemPath and tagToRemove
+		}
+	}
+	wg.Wait() // Wait for all goroutines to finish
+
+	a.addLogMessage(fmt.Sprintf("Batch untagging for [%s] in '%s' complete. Images untagged: %d, Errors: %d.",
+		tagToRemove, filepath.Base(currentDir), *imagesUntaggedCount, *errorsEncountered))
 }
 
 // removeTag shows a dialog to remove an existing tag from the current image,
@@ -1362,67 +1424,34 @@ func (a *App) removeTag() {
 
 		var errRemoveOp error    // Use a local error variable for the operation
 		var statusMessage string // For success or partial success
-		var logMessage string
+		//var logMessage string
 		imagesUntaggedCount := 0
 		errorsEncountered := 0
 
 		if removeFromAll {
 			// --- NEW: Logic to remove tag from all images in the directory ---
 			currentDir := filepath.Dir(a.img.Path)
-			a.addLogMessage(fmt.Sprintf("Removing tag '%s' from all images in %s...", selectedTag, filepath.Base(currentDir)))
-
 			var wg sync.WaitGroup
 			var mu sync.Mutex
+			a._removeTagFromDirectory(selectedTag, currentDir, &wg, &mu, &errRemoveOp, &imagesUntaggedCount, &errorsEncountered)
 
-			for _, item := range a.images { // Iterate through the original full list
-				// Capture loop variables for the goroutine
-				itemPath := item.Path
-				tagToRemove := selectedTag
-
-				itemDir := filepath.Dir(item.Path)
-				if itemDir == currentDir {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						errRemove := a.tagDB.RemoveTag(itemPath, tagToRemove)
-
-						mu.Lock()
-						defer mu.Unlock()
-
-						if errRemove != nil {
-							// Error will be part of errRemoveOp and shown in dialog / logged
-							errorsEncountered++
-							if errRemoveOp == nil {
-								errRemoveOp = fmt.Errorf("failed to untag %s: %w", filepath.Base(itemPath), errRemove)
-							}
-						} else {
-							imagesUntaggedCount++
-						}
-					}()
-				}
-			}
-			wg.Wait() // Wait for all goroutines to finish
-
-			if imagesUntaggedCount > 0 || errorsEncountered > 0 { // Only log if something was attempted
-				logMessage = fmt.Sprintf("Removed tag '%s'. Images untagged: %d in %s. Errors: %d.",
-					selectedTag, imagesUntaggedCount, filepath.Base(currentDir), errorsEncountered)
-			} else {
-				logMessage = fmt.Sprintf("No images in directory %s found requiring removal of tag '%s'.", filepath.Base(currentDir), selectedTag)
-			}
-			a.addLogMessage(logMessage)
+			// if imagesUntaggedCount > 0 || errorsEncountered > 0 { // Only log if something was attempted
+			// 	logMessage = fmt.Sprintf("Removed tag '%s'. Images untagged: %d in %s. Errors: %d.",
+			// 		selectedTag, imagesUntaggedCount, filepath.Base(currentDir), errorsEncountered)
+			// } else {
+			// 	logMessage = fmt.Sprintf("No images in directory %s found requiring removal of tag '%s'.", filepath.Base(currentDir), selectedTag)
+			// }
+			// Log message is now handled by _removeTagFromDirectory or _removeTagFromSingleImage
 
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Tag '%s' removal attempted. %d images untagged.\n%d errors occurred (see logs).", selectedTag, imagesUntaggedCount, errorsEncountered)
 			} else if imagesUntaggedCount > 0 {
 				statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", selectedTag, imagesUntaggedCount, filepath.Base(currentDir))
 			}
-		} else {
-			// Original logic: Remove only from the current image
-			errRemoveOp = a.tagDB.RemoveTag(a.img.Path, selectedTag)
-			if errRemoveOp == nil {
-				imagesUntaggedCount = 1 // Only one attempt
-				logMessage = fmt.Sprintf("Removed tag '%s' from %s", selectedTag, filepath.Base(a.img.Path))
-				a.addLogMessage(logMessage)
+		} else { // Remove only from the current image
+			errRemoveOp = a._removeTagFromSingleImage(a.img.Path, selectedTag)
+			if errRemoveOp == nil { // If successful
+				imagesUntaggedCount = 1
 				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
 			}
 		}
@@ -1438,7 +1467,9 @@ func (a *App) removeTag() {
 			if a.refreshTagsFunc != nil && imagesUntaggedCount > 0 {
 				a.refreshTagsFunc()
 			}
-			a.updateInfoText()
+			if imagesUntaggedCount > 0 && (a.img.Path != "" && (removeFromAll || (!removeFromAll && selectedTag != ""))) { // Check if current image could have been affected
+				a.updateInfoText() // Refresh info text if current image might have changed
+			}
 		}
 	}, a.UI.MainWin)
 }

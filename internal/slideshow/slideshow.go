@@ -21,7 +21,7 @@ func NewSlideshowManager(interval time.Duration) *SlideshowManager {
 		interval = 2 * time.Second // Default interval if invalid
 	}
 	return &SlideshowManager{
-		isPaused:           true, // Start paused by default
+		isPaused:           false, // Start unpaused (playing) by default
 		wasPlayingBeforeOp: false,
 		interval:           interval,
 	}
