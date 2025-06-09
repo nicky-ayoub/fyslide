@@ -24,16 +24,20 @@ type ZoomPanArea struct {
 
 	isPanning    bool
 	lastMousePos fyne.Position
+
+	OnInteraction func() // Callback for when user interacts (scrolls, drags)
 }
 
 // NewZoomPanArea creates a new ZoomPanArea widget.
-func NewZoomPanArea(img image.Image) *ZoomPanArea {
+// The onInteraction func will be called when the user zooms or starts panning.
+func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 	zpa := &ZoomPanArea{
-		originalImg: img,
-		zoomFactor:  1.0,
-		panOffset:   fyne.Position{},
-		minZoom:     0.1,  // Example: 10% zoom
-		maxZoom:     10.0, // Example: 1000% zoom
+		originalImg:   img,
+		zoomFactor:    1.0,
+		panOffset:     fyne.Position{},
+		minZoom:       0.1,  // Example: 10% zoom
+		maxZoom:       10.0, // Example: 1000% zoom
+		OnInteraction: onInteraction,
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
 	zpa.ExtendBaseWidget(zpa)
@@ -51,16 +55,34 @@ func (zpa *ZoomPanArea) SetImage(img image.Image) {
 
 // Reset centers the image and resets zoom to 1.0 or a fit-to-view.
 func (zpa *ZoomPanArea) Reset() {
-	zpa.zoomFactor = 1.0
-	zpa.panOffset = fyne.Position{} // Default to top-left
+	zpa.panOffset = fyne.Position{} // Reset pan first
 
 	if zpa.originalImg != nil && zpa.Size().Width > 0 && zpa.Size().Height > 0 {
-		// Calculate initial pan to center the image (at 100% zoom)
-		imgWidth := float32(zpa.originalImg.Bounds().Dx()) * zpa.zoomFactor
-		imgHeight := float32(zpa.originalImg.Bounds().Dy()) * zpa.zoomFactor
+		imgBounds := zpa.originalImg.Bounds()
+		imgW := float32(imgBounds.Dx())
+		imgH := float32(imgBounds.Dy())
+		viewW := zpa.Size().Width
+		viewH := zpa.Size().Height
 
-		zpa.panOffset.X = (zpa.Size().Width - imgWidth) / 2
-		zpa.panOffset.Y = (zpa.Size().Height - imgHeight) / 2
+		// Calculate zoom factor to fit the image within the view
+		// while maintaining aspect ratio.
+		zoomW := viewW / imgW
+		zoomH := viewH / imgH
+
+		// Use the smaller zoom factor to ensure the whole image fits
+		zpa.zoomFactor = zoomW
+		if zoomH < zoomW {
+			zpa.zoomFactor = zoomH
+		}
+
+		// Center the scaled image
+		scaledImgW := imgW * zpa.zoomFactor
+		scaledImgH := imgH * zpa.zoomFactor
+		zpa.panOffset.X = (viewW - scaledImgW) / 2
+		zpa.panOffset.Y = (viewH - scaledImgH) / 2
+	} else {
+		// Default if no image or size is not ready (e.g. initial load before layout)
+		zpa.zoomFactor = 1.0
 	}
 	zpa.Refresh()
 }
@@ -100,6 +122,10 @@ func (zpa *ZoomPanArea) CreateRenderer() fyne.WidgetRenderer {
 
 // Scrolled handles mouse wheel events for zooming.
 func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
+	if zpa.OnInteraction != nil {
+		zpa.OnInteraction()
+	}
+
 	viewWidth, viewHeight := zpa.Size().Width, zpa.Size().Height
 	// Use event position if available and reliable, otherwise center of view
 	// Fyne's ScrollEvent.Position is often (0,0), so centering is safer.
@@ -133,6 +159,9 @@ func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
 
 // MouseDown starts panning.
 func (zpa *ZoomPanArea) MouseDown(ev *desktop.MouseEvent) {
+	if zpa.OnInteraction != nil && ev.Button == desktop.MouseButtonPrimary {
+		zpa.OnInteraction()
+	}
 	if ev.Button == desktop.MouseButtonPrimary { // Or check for a specific modifier if needed
 		zpa.isPanning = true
 		zpa.lastMousePos = ev.Position

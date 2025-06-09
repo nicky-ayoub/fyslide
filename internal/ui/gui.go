@@ -357,7 +357,9 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.buildKeyboardShortcuts()
 
 	// image canvas
-	a.zoomPanArea = NewZoomPanArea(nil) // Start with no image
+	a.zoomPanArea = NewZoomPanArea(nil, func() { // Pass the interaction callback
+		a.slideshowManager.Pause(true)
+	})
 
 	infoPanelContent := container.NewScroll(
 		container.NewVBox(
