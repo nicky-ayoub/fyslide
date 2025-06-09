@@ -20,7 +20,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 
@@ -79,7 +78,7 @@ type App struct {
 	filteredImages scan.FileItems // The list when a filter is active
 	index          int
 	img            Img
-	image          *canvas.Image
+	zoomPanArea    *ZoomPanArea
 
 	historyManager      *history.HistoryManager // Manages navigation history
 	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
@@ -296,9 +295,8 @@ func (a *App) updateInfoText() {
 // handleImageDisplayError is a helper to set the UI state when an image fails to load or decode.
 // formatName is optional and only used if errorType is "Decoding".
 func (a *App) handleImageDisplayError(imagePath, errorType string, originalError error, formatName string) {
-	a.image.Image = nil
 	a.img = Img{Path: imagePath} // Keep path for context
-	a.image.Refresh()
+	a.zoomPanArea.SetImage(nil)
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
 	a.updateInfoText()
 	if errorType == "Decoding" && formatName != "" {
@@ -322,9 +320,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 	// Handle empty list (either full or filtered)
 
 	if count == 0 { // Handle empty list (either full or filtered)
-		a.image.Image = nil
+		a.zoomPanArea.SetImage(nil)
 		a.img = Img{}
-		a.image.Refresh()
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
 		a.updateInfoText()
@@ -351,9 +348,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 			// This path should ideally not be hit if the initial count == 0 check is robust.
 			// For safety, ensure UI reflects no images.
 			fyne.Do(func() {
-				a.image.Image = nil
+				a.zoomPanArea.SetImage(nil) // Clear the image display
 				a.img = Img{}
-				a.image.Refresh()
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
 				a.updateInfoText()
@@ -389,9 +385,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 		// Successfully decoded image - perform UI updates on the Fyne thread
 		fyne.Do(func() {
 			a.img.OriginalImage = imageDecoded
-			a.img.Path = file.Name() // Update the path in the Img struct
-			a.image.Image = a.img.OriginalImage
-			a.image.Refresh()
+			a.img.Path = file.Name()                    // Update the path in the Img struct
+			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
 
 			// Update Title, Status Bar, and Info Text
 			a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", a.img.Path))

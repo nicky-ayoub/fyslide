@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -358,8 +357,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.buildKeyboardShortcuts()
 
 	// image canvas
-	a.image = &canvas.Image{}
-	a.image.FillMode = canvas.ImageFillContain
+	a.zoomPanArea = NewZoomPanArea(nil) // Start with no image
 
 	infoPanelContent := container.NewScroll(
 		container.NewVBox(
@@ -368,7 +366,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 	)
 	a.UI.split = container.NewHSplit(
-		a.image,
+		a.zoomPanArea,
 		infoPanelContent, // Use the info panel content directly
 	)
 	a.UI.split.SetOffset(0.85)

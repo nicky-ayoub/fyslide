@@ -45,6 +45,20 @@ func (a *App) buildKeyboardShortcuts() {
 			if len(a.UI.MainWin.Canvas().Overlays().List()) > 0 {
 				a.UI.MainWin.Canvas().Overlays().Top().Hide()
 			}
+		// Zoom and Pan shortcuts - only if image view is active
+		case fyne.KeyPlus: // Numpad Add or regular '+' / '='
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
+			}
+		case fyne.KeyMinus: // Numpad Subtract or regular '-' / '_'
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
+			}
+		case fyne.Key0, fyne.KeyInsert: // Reset zoom/pan
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+				a.zoomPanArea.Reset()
+			}
+
 		}
 	})
 }
@@ -57,6 +71,9 @@ func (a *App) showShortcuts() {
 		"Arrow Up", "Arrow Down", // KeyUp and KeyDown also skip
 		"Home", "End",
 		"P or Space", "Delete", "Esc",
+		"+", // Zoom In
+		"-", // Zoom Out
+		"0", // Reset Zoom/Pan
 	}
 	descriptions := []string{
 		"Quit Application", // Simplified, as Ctrl+Q is also listed
@@ -65,6 +82,9 @@ func (a *App) showShortcuts() {
 		"Skip Images Back (Arrow Up)", "Skip Images Forward (Arrow Down)", // Descriptions for Arrow Up/Down
 		"First Image", "Last Image",
 		"Toggle Play/Pause Slideshow", "Delete Current Image", "Close Dialog/Overlay",
+		"Zoom In Image",
+		"Zoom Out Image",
+		"Reset Image Zoom/Pan",
 	}
 	// Ensure shortcuts and descriptions have the same length for safety
 	// This is a defensive check; ideally, they are maintained to be equal.
