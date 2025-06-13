@@ -11,7 +11,6 @@ import (
 	"image"
 	"log"
 	"math/rand"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +26,13 @@ import (
 
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+)
+
+const (
+	// DefaultSkipCount is the default number of images to skip with PageUp/PageDown.
+	DefaultSkipCount = 20
+	// DefaultMaxLogMessages is the default maximum number of log messages to store in the UI.
+	DefaultMaxLogMessages = 100
 )
 
 // Img struct
@@ -100,7 +106,7 @@ type App struct {
 	// --- Log Bar ---
 	logMessages     []string // To store log messages for the status bar
 	currentLogIndex int      // Index of the currently displayed log message (-1 if empty, 0 to len-1 otherwise)
-	maxLogMessages  int      // Maximum number of log messages to store
+	maxLogMessages  int      // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
 
 }
 
@@ -117,13 +123,13 @@ func (a *App) getCurrentImageCount() int {
 	return len(a.getCurrentList())
 }
 
-func parseURL(urlStr string) *url.URL {
-	link, err := url.Parse(urlStr)
-	if err != nil {
-		fyne.LogError("Could not parse URL", err)
+// ternaryString is a helper, assuming it's defined elsewhere or should be local.
+// If it's the one from app.go, ensure it's accessible or duplicate if needed.
+func ternaryString(condition bool, trueVal, falseVal string) string {
+	if condition {
+		return trueVal
 	}
-	return link
-
+	return falseVal
 }
 
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
@@ -142,10 +148,13 @@ func (a *App) updateStatusBar() {
 		return
 	}
 	currentItem := a.getCurrentItem()
-	path := a.GetImageFullPath()
 	statusText := "Ready"
-	if currentItem != nil && path != "" {
-		statusText = fmt.Sprintf("%s  |  Image %d / %d", path, a.index+1, a.getCurrentImageCount()) // Shorter path
+
+	if currentItem != nil {
+		// If currentItem is not nil, a.index is valid and currentItem.Path can be used.
+		// Using currentItem.Path is safer than calling GetImageFullPath() here,
+		// as GetImageFullPath() might panic if a.index is somehow out of sync.
+		statusText = fmt.Sprintf("%s  |  Image %d / %d", currentItem.Path, a.index+1, a.getCurrentImageCount())
 		if a.isFiltered {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
 		}
@@ -570,6 +579,26 @@ func (a *App) nextImage() {
 
 }
 
+// skipImages adjusts the current image index by a given offset and displays the new image.
+func (a *App) skipImages(offset int) {
+	count := a.getCurrentImageCount()
+	if count == 0 {
+		return
+	}
+	a.isNavigatingHistory = false // A skip is a new navigation point, not history traversal
+
+	a.index += offset
+
+	// Clamp index to be within bounds [0, count-1]
+	if a.index >= count {
+		a.index = count - 1
+	}
+	if a.index < 0 {
+		a.index = 0
+	}
+	a.loadAndDisplayCurrentImage()
+}
+
 // ShowNextImageFromHistory attempts to move forward in the history stack.
 // Returns true if successful, false otherwise (e.g., at end of history or history disabled).
 func (a *App) ShowNextImageFromHistory() bool {
@@ -834,18 +863,18 @@ func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{}
 	a.historyManager = history.NewHistoryManager(historyCap)
 	a.skipCount = skipNum
-	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000) * time.Millisecond)
+	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000) * time.Millisecond) //nolint:durationcheck
 	a.isNavigatingHistory = false
-	a.maxLogMessages = 100 // Max number of log messages to store in UI
+	a.maxLogMessages = DefaultMaxLogMessages
 	a.logMessages = make([]string, 0, a.maxLogMessages)
 	a.currentLogIndex = -1 // No logs initially
 
 	// SlideshowManager's constructor handles default interval if slideshowIntervalSec is invalid
-	// So, no need for a separate check here for a.slideshowInterval.
+	// So, no need for a separate check here for slideshowIntervalSec.
 
 	if a.skipCount <= 0 {
-		log.Printf("Warning: Skip count must be positive. Defaulting to 20. Got: %d", skipNum)
-		a.skipCount = 20
+		fyne.LogError(fmt.Sprintf("Skip count must be positive. Defaulting to %d. Got: %d", DefaultSkipCount, skipNum), nil)
+		a.skipCount = DefaultSkipCount
 	}
 }
 

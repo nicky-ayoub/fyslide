@@ -29,11 +29,9 @@ func (a *App) buildKeyboardShortcuts() {
 		case fyne.KeyP, fyne.KeySpace:
 			a.togglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
-			a.index -= a.skipCount // Use configurable skip count
-			a.nextImage()
+			a.skipImages(-a.skipCount) // Use new skipImages method
 		case fyne.KeyPageDown, fyne.KeyDown:
-			a.index += a.skipCount // Use configurable skip count
-			a.nextImage()
+			a.skipImages(a.skipCount) // Use new skipImages method
 		case fyne.KeyHome:
 			a.firstImage()
 		case fyne.KeyEnd:
@@ -132,15 +130,6 @@ func (a *App) showShortcuts() {
 	win.SetContent(table)
 	win.Resize(fyne.NewSize(500, 500))
 	win.Show()
-}
-
-// ternaryString is a helper, assuming it's defined elsewhere or should be local.
-// If it's the one from app.go, ensure it's accessible or duplicate if needed.
-func ternaryString(condition bool, trueVal, falseVal string) string {
-	if condition {
-		return trueVal
-	}
-	return falseVal
 }
 
 // min returns the smaller of x or y.

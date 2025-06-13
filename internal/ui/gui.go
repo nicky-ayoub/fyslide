@@ -19,6 +19,7 @@ const (
 	noTagsFoundMsg       = "No tags found."
 	noTagsMatchSearchMsg = "No tags match search."
 	errorLoadingTagsMsg  = "Error loading tags."
+	initialSplitOffset   = 0.85
 )
 
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
@@ -371,7 +372,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.zoomPanArea,
 		infoPanelContent, // Use the info panel content directly
 	)
-	a.UI.split.SetOffset(0.85)
+	a.UI.split.SetOffset(initialSplitOffset)
 	a.UI.imageContentView = a.UI.split // Store the image view content
 
 	// --- Build Tags View Content ---
