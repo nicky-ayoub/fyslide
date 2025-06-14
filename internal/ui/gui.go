@@ -71,7 +71,6 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		initialPauseIcon = theme.MediaPauseIcon()
 	}
 	a.UI.pauseAction = widget.NewToolbarAction(initialPauseIcon, a.togglePlay)
-	// Use theme.ZoomInIcon as a placeholder; a dedicated "Zoom to Actual Size" or "1:1" icon would be better.
 	a.UI.showFullSizeAction = widget.NewToolbarAction(theme.ZoomInIcon(), a.handleShowFullSizeBtn)
 	a.UI.showFullSizeAction.Disable() // Initially disabled
 
@@ -381,7 +380,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 	)
 	a.UI.split = container.NewHSplit(
-		a.zoomPanArea, // zoomPanArea is directly in the split now
+		a.zoomPanArea,
 		infoPanelContent,
 	)
 	a.UI.split.SetOffset(initialSplitOffset)

@@ -131,6 +131,39 @@ func ternaryString(condition bool, trueVal, falseVal string) string {
 	return falseVal
 }
 
+// formatNumberWithCommas takes an integer and returns a string representation
+// with commas as thousands separators.
+func formatNumberWithCommas(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	if n < 0 {
+		s = s[1:] // Temporarily remove sign for processing
+	}
+	length := len(s)
+	if length <= 3 {
+		if n < 0 {
+			return "-" + s
+		}
+		return s
+	}
+	// Calculate number of commas needed
+	commas := (length - 1) / 3
+	result := make([]byte, length+commas)
+	for i, j, k := length-1, len(result)-1, 0; ; i, j = i-1, j-1 {
+		result[j] = s[i]
+		if i == 0 {
+			if n < 0 {
+				return "-" + string(result)
+			}
+			return string(result)
+		}
+		k++
+		if k%3 == 0 {
+			j--
+			result[j] = ','
+		}
+	}
+}
+
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
 func (a *App) getCurrentItem() *scan.FileItem {
 	currentList := a.getCurrentList()
@@ -271,15 +304,15 @@ func (a *App) updateInfoText() {
 
 	md := fmt.Sprintf(`## Stats
 %s
-**Num:** %d
+**Num:** %s
 
-**Total:** %d
+**Total:** %s
 
-**Size:**   %d bytes
+**Size:**   %s bytes
 
-**Width:**   %dpx
+**Width:**   %d px
 
-**Height:**  %dpx
+**Height:**  %d px
 
 **Last modified:** %s
 
@@ -291,10 +324,13 @@ func (a *App) updateInfoText() {
 ## EXIF Data
 %s
 `, // Added separator and tags section
-		filterStatus, // Add filter status
-		a.index+1,    // Display 1-based index
-		count,        // Use current count
-		fileInfo.Size(), imgWidth, imgHeight, fileInfo.ModTime().Format("2006-01-02"),
+		filterStatus,                            // Add filter status
+		formatNumberWithCommas(int64(a.index)),  // Display current index
+		formatNumberWithCommas(int64(count)),    // Use current count
+		formatNumberWithCommas(fileInfo.Size()), // Format size
+		imgWidth,                                // Reverted
+		imgHeight,                               // Reverted
+		fileInfo.ModTime().Format("2006-01-02"),
 		tagsString, // Add the formatted tags string here
 		exifString, // Add the formatted EXIF string
 	)
@@ -533,11 +569,10 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 		return
 	}
 
-	isLarger := a.zoomPanArea.IsOriginalLargerThanView()
 	currentZoom := a.zoomPanArea.CurrentZoom()
 	epsilon := float32(0.001) // Tolerance for float comparison
 
-	shouldBeEnabled := isLarger && (currentZoom < (1.0 - epsilon))
+	shouldBeEnabled := (currentZoom < (1.0 - epsilon)) || (currentZoom > (1.0 + epsilon))
 
 	if shouldBeEnabled {
 		a.UI.showFullSizeAction.Enable()
