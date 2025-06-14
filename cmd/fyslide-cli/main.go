@@ -504,6 +504,74 @@ var cleanCmd = &cobra.Command{
 	},
 }
 
+// addToTaggedCmd represents the command to add new tags to files already having a specific tag
+var addToTaggedCmd = &cobra.Command{
+	Use:   "add-to-tagged <initialTag> <tagToAdd1> [tagToAdd2...]",
+	Short: "Add new tags to all files that already have <initialTag>",
+	Long: `Finds all image files currently tagged with <initialTag>.
+Then, for each of these files, it adds <tagToAdd1>, <tagToAdd2>, etc.
+All tags are treated as case-insensitive (normalized to lowercase).`,
+	Args: cobra.MinimumNArgs(2), // Requires initialTag and at least one tagToAdd
+	RunE: func(cmd *cobra.Command, args []string) error {
+		initialTagRaw := args[0]
+		tagsToAddRaw := args[1:]
+
+		initialTag := strings.ToLower(initialTagRaw)
+		var tagsToAdd []string
+		for _, tRaw := range tagsToAddRaw {
+			tagsToAdd = append(tagsToAdd, strings.ToLower(tRaw))
+		}
+
+		cmd.Printf("Identifying files with initial tag '%s' to add new tag(s): [%s]\n", initialTag, strings.Join(tagsToAdd, ", "))
+		if dryRunFlag {
+			cmd.Println("DRY RUN: No changes will be made to the database.")
+		}
+
+		imagePaths, err := tagDB.GetImages(initialTag)
+		if err != nil {
+			return fmt.Errorf("error fetching images for initial tag '%s': %w", initialTag, err)
+		}
+
+		if len(imagePaths) == 0 {
+			cmd.Printf("No images found with the initial tag '%s'. No new tags will be added.\n", initialTag)
+			return nil
+		}
+
+		cmd.Printf("Found %d image(s) with tag '%s'. Proceeding to add new tags...\n", len(imagePaths), initialTag)
+		var firstError error
+		successfulAdditions := 0
+
+		for _, imgPath := range imagePaths {
+			for _, tag := range tagsToAdd {
+				if dryRunFlag {
+					cmd.Printf("  DRY RUN: Would add tag '%s' to %s (which has '%s')\n", tag, imgPath, initialTag)
+					successfulAdditions++ // Count as if it were applied for dry run summary
+				} else {
+					if err := tagDB.AddTag(imgPath, tag); err != nil {
+						cmd.PrintErrf("  Error adding tag '%s' to %s: %v\n", tag, imgPath, err)
+						if firstError == nil {
+							firstError = err
+						}
+					} else {
+						cmd.Printf("  Added tag '%s' to %s\n", tag, imgPath)
+						successfulAdditions++
+					}
+				}
+			}
+		}
+
+		summaryPrefix := "Finished"
+		if dryRunFlag {
+			summaryPrefix = "DRY RUN: Finished simulation of"
+		}
+		cmd.Printf("\n%s adding tags. Processed %d image files. Added %d new tag instances.\n", summaryPrefix, len(imagePaths), successfulAdditions)
+		if firstError != nil {
+			cmd.PrintErrf("Errors were encountered during the process. Please check the log. First error: %v\n", firstError)
+		}
+		return firstError
+	},
+}
+
 func init() {
 	// Add persistent flags to the root command (available to all subcommands)
 	// The default value for dbPathFlag is "", which means tagging.NewTagDB will use its internal default.
@@ -516,6 +584,7 @@ func init() {
 	normalizeCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the normalization process without making changes.")
 	replaceTagCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the tag replacement process without making changes.")
 	cleanCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate the cleanup process without making changes.")
+	addToTaggedCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Simulate adding new tags without making changes.")
 
 	// Add subcommands to the root command
 	rootCmd.AddCommand(addCmd)
@@ -528,6 +597,7 @@ func init() {
 	rootCmd.AddCommand(replaceTagCmd)
 	rootCmd.AddCommand(normalizeCmd)
 	rootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(addToTaggedCmd)
 }
 
 // processFilesInDirectory is a helper function to reduce duplication between batch-add and batch-remove
