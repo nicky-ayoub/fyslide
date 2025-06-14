@@ -31,25 +31,24 @@ func (hm *HistoryManager) RecordNavigation(path string) {
 	// If currentIndex is not at the end of the stack (e.g., user went back, then chose a new path),
 	// truncate the "future" part of history.
 	if hm.currentIndex != -1 && hm.currentIndex < len(hm.stack)-1 {
-		hm.stack = hm.stack[:hm.currentIndex+1]
+		hm.stack = hm.stack[:hm.currentIndex+1] // Truncate, currentIndex is now at the new end
 	}
 
-	// Avoid adding if it's the exact same path as the last entry AND we are at the end of history.
-	// This prevents duplicates if called for a refresh without actual navigation.
-	addToHistory := true
-	if len(hm.stack) > 0 && hm.currentIndex == len(hm.stack)-1 && hm.stack[hm.currentIndex] == path {
-		addToHistory = false
+	// Avoid adding if it's the exact same path as the current top of history.
+	// This check is valid after potential truncation above.
+	// hm.currentIndex >= 0 ensures we don't try to access hm.stack[-1] if stack is empty.
+	if hm.currentIndex >= 0 && hm.stack[hm.currentIndex] == path {
+		return // Path is the same as current; no change needed.
 	}
 
-	if addToHistory {
-		hm.stack = append(hm.stack, path)
-	}
+	// Add the new path
+	hm.stack = append(hm.stack, path)
 
 	// Trim history if it exceeds capacity (remove from the beginning)
 	if len(hm.stack) > hm.capacity {
 		hm.stack = hm.stack[len(hm.stack)-hm.capacity:]
 	}
-	// After adding/trimming, the current history index points to the last item.
+	// After adding a new path (and potentially trimming), currentIndex points to the new last item.
 	hm.currentIndex = len(hm.stack) - 1
 }
 
