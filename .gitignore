@@ -36,3 +36,18 @@ fyne-cross
 fyslide
 fyslide-cli
 test/
+
+# Fyne assets
+assets/dice-32.png
+assets/dice-disabled-24.xcf
+assets/dice-disabled-32.png
+assets/dice-disabled-32.xcf
+assets/go-sign-24.png
+assets/go-sign.png
+assets/go-sign.svg
+assets/go-sign.xcf
+assets/sign-check.svg
+assets/stop-sign-24.png
+assets/stop-sign.png
+assets/stop-sign.svg
+assets/traffic-light.svg
