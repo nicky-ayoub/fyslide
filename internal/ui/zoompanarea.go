@@ -9,6 +9,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+const (
+	defaultMinZoom        float32 = 0.1  // Example: 10% zoom
+	defaultMaxZoom        float32 = 10.0 // Example: 1000% zoom
+	defaultZoomScrollStep float32 = 0.1  // Zoom step for scroll events
+)
+
 // ZoomPanArea is a custom widget for displaying an image with zoom and pan.
 type ZoomPanArea struct {
 	widget.BaseWidget
@@ -35,8 +41,8 @@ func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 		originalImg:   img,
 		zoomFactor:    1.0,
 		panOffset:     fyne.Position{},
-		minZoom:       0.1,  // Example: 10% zoom
-		maxZoom:       10.0, // Example: 1000% zoom
+		minZoom:       defaultMinZoom,
+		maxZoom:       defaultMaxZoom,
 		OnInteraction: onInteraction,
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
@@ -96,14 +102,18 @@ func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	srcBounds := zpa.originalImg.Bounds()
 
+	// Pre-calculate inverse zoom factor to avoid division in the loop.
+	// zpa.minZoom should prevent zpa.zoomFactor from being zero.
+	invZoomFactor := float32(1.0) / zpa.zoomFactor
+
 	// Transform defines how to map destination pixels to source pixels
 	// For each pixel (dx, dy) in dst, find corresponding (sx, sy) in src
 	for dy := 0; dy < h; dy++ {
 		for dx := 0; dx < w; dx++ {
 			// Screen point (dx, dy) to image point (sx, sy)
 			// Inverse of pan, then inverse of zoom
-			sx := (float32(dx) - zpa.panOffset.X) / zpa.zoomFactor
-			sy := (float32(dy) - zpa.panOffset.Y) / zpa.zoomFactor
+			sx := (float32(dx) - zpa.panOffset.X) * invZoomFactor
+			sy := (float32(dy) - zpa.panOffset.Y) * invZoomFactor
 
 			// Check if the source point is within the original image bounds
 			if sx >= float32(srcBounds.Min.X) && sx < float32(srcBounds.Max.X) &&
@@ -135,12 +145,11 @@ func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
 	imgSpaceX := (mouseX - zpa.panOffset.X) / zpa.zoomFactor
 	imgSpaceY := (mouseY - zpa.panOffset.Y) / zpa.zoomFactor
 
-	//oldZoom := zpa.zoomFactor
-	zoomIncrement := float32(0.1)
+	// Apply zoom
 	if ev.Scrolled.DY < 0 { // Scroll up/away from user (content moves down) -> zoom out
-		zpa.zoomFactor /= (1.0 + zoomIncrement)
+		zpa.zoomFactor /= (1.0 + defaultZoomScrollStep)
 	} else if ev.Scrolled.DY > 0 { // Scroll down/towards user (content moves up) -> zoom in
-		zpa.zoomFactor *= (1.0 + zoomIncrement)
+		zpa.zoomFactor *= (1.0 + defaultZoomScrollStep)
 	}
 
 	if zpa.zoomFactor < zpa.minZoom {
