@@ -109,9 +109,11 @@ type tagListItem struct {
 // buildTagsTab creates the content for the "Tags" tab with search and global removal
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	var tagList *widget.List
-	var allTags []tagListItem       // Holds all tags (name and count) fetched from DB
-	var filteredData []tagListItem  // Holds the tags currently displayed in the list
-	var selectedTagForAction string // Holds the string of the currently selected tag for actions
+	var allTags []tagListItem             // Holds all tags (name and count) fetched from DB
+	var filteredDisplayData []tagListItem // Holds the tags currently displayed in the list
+	var messageLabel *widget.Label        // For placeholder/status messages
+	var listContentArea *fyne.Container   // A stack to hold either the list or the message
+	var selectedTagForAction string       // Holds the string of the currently selected tag for actions
 
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Search Tags...")
@@ -119,30 +121,35 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	// Function to filter and update the list display
 	filterAndRefreshList := func(searchTerm string) {
 		searchTerm = strings.ToLower(strings.TrimSpace(searchTerm))
-		filteredData = []tagListItem{} // Clear previous filter results
+		filteredDisplayData = []tagListItem{} // Clear previous filter results
 
 		if searchTerm == "" {
 			// If search is empty, show all tags
-			if len(allTags) == 0 {
-				filteredData = []tagListItem{{Name: noTagsFoundMsg, Count: -1}}
-			} else {
-				filteredData = allTags
-			}
+			filteredDisplayData = allTags
 		} else {
 			// Filter allTags based on searchTerm
 			for _, tag := range allTags {
 				if strings.Contains(strings.ToLower(tag.Name), searchTerm) {
-					filteredData = append(filteredData, tag)
+					filteredDisplayData = append(filteredDisplayData, tag)
 				}
-			}
-			if len(filteredData) == 0 {
-				filteredData = []tagListItem{{Name: noTagsMatchSearchMsg, Count: -1}}
 			}
 		}
 
-		if tagList != nil {
+		if len(filteredDisplayData) == 0 {
+			currentMsg := noTagsFoundMsg
+			if searchTerm != "" { // If search was active and found nothing
+				currentMsg = noTagsMatchSearchMsg
+			} else if len(allTags) > 0 && searchTerm == "" { // Search empty, but allTags had items (should not happen if filteredDisplayData is empty)
+				// This case implies allTags itself was empty, so noTagsFoundMsg is correct.
+			}
+			messageLabel.SetText(currentMsg)
+			messageLabel.Show()
+			tagList.Hide()
+		} else {
+			messageLabel.Hide()
+			tagList.Show()
 			tagList.Refresh()
-			tagList.ScrollToTop() // Scroll to top after filtering
+			tagList.ScrollToTop()
 		}
 	}
 
@@ -153,11 +160,14 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		fetchedTagsWithCounts, err := a.tagDB.GetAllTags()
 		if err != nil {
 			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
-			allTags = []tagListItem{} // Ensure allTags is empty on error
-			filteredData = []tagListItem{{Name: errorLoadingTagsMsg, Count: -1}}
+			allTags = []tagListItem{}
+			messageLabel.SetText(errorLoadingTagsMsg)
+			messageLabel.Show()
+			tagList.Hide()
 		} else if len(fetchedTagsWithCounts) == 0 { // Check length of fetched data
 			allTags = []tagListItem{}
-			filteredData = []tagListItem{{Name: noTagsFoundMsg, Count: -1}}
+			// messageLabel will be set by filterAndRefreshList if allTags is empty
+			filterAndRefreshList(searchEntry.Text) // Show "No tags found"
 		} else {
 			// Convert []tagging.TagWithCount to []tagListItem for the UI
 			tempAllTags := make([]tagListItem, len(fetchedTagsWithCounts))
@@ -169,15 +179,13 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 			// Apply the current search filter after loading
 			filterAndRefreshList(searchEntry.Text)
 			// Disable button and clear selection after refresh
-			if tagList != nil {
+			if tagList != nil && tagList.Visible() {
 				tagList.UnselectAll() // This will trigger OnUnselected
 			}
 			return // filterAndRefreshList already refreshes the list
 		}
 
-		// If there was an error or no tags, refresh the list directly
-		if tagList != nil {
-			tagList.Refresh()
+		if tagList != nil { // Ensure button is disabled if list is not shown or empty
 			tagList.UnselectAll() // Ensure button is disabled
 		}
 	}
@@ -223,37 +231,28 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 
 	tagList = widget.NewList(
 		func() int {
-			return len(filteredData) // List length is based on filteredData
+			return len(filteredDisplayData) // List length is based on filteredDisplayData
 		},
 		func() fyne.CanvasObject {
 			return widget.NewLabel("tag template") // Use label, simpler
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			item := filteredData[id]
+			// Placeholders are handled by showing messageLabel, so item here is always a real tag.
+			item := filteredDisplayData[id]
 			label := obj.(*widget.Label)
-			if item.Count == -1 { // It's a placeholder message
-				label.SetText(item.Name)
-			} else {
-				label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
-			}
+			label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
 		},
 	)
 
 	tagList.OnSelected = func(id widget.ListItemID) {
-		if id < 0 || id >= len(filteredData) { // Bounds check on filteredData
+		if id < 0 || id >= len(filteredDisplayData) { // Bounds check on filteredDisplayData
 			// log.Println("DEBUG: Tag selection out of bounds or filteredData empty.")
 			selectedTagForAction = ""
 			removeButton.Disable()
 			return
 		}
-		selectedItem := filteredData[id]
-		if selectedItem.Count == -1 { // Check if it's a placeholder
-			// log.Printf("DEBUG: Placeholder item selected: %s", selectedItem.Name)
-			selectedTagForAction = ""
-			removeButton.Disable()
-			tagList.Unselect(id) // Unselect the placeholder
-			return
-		}
+		// No need to check for placeholder (Count == -1) as list only contains real tags now.
+		selectedItem := filteredDisplayData[id]
 		selectedTagForAction = selectedItem.Name // Store only the name for actions
 		removeButton.Enable()
 		// log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
@@ -270,9 +269,15 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		//a.clearFilter()
 	}
 
-	loadAndFilterTagData()
+	messageLabel = widget.NewLabel(noTagsFoundMsg) // Default message
+	messageLabel.Alignment = fyne.TextAlignCenter
+	messageLabel.Wrapping = fyne.TextWrapWord
 
-	content := container.NewBorder(topBar, removeButton, nil, nil, tagList)
+	listContentArea = container.NewStack(messageLabel, tagList)
+	tagList.Hide() // Initially hide list, loadAndFilterTagData will show it if tags exist
+
+	loadAndFilterTagData()
+	content := container.NewBorder(topBar, removeButton, nil, nil, listContentArea)
 
 	return content, loadAndFilterTagData
 }

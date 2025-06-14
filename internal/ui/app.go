@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"fyslide/internal/history"
@@ -9,6 +10,7 @@ import (
 	"fyslide/internal/slideshow" // Import the new package
 	"fyslide/internal/tagging"
 	"image"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -26,6 +28,7 @@ import (
 
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	"github.com/rwcarlsen/goexif/exif"
 )
 
 const (
@@ -41,6 +44,7 @@ type Img struct {
 	EditedImage   *image.RGBA
 	Path          string
 	Directory     string
+	EXIFData      map[string]string // To store selected EXIF fields
 }
 
 // UI struct
@@ -262,6 +266,42 @@ func (a *App) updateInfoText() {
 		tagsString = strings.Join(currentTags, ", ")
 	}
 
+	// --- Build EXIF String ---
+	exifString := "(not available)"
+	if a.img.EXIFData != nil && len(a.img.EXIFData) > 0 {
+		var exifParts []string
+		// Define a preferred order or a selection of tags to display
+		displayOrder := []exif.FieldName{ // Use exif.FieldName for keys
+			exif.Make, exif.Model, exif.DateTimeOriginal,
+			exif.ExposureTime, exif.FNumber, exif.ISOSpeedRatings,
+			exif.PixelXDimension, exif.PixelYDimension, // Original dimensions from EXIF
+		}
+
+		// Create a temporary copy to avoid modifying a.img.EXIFData during iteration
+		tempExifData := make(map[string]string)
+		for k, v := range a.img.EXIFData {
+			tempExifData[k] = v
+		}
+
+		for _, keyName := range displayOrder {
+			keyStr := string(keyName)
+			if val, ok := tempExifData[keyStr]; ok {
+				val = strings.Replace(val, "\"", "", -1) // Clean up quotes
+				exifParts = append(exifParts, fmt.Sprintf("**%s:** %s", keyStr, val))
+				delete(tempExifData, keyStr) // Remove from temp map
+			}
+		}
+
+		// Add any remaining tags (that were not in displayOrder), sorted for consistency
+		// This part is optional if you only want to show specific tags from displayOrder.
+		// If you want to show all other found EXIF tags, you would iterate over tempExifData here.
+
+		if len(exifParts) > 0 {
+			exifString = strings.Join(exifParts, "\n\n") // Use double newline for better spacing
+		}
+	}
+	// --- End EXIF String ---
+
 	// --- Build Markdown ---
 	filterStatus := ""
 	if a.isFiltered {
@@ -285,12 +325,17 @@ func (a *App) updateInfoText() {
 ---
 ## Tags
 %s
+
+---
+## EXIF Data
+%s
 `, // Added separator and tags section
 		filterStatus, // Add filter status
 		a.index+1,    // Display 1-based index
 		count,        // Use current count
 		fileInfo.Size(), imgWidth, imgHeight, fileInfo.ModTime().Format("2006-01-02"),
 		tagsString, // Add the formatted tags string here
+		exifString, // Add the formatted EXIF string
 	)
 
 	// --- Update Widget ---
@@ -304,7 +349,7 @@ func (a *App) updateInfoText() {
 // handleImageDisplayError is a helper to set the UI state when an image fails to load or decode.
 // formatName is optional and only used if errorType is "Decoding".
 func (a *App) handleImageDisplayError(imagePath, errorType string, originalError error, formatName string) {
-	a.img = Img{Path: imagePath} // Keep path for context
+	a.img = Img{Path: imagePath, EXIFData: make(map[string]string)} // Keep path, clear EXIF
 	a.zoomPanArea.SetImage(nil)
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
 	a.updateInfoText()
@@ -330,7 +375,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 
 	if count == 0 { // Handle empty list (either full or filtered)
 		a.zoomPanArea.SetImage(nil)
-		a.img = Img{}
+		a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
 		a.updateInfoText()
@@ -357,8 +402,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 			// This path should ideally not be hit if the initial count == 0 check is robust.
 			// For safety, ensure UI reflects no images.
 			fyne.Do(func() {
-				a.zoomPanArea.SetImage(nil) // Clear the image display
-				a.img = Img{}
+				a.zoomPanArea.SetImage(nil)                    // Clear the image display
+				a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
 				a.updateInfoText()
@@ -383,6 +428,48 @@ func (a *App) loadAndDisplayCurrentImage() {
 		}
 		defer file.Close()
 
+		// --- EXIF Parsing ---
+		currentEXIFData := make(map[string]string)
+		// Seek to beginning for EXIF parsing
+		_, seekErr := file.Seek(0, 0)
+		if seekErr != nil {
+			fyne.Do(func() {
+				a.addLogMessage(fmt.Sprintf("Error seeking file for EXIF: %v", seekErr))
+			})
+			// Continue to image decoding if seek fails, EXIF will be empty
+		} else {
+			exifData, exifErr := exif.Decode(file)
+			if exifErr == nil && exifData != nil {
+				// Extract specific tags you're interested in
+				tagsToExtract := []exif.FieldName{
+					exif.DateTimeOriginal, exif.Make, exif.Model,
+					exif.ExposureTime, exif.FNumber, exif.ISOSpeedRatings,
+					exif.PixelXDimension, exif.PixelYDimension,
+				}
+				for _, tagName := range tagsToExtract {
+					tag, errGetTag := exifData.Get(tagName)
+					if errGetTag == nil {
+						currentEXIFData[string(tagName)] = tag.String()
+					}
+				}
+			} else if exifErr != nil && !errors.Is(exifErr, io.EOF) && exifErr.Error() != "EOF" && exifErr.Error() != "no EXIF data" {
+				// Log only significant errors, not "no EXIF data" or simple EOF
+				fyne.Do(func() {
+					a.addLogMessage(fmt.Sprintf("EXIF parsing error for %s: %v", filepath.Base(path), exifErr))
+				})
+			}
+		}
+		// --- End EXIF Parsing ---
+
+		// IMPORTANT: Seek back to the beginning for image decoding
+		_, seekErr = file.Seek(0, 0)
+		if seekErr != nil {
+			fyne.Do(func() {
+				a.handleImageDisplayError(path, "Seeking before Decode", seekErr, "")
+			})
+			return
+		}
+
 		imageDecoded, formatName, err := image.Decode(file)
 		if err != nil {
 			fyne.Do(func() {
@@ -395,6 +482,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 		fyne.Do(func() {
 			a.img.OriginalImage = imageDecoded
 			a.img.Path = file.Name()                    // Update the path in the Img struct
+			a.img.EXIFData = currentEXIFData            // Store parsed EXIF data
 			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
 
 			// Update Title, Status Bar, and Info Text
@@ -860,7 +948,7 @@ func (a *App) imageCount() int {
 }
 
 func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
-	a.img = Img{}
+	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
 	a.historyManager = history.NewHistoryManager(historyCap)
 	a.skipCount = skipNum
 	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000) * time.Millisecond) //nolint:durationcheck

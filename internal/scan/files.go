@@ -79,8 +79,8 @@ func Run(dir string) <-chan FileItem {
 	return out
 }
 
-func isImage(n string) bool {
-	switch strings.ToLower(filepath.Ext(n)) {
+func isImage(fileName string) bool {
+	switch strings.ToLower(filepath.Ext(fileName)) {
 	case ".png", ".jpg", ".jpeg", ".gif":
 		return true
 	default:
