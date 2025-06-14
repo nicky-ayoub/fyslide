@@ -2,6 +2,7 @@
 package slideshow
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -10,24 +11,39 @@ const (
 	defaultSlideshowInterval = 2 * time.Second
 )
 
+// LoggerFunc defines a function signature for logging messages.
+type LoggerFunc func(message string)
+
 // SlideshowManager handles the slideshow functionality.
 type SlideshowManager struct {
 	mu                 sync.Mutex
 	isPaused           bool
 	wasPlayingBeforeOp bool // Tracks if slideshow was playing before a temp pause
 	interval           time.Duration
+	logger             LoggerFunc
 }
 
 // NewSlideshowManager creates a new SlideshowManager.
 // Interval is the time between automatic transitions.
-func NewSlideshowManager(interval time.Duration) *SlideshowManager {
+// logger is an optional logging function.
+func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *SlideshowManager {
 	if interval <= 0 {
 		interval = defaultSlideshowInterval // Default interval if invalid
 	}
-	return &SlideshowManager{
+	sm := &SlideshowManager{
 		isPaused:           false, // Start unpaused (playing) by default
 		wasPlayingBeforeOp: false,
 		interval:           interval,
+		logger:             logger,
+	}
+	sm.logMsg("SlideshowManager initialized. Interval: %v, Initial state: Playing", sm.interval)
+	return sm
+}
+
+// logMsg is a helper to use the configured logger.
+func (sm *SlideshowManager) logMsg(format string, args ...interface{}) {
+	if sm.logger != nil {
+		sm.logger(fmt.Sprintf(format, args...))
 	}
 }
 
@@ -37,6 +53,11 @@ func (sm *SlideshowManager) TogglePlayPause() {
 	defer sm.mu.Unlock()
 	sm.isPaused = !sm.isPaused
 	sm.wasPlayingBeforeOp = false // User toggle overrides any operation-specific state
+	if sm.isPaused {
+		sm.logMsg("Slideshow state toggled to: Paused")
+	} else {
+		sm.logMsg("Slideshow state toggled to: Playing")
+	}
 }
 
 // Pause forces the slideshow to pause.
@@ -50,6 +71,7 @@ func (sm *SlideshowManager) Pause(forOperation bool) {
 		sm.wasPlayingBeforeOp = !sm.isPaused
 	}
 	sm.isPaused = true
+	sm.logMsg("Slideshow explicitly paused. Was playing before op: %t", sm.wasPlayingBeforeOp)
 }
 
 // ResumeAfterOperation resumes the slideshow only if it was playing before Pause(true) was called.
@@ -58,6 +80,9 @@ func (sm *SlideshowManager) ResumeAfterOperation() {
 	defer sm.mu.Unlock()
 	if sm.wasPlayingBeforeOp {
 		sm.isPaused = false
+		sm.logMsg("Slideshow resumed after operation. State: Playing")
+	} else {
+		sm.logMsg("Slideshow not resumed after operation (was not playing before or already resumed). Current paused state: %t", sm.isPaused)
 	}
 	sm.wasPlayingBeforeOp = false // Reset the flag
 }

@@ -34,8 +34,6 @@ import (
 const (
 	// DefaultSkipCount is the default number of images to skip with PageUp/PageDown.
 	DefaultSkipCount = 20
-	// DefaultMaxLogMessages is the default maximum number of log messages to store in the UI.
-	DefaultMaxLogMessages = 100
 )
 
 // Img struct
@@ -105,13 +103,9 @@ type App struct {
 
 	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
 
-	skipCount int // NEW: Configurable skip count for PageUp/PageDown
-
-	// --- Log Bar ---
-	logMessages     []string // To store log messages for the status bar
-	currentLogIndex int      // Index of the currently displayed log message (-1 if empty, 0 to len-1 otherwise)
-	maxLogMessages  int      // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
-
+	skipCount      int // NEW: Configurable skip count for PageUp/PageDown
+	maxLogMessages int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
+	logUIManager   *LogUIManager
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -163,60 +157,26 @@ func (a *App) updateStatusBar() {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
 		}
 	}
-	statusText += ternaryString(a.slideshowManager.IsPaused(), " | Paused", " | Playing")
+	if a.slideshowManager.IsPaused() {
+		statusText += " | Paused"
+	} else {
+		statusText += " | Playing"
+	}
 	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
 }
 
 // addLogMessage adds a message to the UI log display.
 func (a *App) addLogMessage(message string) {
-	// Also log to console for development/debugging purposes
-	//log.Printf("UI_LOG: %s", message)
+	// Optional: Keep console logging here if desired, or move to LogUIManager
+	// log.Printf("App->LogUIManager: %s", message)
 
-	if a.UI.statusLogLabel == nil { // UI not fully initialized
+	if a.logUIManager != nil {
+		a.logUIManager.AddLogMessage(message)
+	} else {
+		// Fallback if LogUIManager is not yet initialized (should ideally not happen in normal flow)
+		log.Printf("LogUIManager not ready, console log: %s", message)
 		return
 	}
-
-	a.logMessages = append(a.logMessages, message)
-	if len(a.logMessages) > a.maxLogMessages {
-		// Keep only the latest maxLogMessages
-		a.logMessages = a.logMessages[len(a.logMessages)-a.maxLogMessages:]
-	}
-	a.currentLogIndex = len(a.logMessages) - 1 // Point to the newest message
-	a.updateLogDisplay()
-}
-
-// updateLogDisplay refreshes the status bar log label and button states.
-func (a *App) updateLogDisplay() {
-	if a.UI.statusLogLabel == nil || a.UI.statusLogUpBtn == nil || a.UI.statusLogDownBtn == nil {
-		return // UI not ready
-	}
-
-	if len(a.logMessages) == 0 {
-		a.UI.statusLogLabel.SetText("")
-		a.UI.statusLogUpBtn.Disable()
-		a.UI.statusLogDownBtn.Disable()
-		return
-	}
-
-	// Ensure currentLogIndex is valid
-	if a.currentLogIndex < 0 {
-		a.currentLogIndex = 0
-	} else if a.currentLogIndex >= len(a.logMessages) {
-		a.currentLogIndex = len(a.logMessages) - 1
-	}
-
-	a.UI.statusLogLabel.SetText(fmt.Sprintf("[%d/%d] %s", a.currentLogIndex+1, len(a.logMessages), a.logMessages[a.currentLogIndex]))
-	if a.currentLogIndex <= 0 {
-		a.UI.statusLogUpBtn.Disable()
-	} else {
-		a.UI.statusLogUpBtn.Enable()
-	}
-	if a.currentLogIndex >= len(a.logMessages)-1 {
-		a.UI.statusLogDownBtn.Disable()
-	} else {
-		a.UI.statusLogDownBtn.Enable()
-	}
-
 }
 
 // updateInfoText fetches current image info and tags, then updates the infoText widget.
@@ -817,22 +777,6 @@ func (a *App) ShowPreviousImage() {
 	a.isNavigatingHistory = false // Reset flag after the operation is complete
 }
 
-func (a *App) showPreviousLogMessage() {
-	if len(a.logMessages) == 0 || a.currentLogIndex <= 0 {
-		return
-	}
-	a.currentLogIndex--
-	a.updateLogDisplay()
-}
-
-func (a *App) showNextLogMessage() {
-	if len(a.logMessages) == 0 || a.currentLogIndex >= len(a.logMessages)-1 {
-		return
-	}
-	a.currentLogIndex++
-	a.updateLogDisplay()
-}
-
 // Delete file
 
 func (a *App) deleteFileCheck() {
@@ -931,8 +875,15 @@ func (a *App) deleteFile() {
 func (a *App) loadImages(root string) {
 	a.images = nil // Clear previous images or a.images = a.images[:0]
 
-	imageChan := scan.Run(root)   // scan.Run now returns a channel
-	for item := range imageChan { // Loop until the channel is closed
+	// Define a logger function that matches scan.LoggerFunc
+	// and uses the app's logUIManager.
+	scanLogger := func(message string) {
+		// fyne.Do is important if scan.Run's logger calls happen from a non-main goroutine
+		// and a.addLogMessage directly updates UI. a.addLogMessage itself uses logUIManager.
+		fyne.Do(func() { a.addLogMessage(message) })
+	}
+	imageChan := scan.Run(root, scanLogger) // Pass the logger
+	for item := range imageChan {           // Loop until the channel is closed
 		a.images = append(a.images, item)
 		// Optionally, you could update a progress indicator here
 		// if the GUI needs to show loading progress.
@@ -950,12 +901,19 @@ func (a *App) imageCount() int {
 func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
 	a.historyManager = history.NewHistoryManager(historyCap)
+
+	// Define a logger function for SlideshowManager
+	// This closure captures 'a' (the App instance).
+	slideshowLogger := func(message string) {
+		// Ensure UI updates from logs happen on the Fyne goroutine.
+		// a.addLogMessage itself uses a.logUIManager which updates UI.
+		fyne.Do(func() { a.addLogMessage(fmt.Sprintf("Slideshow: %s", message)) })
+	}
+
 	a.skipCount = skipNum
-	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000) * time.Millisecond) //nolint:durationcheck
+	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000)*time.Millisecond, slideshowLogger) //nolint:durationcheck
 	a.isNavigatingHistory = false
 	a.maxLogMessages = DefaultMaxLogMessages
-	a.logMessages = make([]string, 0, a.maxLogMessages)
-	a.currentLogIndex = -1 // No logs initially
 
 	// SlideshowManager's constructor handles default interval if slideshowIntervalSec is invalid
 	// So, no need for a separate check here for slideshowIntervalSec.
@@ -1041,13 +999,22 @@ func CreateApplication() {
 
 	ui := &App{app: a, direction: 1}
 
-	ui.tagDB, err = tagging.NewTagDB("")
-	if err != nil {
-		log.Fatalf("Failed to initialize tag database: %v", err)
-		// For a fatal error like this, log.Fatalf is appropriate as the app can't continue.
-		// If we wanted to show a dialog, we'd need the main window, which isn't fully up yet.
+	// Define the logger function that TagDB will use.
+	// This closure captures the 'ui' variable (*App instance).
+	appLoggerFunc := func(message string) {
+		if ui.logUIManager != nil { // Check if logUIManager has been initialized
+			ui.logUIManager.AddLogMessage(message)
+		} else {
+			// Fallback to console log if logUIManager is not yet ready
+			// This might happen for logs from NewTagDB before buildMainUI completes.
+			log.Printf("EarlyTagDBLog: %s", message)
+		}
 	}
 
+	ui.tagDB, err = tagging.NewTagDB("", appLoggerFunc) // Pass the logger function
+	if err != nil {
+		log.Fatalf("Failed to initialize tag database: %v", err)
+	}
 	// Initialize UI components that need the app instance
 	ui.UI.MainWin = a.NewWindow("FySlide")
 	ui.UI.MainWin.SetCloseIntercept(func() {

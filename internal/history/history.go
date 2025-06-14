@@ -55,7 +55,10 @@ func (hm *HistoryManager) RecordNavigation(path string) {
 // NavigateBack attempts to get the previous path from history.
 // Returns the path and true if successful, or an empty string and false.
 func (hm *HistoryManager) NavigateBack() (path string, ok bool) {
-	if hm.capacity == 0 || hm.currentIndex <= 0 { // Need to be at least at the second item (index 1) to go back
+	if hm.capacity == 0 {
+		return "", false
+	}
+	if hm.currentIndex <= 0 { // Need to be at least at the second item (index 1) to go back
 		return "", false
 	}
 	hm.currentIndex--
@@ -65,7 +68,10 @@ func (hm *HistoryManager) NavigateBack() (path string, ok bool) {
 // NavigateForward attempts to get the next path from history.
 // Returns the path and true if successful, or an empty string and false.
 func (hm *HistoryManager) NavigateForward() (path string, ok bool) {
-	if hm.capacity == 0 || hm.currentIndex == -1 || hm.currentIndex >= len(hm.stack)-1 {
+	if hm.capacity == 0 {
+		return "", false
+	}
+	if hm.currentIndex == -1 || hm.currentIndex >= len(hm.stack)-1 {
 		return "", false
 	}
 	hm.currentIndex++

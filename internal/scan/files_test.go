@@ -120,7 +120,12 @@ func TestRun(t *testing.T) {
 	}
 
 	// --- Act ---
-	itemsChan := Run(rootDir)
+	// Define a logger for the test
+	testLogger := func(message string) {
+		t.Logf("ScanTestLogger: %s", message)
+	}
+
+	itemsChan := Run(rootDir, testLogger)
 	var foundItems FileItems
 
 	timeout := time.After(5 * time.Second) // Timeout for channel reading

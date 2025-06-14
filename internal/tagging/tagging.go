@@ -20,9 +20,14 @@ const (
 	TagsToImagesBucket = "TagsToImages" // Exported
 )
 
+// LoggerFunc defines a function signature for logging messages.
+// This allows the ui package to provide its logging mechanism.
+type LoggerFunc func(message string)
+
 // TagDB manages the tagging database.
 type TagDB struct {
-	db *bolt.DB
+	db     *bolt.DB
+	logger LoggerFunc
 }
 
 // TagWithCount holds a tag name and the number of images associated with it.
@@ -33,7 +38,8 @@ type TagWithCount struct {
 
 // NewTagDB creates or opens the tag database file.
 // dbDir specifies the directory where the db file should be stored.
-func NewTagDB(dbDir string) (*TagDB, error) {
+// logger is a function that will be used for logging messages.
+func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
 	if dbDir == "" {
 		// Default to user config directory or current directory if needed
 		configDir, err := os.UserConfigDir()
@@ -41,7 +47,11 @@ func NewTagDB(dbDir string) (*TagDB, error) {
 			log.Printf("Warning: Could not get user config dir: %v. Using current dir.", err)
 			dbDir = "." // Fallback to current directory
 		} else {
-			appConfigDir := filepath.Join(configDir, "fyslide") // App specific subfolder
+			appName := "fyslide" // Consider making this a constant if used elsewhere
+			// Attempt to get executable name for the app folder if possible, otherwise default.
+			// For simplicity, we'll stick to a fixed name.
+			appConfigDir := filepath.Join(configDir, appName) // App specific subfolder
+
 			// Ensure the directory exists
 			if err := os.MkdirAll(appConfigDir, 0750); err != nil {
 				return nil, fmt.Errorf("failed to create config directory %s: %w", appConfigDir, err)
@@ -51,7 +61,12 @@ func NewTagDB(dbDir string) (*TagDB, error) {
 	}
 
 	dbPath := filepath.Join(dbDir, dbFileName)
-	log.Printf("Using tag database at: %s", dbPath)
+	// Use the provided logger if available for this initial message
+	if logger != nil {
+		logger(fmt.Sprintf("Using tag database at: %s", dbPath))
+	} else {
+		log.Printf("Using tag database at: %s (logger not provided at init)", dbPath)
+	}
 
 	db, err := bolt.Open(dbPath, 0600, nil) // 0600 permissions: user read/write
 	if err != nil {
@@ -76,7 +91,16 @@ func NewTagDB(dbDir string) (*TagDB, error) {
 		return nil, err
 	}
 
-	return &TagDB{db: db}, nil
+	return &TagDB{db: db, logger: logger}, nil
+}
+
+// logMessage is a helper to use the configured logger or fallback to standard log.
+func (tdb *TagDB) logMessage(format string, args ...interface{}) {
+	if tdb.logger != nil {
+		tdb.logger(fmt.Sprintf(format, args...))
+	} else {
+		log.Printf(format, args...) // Fallback if logger wasn't provided
+	}
 }
 
 // Close closes the database connection.
@@ -266,8 +290,7 @@ func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
 			tagName := string(k)
 			imageList, err := decodeList(v)
 			if err != nil {
-				// Log the error and skip this tag, allowing others to be processed.
-				log.Printf("Error decoding image list for tag '%s', skipping: %v", tagName, err)
+				tdb.logMessage("Error decoding image list for tag '%s', skipping: %v", tagName, err)
 				return nil // Continue to the next tag
 			}
 			count := len(imageList)

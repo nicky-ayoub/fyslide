@@ -37,7 +37,13 @@ and search tags associated with image files used by fyslide.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize the TagDB. If dbPathFlag is empty, NewTagDB uses its default.
 		var err error
-		tagDB, err = tagging.NewTagDB(dbPathFlag)
+		// Define a logger function for the CLI context
+		cliLogger := func(message string) {
+			// log.Printf is suitable here for messages from the tagging package.
+			// It distinguishes these from direct command output via cmd.Printf.
+			log.Printf("TagDB: %s", message)
+		}
+		tagDB, err = tagging.NewTagDB(dbPathFlag, cliLogger)
 		if err != nil {
 			return fmt.Errorf("failed to initialize tag database: %w", err)
 		}

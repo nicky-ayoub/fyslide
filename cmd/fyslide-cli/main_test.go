@@ -25,7 +25,11 @@ func setupTestDB(t *testing.T) (string, func()) {
 
 	// Ensure the database file is created and schema initialized by NewTagDB.
 	// This makes setupTestDB more active in ensuring a usable DB state.
-	tdb, err := tagging.NewTagDB(dbPath)
+	testDBLogger := func(message string) {
+		// This logger can be silent for setup, or use t.Logf if needed for debugging setup.
+		// t.Logf("SetupTestDBLogger: %s", message)
+	}
+	tdb, err := tagging.NewTagDB(dbPath, testDBLogger)
 	require.NoError(t, err, "setupTestDB: failed to initialize test database at %s", dbPath)
 	require.NoError(t, tdb.Close(), "setupTestDB: failed to close test database after initialization")
 
@@ -74,8 +78,12 @@ func TestListAllTagsCommand(t *testing.T) {
 	})
 
 	t.Run("with tags", func(t *testing.T) {
+		testLogger := func(message string) {
+			t.Logf("TestDBLogger: %s", message)
+		}
+
 		// Add some tags directly to the test DB for setup
-		tdb, err := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
 		require.NoError(t, err)
 		require.NoError(t, tdb.AddTag(filepath.Join(t.TempDir(), "file1.jpg"), "tagA"))
 		require.NoError(t, tdb.AddTag(filepath.Join(t.TempDir(), "file2.png"), "tagB"))
@@ -107,13 +115,18 @@ func TestAddCommand(t *testing.T) {
 	absDummyFilePath, err := filepath.Abs(dummyFilePath)
 	require.NoError(t, err)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+
 	t.Run("add single tag", func(t *testing.T) {
 		stdout, stderr, err := executeCommandC(rootCmd, "--dbpath", dbPath, "add", dummyFilePath, "newTag1")
 		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
 		assert.Contains(t, stdout, "Added tag 'newTag1' to "+absDummyFilePath)
 
 		// Verify in DB
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absDummyFilePath)
 		tdb.Close()
 		assert.Contains(t, tags, "newTag1")
@@ -121,7 +134,8 @@ func TestAddCommand(t *testing.T) {
 
 	t.Run("add multiple tags", func(t *testing.T) {
 		// Ensure the file is clean of these specific tags for this subtest
-		tdbClean, _ := tagging.NewTagDB(dbPath)
+		tdbClean, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tdbClean.RemoveTag(absDummyFilePath, "multiTagA")
 		tdbClean.RemoveTag(absDummyFilePath, "multiTagB")
 		tdbClean.Close()
@@ -132,7 +146,8 @@ func TestAddCommand(t *testing.T) {
 		assert.Contains(t, stdout, "Added tag 'multiTagB' to "+absDummyFilePath)
 
 		// Verify in DB
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absDummyFilePath)
 		tdb.Close()
 		assert.Contains(t, tags, "multiTagA")
@@ -148,7 +163,8 @@ func TestAddCommand(t *testing.T) {
 		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
 		assert.Contains(t, stdout, "Added tag 'ghostTag' to "+absNonExistentPath)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absNonExistentPath)
 		tdb.Close()
 		assert.Contains(t, tags, "ghostTag")
@@ -165,9 +181,14 @@ func TestRemoveCommand(t *testing.T) {
 	require.NoError(t, err)
 	absDummyFilePath, _ := filepath.Abs(dummyFilePath)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+
 	// Pre-populate for each sub-test to ensure isolation
 	setupSubTest := func() {
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		// Clear all tags for this file first
 		currentTags, _ := tdb.GetTags(absDummyFilePath)
 		for _, tag := range currentTags {
@@ -186,7 +207,8 @@ func TestRemoveCommand(t *testing.T) {
 		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
 		assert.Contains(t, stdout, "Removed tag 'tagToRemove1' from "+absDummyFilePath)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absDummyFilePath)
 		tdb.Close()
 		assert.NotContains(t, tags, "tagToRemove1")
@@ -201,7 +223,8 @@ func TestRemoveCommand(t *testing.T) {
 		assert.Contains(t, stdout, "Removed tag 'tagToRemove1' from "+absDummyFilePath)
 		assert.Contains(t, stdout, "Removed tag 'tagToKeep' from "+absDummyFilePath)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absDummyFilePath)
 		tdb.Close()
 		assert.NotContains(t, tags, "tagToRemove1")
@@ -216,7 +239,8 @@ func TestRemoveCommand(t *testing.T) {
 		// tagging.RemoveTag is idempotent, so CLI reports success.
 		assert.Contains(t, stdout, "Removed tag 'nonExistentTag' from "+absDummyFilePath)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags, _ := tdb.GetTags(absDummyFilePath)
 		tdb.Close()
 		assert.Contains(t, tags, "tagToRemove1") // Ensure other tags are still there
@@ -233,9 +257,14 @@ func TestListCommand(t *testing.T) {
 	require.NoError(t, err)
 	absDummyFilePath, _ := filepath.Abs(dummyFilePath)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+
 	t.Run("list no tags", func(t *testing.T) {
 		// Ensure no tags for this file
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		currentTags, _ := tdb.GetTags(absDummyFilePath)
 		for _, tag := range currentTags {
 			tdb.RemoveTag(absDummyFilePath, tag)
@@ -248,7 +277,8 @@ func TestListCommand(t *testing.T) {
 	})
 
 	t.Run("list with tags", func(t *testing.T) {
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		require.NoError(t, tdb.AddTag(absDummyFilePath, "listTag1"))
 		require.NoError(t, tdb.AddTag(absDummyFilePath, "listTag2"))
 		tdb.Close()
@@ -276,7 +306,11 @@ func TestFindByTagCommand(t *testing.T) {
 	absFile2, _ := filepath.Abs(file2)
 	absFile3, _ := filepath.Abs(file3)
 
-	tdb, _ := tagging.NewTagDB(dbPath)
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+	tdb, err := tagging.NewTagDB(dbPath, testLogger)
+	require.NoError(t, err)
 	require.NoError(t, tdb.AddTag(absFile1, "findThisTag"))
 	require.NoError(t, tdb.AddTag(absFile2, "findThisTag"))
 	require.NoError(t, tdb.AddTag(absFile3, "anotherTag"))
@@ -318,6 +352,10 @@ func TestBatchAddCommand(t *testing.T) {
 	absImg2Path, _ := filepath.Abs(img2Path)
 	absBatchDir, _ := filepath.Abs(batchDir)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+
 	t.Run("batch add tags", func(t *testing.T) {
 		stdout, stderr, err := executeCommandC(rootCmd, "--dbpath", dbPath, "batch-add", batchDir, "batchTag1", "batchTag2")
 		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
@@ -328,7 +366,8 @@ func TestBatchAddCommand(t *testing.T) {
 		assert.Contains(t, stdout, "Added tag 'batchTag2' to "+absImg2Path)
 		assert.Contains(t, stdout, "Finished batch add. Processed 2 image files. Added 4 tag instances in "+absBatchDir)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdb.GetTags(absImg1Path)
 		tags2, _ := tdb.GetTags(absImg2Path)
 		tdb.Close()
@@ -338,7 +377,8 @@ func TestBatchAddCommand(t *testing.T) {
 
 	t.Run("batch add tags dry run", func(t *testing.T) {
 		// Clear previous tags for a clean dry-run test
-		tdbClear, _ := tagging.NewTagDB(dbPath)
+		tdbClear, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tdbClear.RemoveTag(absImg1Path, "batchTag1")
 		tdbClear.RemoveTag(absImg1Path, "batchTag2")
 		tdbClear.RemoveTag(absImg2Path, "batchTag1")
@@ -352,7 +392,8 @@ func TestBatchAddCommand(t *testing.T) {
 		assert.Contains(t, stdout, "DRY RUN: Would add tag 'dryTag1' for "+absImg2Path)
 		assert.Contains(t, stdout, "DRY RUN: Finished simulation of batch add. Processed 2 image files. Added 2 tag instances in "+absBatchDir)
 
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdb.GetTags(absImg1Path)
 		tags2, _ := tdb.GetTags(absImg2Path)
 		tdb.Close()
@@ -375,8 +416,13 @@ func TestBatchRemoveCommand(t *testing.T) {
 	absImg2Path, _ := filepath.Abs(img2Path)
 	absBatchDir, _ := filepath.Abs(batchDir)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
+
 	setupBatchRemoveSubTest := func() {
-		tdb, _ := tagging.NewTagDB(dbPath)
+		tdb, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		// Clear existing tags on these files
 		tags1, _ := tdb.GetTags(absImg1Path)
 		for _, tg := range tags1 {
@@ -403,7 +449,8 @@ func TestBatchRemoveCommand(t *testing.T) {
 		assert.Contains(t, stdout, "Removed tag 'commonTag' for "+absImg2Path)
 		assert.Contains(t, stdout, "Finished batch remove. Processed 2 image files. Removed 2 tag instances in "+absBatchDir)
 
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdbVerify.GetTags(absImg1Path)
 		tags2, _ := tdbVerify.GetTags(absImg2Path)
 		tdbVerify.Close()
@@ -424,7 +471,8 @@ func TestBatchRemoveCommand(t *testing.T) {
 		assert.Contains(t, stdout, "DRY RUN: Would remove tag 'uniqueTag1' for "+absImg2Path) // Will attempt, even if not present on img2
 		assert.Contains(t, stdout, "DRY RUN: Finished simulation of batch remove. Processed 2 image files. Removed 4 tag instances in "+absBatchDir)
 
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdbVerify.GetTags(absImg1Path)
 		tags2, _ := tdbVerify.GetTags(absImg2Path)
 		tdbVerify.Close()
@@ -450,7 +498,8 @@ func TestBatchRemoveCommand(t *testing.T) {
 		require.NoError(t, err, "stdout: %s, stderr: %s", stdout, stderr)
 		assert.Contains(t, stdout, "Operation cancelled by user.")
 
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdbVerify.GetTags(absImg1Path)
 		tags2, _ := tdbVerify.GetTags(absImg2Path)
 		tdbVerify.Close()
@@ -476,7 +525,8 @@ func TestBatchRemoveCommand(t *testing.T) {
 		assert.Contains(t, stdout, "Removed tag 'commonTag' for "+absImg1Path)
 		assert.Contains(t, stdout, "Removed tag 'commonTag' for "+absImg2Path)
 
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tags1, _ := tdbVerify.GetTags(absImg1Path)
 		tags2, _ := tdbVerify.GetTags(absImg2Path)
 		tdbVerify.Close()
@@ -503,8 +553,11 @@ func TestCleanCommand(t *testing.T) {
 	err = os.WriteFile(realFile2Path, []byte("real content 2"), 0644)
 	require.NoError(t, err)
 
+	testLogger := func(message string) {
+		t.Logf("TestDBLogger: %s", message)
+	}
 	// Setup initial DB state
-	tdb, err := tagging.NewTagDB(dbPath)
+	tdb, err := tagging.NewTagDB(dbPath, testLogger)
 	require.NoError(t, err)
 	// Tags for a real file
 	require.NoError(t, tdb.AddTag(absRealFile1, "tagForRealFile"))
@@ -548,13 +601,15 @@ func TestCleanCommand(t *testing.T) {
 		assert.Regexp(t, `Orphaned tags that would be removed: [1-3]`, stdout) // commonTag, tagForFakeFile, orphanedtagdirectly
 
 		// Verify DB is unchanged
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tagsReal, _ := tdbVerify.GetTags(absRealFile1)
 		assert.Contains(t, tagsReal, "tagForRealFile")
 		tagsFake, _ := tdbVerify.GetTags(absFakeFile1)
 		assert.Contains(t, tagsFake, "tagForFakeFile")
 		allTags, _ := tdbVerify.GetAllTags()
 		foundOrphaned := false
+
 		for _, ti := range allTags {
 			if ti.Name == "orphanedtagdirectly" {
 				foundOrphaned = true
@@ -567,7 +622,7 @@ func TestCleanCommand(t *testing.T) {
 
 	t.Run("clean actual run", func(t *testing.T) {
 		// Re-setup DB state as dry run might have been run before, ensure clean state for actual run
-		tdbSetup, err := tagging.NewTagDB(dbPath)
+		tdbSetup, err := tagging.NewTagDB(dbPath, testLogger)
 		require.NoError(t, err)
 		// Clear and re-add
 		tdbSetup.RemoveAllTagsForImage(absRealFile1)
@@ -605,7 +660,8 @@ func TestCleanCommand(t *testing.T) {
 		assert.Regexp(t, `Orphaned tags removed: [1-3]`, stdout) // orphanedtagdirectly, tagforfakefile, potentially commonTag
 
 		// Verify DB state
-		tdbVerify, _ := tagging.NewTagDB(dbPath)
+		tdbVerify, err := tagging.NewTagDB(dbPath, testLogger)
+		require.NoError(t, err)
 		tagsReal, _ := tdbVerify.GetTags(absRealFile1)
 		assert.ElementsMatch(t, []string{"commontag", "tagforrealfile"}, tagsReal, "Real file should retain its tags")
 

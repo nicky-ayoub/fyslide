@@ -402,8 +402,18 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.statusLogLabel.Alignment = fyne.TextAlignCenter
 	a.UI.statusLogLabel.Truncation = fyne.TextTruncateEllipsis
 
-	a.UI.statusLogUpBtn = widget.NewButtonWithIcon("", theme.MoveUpIcon(), a.showPreviousLogMessage)
-	a.UI.statusLogDownBtn = widget.NewButtonWithIcon("", theme.MoveDownIcon(), a.showNextLogMessage)
+	// Initialize LogUIManager and connect its methods to the buttons
+	// Note: a.logUIManager will be nil until this point.
+	a.UI.statusLogUpBtn = widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
+		if a.logUIManager != nil {
+			a.logUIManager.ShowPreviousLogMessage()
+		}
+	})
+	a.UI.statusLogDownBtn = widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
+		if a.logUIManager != nil {
+			a.logUIManager.ShowNextLogMessage()
+		}
+	})
 	a.UI.statusLogUpBtn.Disable()   // Initially disabled
 	a.UI.statusLogDownBtn.Disable() // Initially disabled
 
@@ -415,6 +425,11 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		logScrollButtons,     // right
 		a.UI.statusLogLabel,  // center (main space for log message)
 	)
+
+	// Instantiate LogUIManager now that its UI elements are created.
+	// a.maxLogMessages is set in App.init() using DefaultMaxLogMessages from app.go
+	a.logUIManager = NewLogUIManager(a.UI.statusLogLabel, a.UI.statusLogUpBtn, a.UI.statusLogDownBtn, a.maxLogMessages)
+	a.logUIManager.UpdateLogDisplay() // Call once to set initial button states based on (empty) log
 
 	return container.NewBorder(
 		a.UI.toolBar,   // top

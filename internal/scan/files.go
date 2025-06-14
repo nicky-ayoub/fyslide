@@ -2,6 +2,7 @@
 package scan
 
 import (
+	"fmt"
 	"io/fs"
 	"log"
 	"path/filepath"
@@ -17,6 +18,9 @@ type FileItem struct {
 // FileItems is a slice of FileItem
 type FileItems []FileItem
 
+// LoggerFunc defines a function signature for logging messages.
+type LoggerFunc func(message string)
+
 // NewFileItem creates a new FileItem
 func NewFileItem(path string, fi fs.FileInfo) FileItem {
 	return FileItem{
@@ -28,12 +32,20 @@ func NewFileItem(path string, fi fs.FileInfo) FileItem {
 
 // findImageFiles recursively scans dir for image files and sends them to the out channel.
 // It closes the out channel when done.
-func findImageFiles(dir string, out chan<- FileItem) {
+func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
 	defer close(out) // Ensure channel is closed when WalkDir finishes or panics
+
+	logMsg := func(format string, args ...interface{}) {
+		if logger != nil {
+			logger(fmt.Sprintf(format, args...))
+		} else {
+			log.Printf(format, args...) // Fallback
+		}
+	}
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Printf("Error accessing path %q: %v\n", path, err)
+			logMsg("Scan: Error accessing path %q: %v", path, err)
 			if d != nil && d.IsDir() && path != dir { // Don't skip the root dir on error
 				return filepath.SkipDir // Skip problematic directory
 			}
@@ -44,7 +56,7 @@ func findImageFiles(dir string, out chan<- FileItem) {
 			// Get FileInfo. d.Info() is efficient.
 			info, infoErr := d.Info()
 			if infoErr != nil {
-				log.Printf("Error getting FileInfo for %q: %v\n", path, infoErr)
+				logMsg("Scan: Error getting FileInfo for %q: %v", path, infoErr)
 				return nil // Skip this file
 			}
 			if info.Size() > 0 { // Ensure it's not an empty file
@@ -57,23 +69,31 @@ func findImageFiles(dir string, out chan<- FileItem) {
 	if err != nil {
 		// Log the error from WalkDir itself, if any.
 		// The channel will still be closed by defer.
-		log.Printf("Error walking directory %s: %v", dir, err)
+		logMsg("Scan: Error walking directory %s: %v", dir, err)
 	}
 }
 
 // Run is the entry point for the package. It now returns a channel
 // from which FileItems can be read. The scanning happens in a new goroutine.
-func Run(dir string) <-chan FileItem {
+func Run(dir string, logger LoggerFunc) <-chan FileItem {
 	out := make(chan FileItem, 100) // Buffered channel for some decoupling
+
+	logMsg := func(format string, args ...interface{}) {
+		if logger != nil {
+			logger(fmt.Sprintf(format, args...))
+		} else {
+			log.Printf(format, args...) // Fallback
+		}
+	}
 
 	go func() {
 		absDir, err := filepath.Abs(dir)
 		if err != nil {
-			log.Printf("Error getting absolute path for %s: %v. Aborting scan.", dir, err)
+			logMsg("Scan: Error getting absolute path for %s: %v. Aborting scan.", dir, err)
 			close(out) // Close channel to signal error and stop processing
 			return     // Do not proceed with findImageFiles
 		}
-		findImageFiles(absDir, out)
+		findImageFiles(absDir, out, logger)
 	}()
 
 	return out
