@@ -71,6 +71,9 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		initialPauseIcon = theme.MediaPauseIcon()
 	}
 	a.UI.pauseAction = widget.NewToolbarAction(initialPauseIcon, a.togglePlay)
+	// Use theme.ZoomInIcon as a placeholder; a dedicated "Zoom to Actual Size" or "1:1" icon would be better.
+	a.UI.showFullSizeAction = widget.NewToolbarAction(theme.ZoomInIcon(), a.handleShowFullSizeBtn)
+	a.UI.showFullSizeAction.Disable() // Initially disabled
 
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
@@ -83,6 +86,8 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
+		widget.NewToolbarSeparator(),
+		a.UI.showFullSizeAction,
 		widget.NewToolbarSpacer(),
 
 		widget.NewToolbarAction(theme.FileImageIcon(), func() { // Button for Image View
@@ -366,6 +371,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.zoomPanArea = NewZoomPanArea(nil, func() { // Pass the interaction callback
 		a.slideshowManager.Pause(true)
 	})
+	// Set the callback for zoom/pan changes to update the toolbar action visibility
+	a.zoomPanArea.SetOnZoomPanChange(a.updateShowFullSizeButtonVisibility)
 
 	infoPanelContent := container.NewScroll(
 		container.NewVBox(
@@ -374,8 +381,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		),
 	)
 	a.UI.split = container.NewHSplit(
-		a.zoomPanArea,
-		infoPanelContent, // Use the info panel content directly
+		a.zoomPanArea, // zoomPanArea is directly in the split now
+		infoPanelContent,
 	)
 	a.UI.split.SetOffset(initialSplitOffset)
 	a.UI.imageContentView = a.UI.split // Store the image view content

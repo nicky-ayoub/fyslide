@@ -1,4 +1,5 @@
-// internal/ui/logmanager.go
+// Package ui Logmanager provides the Logging interface components for the application.
+// LogUIManager manages the UI components related to logging, including displaying log messages
 package ui
 
 import (
@@ -7,8 +8,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// DefaultMaxLogMessages is the maximum number of log messages to keep in memory.
 const DefaultMaxLogMessages = 100 // Or get from App constants
 
+// LogUIManager is responsible for managing the log messages and their display in the UI
 type LogUIManager struct {
 	logMessages     []string
 	currentLogIndex int
@@ -20,6 +23,7 @@ type LogUIManager struct {
 	statusLogDownBtn *widget.Button
 }
 
+// NewLogUIManager creates a new LogUIManager with the specified UI components and maximum log messages.
 func NewLogUIManager(logLabel *widget.Label, upBtn, downBtn *widget.Button, maxMessages int) *LogUIManager {
 	if maxMessages <= 0 {
 		maxMessages = DefaultMaxLogMessages
@@ -34,6 +38,7 @@ func NewLogUIManager(logLabel *widget.Label, upBtn, downBtn *widget.Button, maxM
 	}
 }
 
+// AddLogMessage adds a new log message to the LogUIManager and updates the display.
 func (lm *LogUIManager) AddLogMessage(message string) {
 	if lm.statusLogLabel == nil {
 		return
@@ -47,6 +52,7 @@ func (lm *LogUIManager) AddLogMessage(message string) {
 	lm.UpdateLogDisplay()
 }
 
+// UpdateLogDisplay updates the log display based on the current log messages and index.
 func (lm *LogUIManager) UpdateLogDisplay() {
 	// ... (existing logic from App.updateLogDisplay, using lm.fields)
 	if lm.statusLogLabel == nil || lm.statusLogUpBtn == nil || lm.statusLogDownBtn == nil {
@@ -79,6 +85,7 @@ func (lm *LogUIManager) UpdateLogDisplay() {
 	}
 }
 
+// ShowPreviousLogMessage allows navigation through the log messages.
 func (lm *LogUIManager) ShowPreviousLogMessage() {
 	if len(lm.logMessages) == 0 || lm.currentLogIndex <= 0 {
 		return
@@ -87,6 +94,7 @@ func (lm *LogUIManager) ShowPreviousLogMessage() {
 	lm.UpdateLogDisplay()
 }
 
+// ShowNextLogMessage allows navigation through the log messages.
 func (lm *LogUIManager) ShowNextLogMessage() {
 	if len(lm.logMessages) == 0 || lm.currentLogIndex >= len(lm.logMessages)-1 {
 		return

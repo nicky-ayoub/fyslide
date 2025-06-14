@@ -60,11 +60,12 @@ type UI struct {
 	// tagBtn       *widget.Button
 	// randomBtn    *widget.Button
 
-	toolBar      *widget.Toolbar
-	randomAction *widget.ToolbarAction
-	pauseAction  *widget.ToolbarAction
+	toolBar            *widget.Toolbar
+	randomAction       *widget.ToolbarAction // Action for toggling random mode
+	pauseAction        *widget.ToolbarAction // Action for toggling play/pause
+	showFullSizeAction *widget.ToolbarAction // Action for showing image at full size
 
-	contentStack     *fyne.Container   // ADDED: To hold the main views
+	contentStack     *fyne.Container   // To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
 	tagsContentView  fyne.CanvasObject // ADDED: Holds the tags view content
 	// --- Status Bar Elements ---
@@ -228,7 +229,7 @@ func (a *App) updateInfoText() {
 
 	// --- Build EXIF String ---
 	exifString := "(not available)"
-	if a.img.EXIFData != nil && len(a.img.EXIFData) > 0 {
+	if len(a.img.EXIFData) > 0 {
 		var exifParts []string
 		// Define a preferred order or a selection of tags to display
 		displayOrder := []exif.FieldName{ // Use exif.FieldName for keys
@@ -454,6 +455,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 			if a.historyManager != nil && !historyNav {
 				a.historyManager.RecordNavigation(a.img.Path)
 			}
+			// a.updateShowFullSizeButtonVisibility() // This is now handled by the onZoomPanChange callback
 		})
 	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
 }
@@ -506,6 +508,45 @@ func (a *App) showFilterDialog() {
 			a.applyFilter(selectedOption)
 		}
 	}, a.UI.MainWin)
+}
+
+// handleShowFullSizeBtn is called when the "Show Full Size" toolbar action is triggered.
+func (a *App) handleShowFullSizeBtn() {
+	if a.zoomPanArea != nil {
+		a.slideshowManager.Pause(true) // Pause slideshow when user interacts with zoom
+		a.zoomPanArea.ShowFullSize()
+		// The onZoomPanChange callback, which is updateShowFullSizeButtonVisibility,
+		// will be triggered by ShowFullSize, updating the button's state.
+	}
+}
+
+// updateShowFullSizeButtonVisibility enables or disables the "Show Full Size" toolbar action
+// based on the current image's zoom state and original size relative to the view.
+func (a *App) updateShowFullSizeButtonVisibility() {
+	if a.UI.showFullSizeAction == nil || a.zoomPanArea == nil || a.zoomPanArea.originalImg == nil {
+		if a.UI.showFullSizeAction != nil {
+			a.UI.showFullSizeAction.Disable()
+			if a.UI.toolBar != nil {
+				a.UI.toolBar.Refresh()
+			}
+		}
+		return
+	}
+
+	isLarger := a.zoomPanArea.IsOriginalLargerThanView()
+	currentZoom := a.zoomPanArea.CurrentZoom()
+	epsilon := float32(0.001) // Tolerance for float comparison
+
+	shouldBeEnabled := isLarger && (currentZoom < (1.0 - epsilon))
+
+	if shouldBeEnabled {
+		a.UI.showFullSizeAction.Enable()
+	} else {
+		a.UI.showFullSizeAction.Disable()
+	}
+	if a.UI.toolBar != nil {
+		a.UI.toolBar.Refresh()
+	}
 }
 
 // applyFilter filters the image list based on the selected tag.

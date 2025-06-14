@@ -31,7 +31,8 @@ type ZoomPanArea struct {
 	isPanning    bool
 	lastMousePos fyne.Position
 
-	OnInteraction func() // Callback for when user interacts (scrolls, drags)
+	OnInteraction   func() // Callback for when user interacts (scrolls, drags) - e.g., to pause slideshow
+	onZoomPanChange func() // Callback for when zoom or pan changes - e.g., to update UI elements
 }
 
 // NewZoomPanArea creates a new ZoomPanArea widget.
@@ -56,7 +57,12 @@ func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 // SetImage updates the image displayed by the widget.
 func (zpa *ZoomPanArea) SetImage(img image.Image) {
 	zpa.originalImg = img
-	zpa.Reset() // Reset zoom/pan for the new image
+	zpa.Reset() // Reset zoom/pan for the new image, this will also call onZoomPanChange
+}
+
+// SetOnZoomPanChange sets a callback function to be invoked when zoom or pan changes.
+func (zpa *ZoomPanArea) SetOnZoomPanChange(callback func()) {
+	zpa.onZoomPanChange = callback
 }
 
 // Reset centers the image and resets zoom to 1.0 or a fit-to-view.
@@ -91,6 +97,41 @@ func (zpa *ZoomPanArea) Reset() {
 		zpa.zoomFactor = 1.0
 	}
 	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
+	}
+}
+
+// ShowFullSize sets the zoom to 100% (1.0) and centers the image.
+func (zpa *ZoomPanArea) ShowFullSize() {
+	if zpa.originalImg == nil {
+		return
+	}
+	zpa.zoomFactor = 1.0
+
+	imgBounds := zpa.originalImg.Bounds()
+	imgW := float32(imgBounds.Dx())
+	imgH := float32(imgBounds.Dy())
+	viewW := zpa.Size().Width
+	viewH := zpa.Size().Height
+
+	// Center the 100% zoomed image
+	zpa.panOffset.X = (viewW - imgW) / 2
+	zpa.panOffset.Y = (viewH - imgH) / 2
+
+	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
+	}
+}
+
+// IsOriginalLargerThanView returns true if the original image dimensions are greater than the current view size.
+func (zpa *ZoomPanArea) IsOriginalLargerThanView() bool {
+	if zpa.originalImg == nil || zpa.Size().Width == 0 || zpa.Size().Height == 0 {
+		return false
+	}
+	imgBounds := zpa.originalImg.Bounds()
+	return float32(imgBounds.Dx()) > zpa.Size().Width || float32(imgBounds.Dy()) > zpa.Size().Height
 }
 
 // draw is the rendering function for the canvas.Raster.
@@ -164,6 +205,9 @@ func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
 	zpa.panOffset.Y = mouseY - (imgSpaceY * zpa.zoomFactor)
 
 	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
+	}
 }
 
 // MouseDown starts panning.
@@ -191,11 +235,19 @@ func (zpa *ZoomPanArea) Dragged(ev *fyne.DragEvent) {
 	zpa.panOffset = zpa.panOffset.Add(delta)
 	zpa.lastMousePos = ev.Position
 	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
+	}
 }
 
 // DragEnd finalizes panning.
 func (zpa *ZoomPanArea) DragEnd() {
 	zpa.isPanning = false
+}
+
+// CurrentZoom returns the current zoom factor.
+func (zpa *ZoomPanArea) CurrentZoom() float32 {
+	return zpa.zoomFactor
 }
 
 // --- Renderer for ZoomPanArea ---
