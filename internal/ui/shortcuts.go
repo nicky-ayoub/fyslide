@@ -67,59 +67,52 @@ func (a *App) buildKeyboardShortcuts() {
 	})
 }
 
+type shortcutDetail struct {
+	Description string
+	Shortcut    string
+}
+
 func (a *App) showShortcuts() {
-	shortcuts := []string{
-		"Ctrl+Q",
-		"Arrow Right", "Arrow Left",
-		"Page Up", "Page Down",
-		"Arrow Up", "Arrow Down", // KeyUp and KeyDown also skip
-		"Home", "End",
-		"P or Space", "Delete", "Esc",
-		"+", // Zoom In
-		"-", // Zoom Out
-		"0", // Reset Zoom/Pan
+	shortcutData := []shortcutDetail{
+		{Description: "Quit Application", Shortcut: "Ctrl+Q"},
+		{Description: "Next Image", Shortcut: "Arrow Right"},
+		{Description: "Previous Image", Shortcut: "Arrow Left"},
+		{Description: "Skip Images Back (Page Up)", Shortcut: "Page Up"},
+		{Description: "Skip Images Forward (Page Down)", Shortcut: "Page Down"},
+		{Description: "Skip Images Back (Arrow Up)", Shortcut: "Arrow Up"},
+		{Description: "Skip Images Forward (Arrow Down)", Shortcut: "Arrow Down"},
+		{Description: "First Image", Shortcut: "Home"},
+		{Description: "Last Image", Shortcut: "End"},
+		{Description: "Toggle Play/Pause Slideshow", Shortcut: "P or Space"},
+		{Description: "Delete Current Image", Shortcut: "Delete"},
+		{Description: "Close Dialog/Overlay", Shortcut: "Esc"},
+		{Description: "Zoom In Image", Shortcut: "+"},
+		{Description: "Zoom Out Image", Shortcut: "-"},
+		{Description: "Reset Image Zoom/Pan", Shortcut: "0"},
 	}
-	descriptions := []string{
-		"Quit Application", // Simplified, as Ctrl+Q is also listed
-		"Next Image", "Previous Image",
-		"Skip Images Back (Page Up)", "Skip Images Forward (Page Down)",
-		"Skip Images Back (Arrow Up)", "Skip Images Forward (Arrow Down)", // Descriptions for Arrow Up/Down
-		"First Image", "Last Image",
-		"Toggle Play/Pause Slideshow", "Delete Current Image", "Close Dialog/Overlay",
-		"Zoom In Image",
-		"Zoom Out Image",
-		"Reset Image Zoom/Pan",
-	}
-	// Ensure shortcuts and descriptions have the same length for safety
-	// This is a defensive check; ideally, they are maintained to be equal.
-	minLen := min(len(shortcuts), len(descriptions))
 
 	win := a.app.NewWindow("Keyboard Shortcuts")
 	table := widget.NewTable(
-		func() (int, int) { return minLen + 1, 2 }, // +1 for header row, use minLen
+		func() (int, int) { return len(shortcutData) + 1, 2 }, // +1 for header row
 		func() fyne.CanvasObject {
 			return widget.NewLabel("")
 		},
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			label := obj.(*widget.Label)
 			isHeader := id.Row == 0 // First row is header
-			dataRowIndex := id.Row - 1
+			dataIndex := id.Row - 1
 
-			if !isHeader && dataRowIndex >= minLen { // Safety break
-				label.SetText("") // Avoid panic
-				return
-			}
 			if id.Col == 0 { // Description column
 				if isHeader {
 					label.SetText("Description")
 				} else {
-					label.SetText(descriptions[dataRowIndex])
+					label.SetText(shortcutData[dataIndex].Description)
 				}
 			} else { // Shortcut column
 				if isHeader {
 					label.SetText("Shortcut")
 				} else {
-					label.SetText(shortcuts[dataRowIndex])
+					label.SetText(shortcutData[dataIndex].Shortcut)
 				}
 			}
 			label.TextStyle.Bold = isHeader
@@ -130,12 +123,4 @@ func (a *App) showShortcuts() {
 	win.SetContent(table)
 	win.Resize(fyne.NewSize(500, 500))
 	win.Show()
-}
-
-// min returns the smaller of x or y.
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
 }

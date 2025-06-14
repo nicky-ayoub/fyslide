@@ -41,11 +41,12 @@ func NewTagDB(dbDir string) (*TagDB, error) {
 			log.Printf("Warning: Could not get user config dir: %v. Using current dir.", err)
 			dbDir = "." // Fallback to current directory
 		} else {
-			dbDir = filepath.Join(configDir, "fyslide") // App specific subfolder
+			appConfigDir := filepath.Join(configDir, "fyslide") // App specific subfolder
 			// Ensure the directory exists
-			if err := os.MkdirAll(dbDir, 0750); err != nil {
-				return nil, fmt.Errorf("failed to create config directory %s: %w", dbDir, err)
+			if err := os.MkdirAll(appConfigDir, 0750); err != nil {
+				return nil, fmt.Errorf("failed to create config directory %s: %w", appConfigDir, err)
 			}
+			dbDir = appConfigDir
 		}
 	}
 
@@ -123,6 +124,52 @@ func removeFromList(list []string, item string) []string {
 	return newList
 }
 
+// _updateStoredList manages adding or removing an item from a JSON-encoded string list stored in a BoltDB bucket.
+// If 'add' is true, item is added. If 'add' is false, item is removed.
+// If 'add' is false and the list becomes empty after removal, the key is deleted from the bucket.
+// Returns true if the list was actually modified, false otherwise. An error is returned on failure.
+func (tdb *TagDB) _updateStoredList(tx *bolt.Tx, bucketName []byte, key []byte, item string, add bool) (bool, error) {
+	bucket := tx.Bucket(bucketName)
+	if bucket == nil {
+		// This should ideally not happen if NewTagDB ensures buckets exist.
+		return false, fmt.Errorf("bucket %s not found in _updateStoredList", string(bucketName))
+	}
+
+	currentListBytes := bucket.Get(key)
+	currentList, err := decodeList(currentListBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode list for key '%s' in bucket '%s': %w", string(key), string(bucketName), err)
+	}
+
+	var updatedList []string
+	var changed bool
+
+	if add {
+		updatedList, changed = addToList(currentList, item)
+	} else {
+		originalLength := len(currentList)
+		updatedList = removeFromList(currentList, item)
+		changed = len(updatedList) != originalLength
+	}
+
+	if changed {
+		if !add && len(updatedList) == 0 { // Removing and list became empty
+			if err := bucket.Delete(key); err != nil {
+				return true, fmt.Errorf("failed to delete empty list for key '%s' in bucket '%s': %w", string(key), string(bucketName), err)
+			}
+		} else {
+			updatedListBytes, err := encodeList(updatedList)
+			if err != nil {
+				return true, fmt.Errorf("failed to encode updated list for key '%s' in bucket '%s': %w", string(key), string(bucketName), err)
+			}
+			if err := bucket.Put(key, updatedListBytes); err != nil {
+				return true, fmt.Errorf("failed to put updated list for key '%s' in bucket '%s': %w", string(key), string(bucketName), err)
+			}
+		}
+	}
+	return changed, nil
+}
+
 // --- Core Tagging Functions ---
 
 // AddTag associates a tag with an image path.
@@ -131,45 +178,17 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 		return fmt.Errorf("image path and tag cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
-
 		// 1. Update Image -> Tags mapping
-		currentTagsBytes := imgBucket.Get([]byte(imagePath))
-		currentTags, err := decodeList(currentTagsBytes)
+		_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, true)
 		if err != nil {
-			return fmt.Errorf("failed to decode tags for image %s: %w", imagePath, err)
-		}
-
-		updatedTags, added := addToList(currentTags, tag)
-		if added { // Only update if the tag was actually added
-			updatedTagsBytes, err := encodeList(updatedTags)
-			if err != nil {
-				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
-			}
-			if err := imgBucket.Put([]byte(imagePath), updatedTagsBytes); err != nil {
-				return fmt.Errorf("failed to put updated tags for image %s: %w", imagePath, err)
-			}
+			return fmt.Errorf("updating image->tags for '%s' with tag '%s': %w", imagePath, tag, err)
 		}
 
 		// 2. Update Tag -> Images mapping
-		currentImagesBytes := tagBucket.Get([]byte(tag))
-		currentImages, err := decodeList(currentImagesBytes)
+		_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, true)
 		if err != nil {
-			return fmt.Errorf("failed to decode images for tag %s: %w", tag, err)
+			return fmt.Errorf("updating tag->images for '%s' with image '%s': %w", tag, imagePath, err)
 		}
-
-		updatedImages, added := addToList(currentImages, imagePath)
-		if added { // Only update if the image path was actually added
-			updatedImagesBytes, err := encodeList(updatedImages)
-			if err != nil {
-				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
-			}
-			if err := tagBucket.Put([]byte(tag), updatedImagesBytes); err != nil {
-				return fmt.Errorf("failed to put updated images for tag %s: %w", tag, err)
-			}
-		}
-
 		return nil
 	})
 }
@@ -180,61 +199,17 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 		return fmt.Errorf("image path and tag cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
-
 		// 1. Update Image -> Tags mapping
-		currentTagsBytes := imgBucket.Get([]byte(imagePath))
-		currentTags, err := decodeList(currentTagsBytes)
+		_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, false)
 		if err != nil {
-			return fmt.Errorf("failed to decode tags for image %s: %w", imagePath, err)
-		}
-
-		updatedTags := removeFromList(currentTags, tag)
-		// Only update if the list actually changed
-		if len(updatedTags) != len(currentTags) {
-			updatedTagsBytes, err := encodeList(updatedTags)
-			if err != nil {
-				return fmt.Errorf("failed to encode updated tags for image %s: %w", imagePath, err)
-			}
-			// If list is empty after removal, delete the key, otherwise update it
-			if len(updatedTags) == 0 {
-				if err := imgBucket.Delete([]byte(imagePath)); err != nil {
-					return fmt.Errorf("failed to delete empty tag list for image %s: %w", imagePath, err)
-				}
-			} else {
-				if err := imgBucket.Put([]byte(imagePath), updatedTagsBytes); err != nil {
-					return fmt.Errorf("failed to put updated tags for image %s: %w", imagePath, err)
-				}
-			}
+			return fmt.Errorf("updating image->tags for '%s' removing tag '%s': %w", imagePath, tag, err)
 		}
 
 		// 2. Update Tag -> Images mapping
-		currentImagesBytes := tagBucket.Get([]byte(tag))
-		currentImages, err := decodeList(currentImagesBytes)
+		_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, false)
 		if err != nil {
-			return fmt.Errorf("failed to decode images for tag %s: %w", tag, err)
+			return fmt.Errorf("updating tag->images for '%s' removing image '%s': %w", tag, imagePath, err)
 		}
-
-		updatedImages := removeFromList(currentImages, imagePath)
-		// Only update if the list actually changed
-		if len(updatedImages) != len(currentImages) {
-			updatedImagesBytes, err := encodeList(updatedImages)
-			if err != nil {
-				return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
-			}
-			// If list is empty after removal, delete the key, otherwise update it
-			if len(updatedImages) == 0 {
-				if err := tagBucket.Delete([]byte(tag)); err != nil {
-					return fmt.Errorf("failed to delete empty image list for tag %s: %w", tag, err)
-				}
-			} else {
-				if err := tagBucket.Put([]byte(tag), updatedImagesBytes); err != nil {
-					return fmt.Errorf("failed to put updated images for tag %s: %w", tag, err)
-				}
-			}
-		}
-
 		return nil
 	})
 }
@@ -319,7 +294,6 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
 		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
-		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
 
 		// 1. Get all tags currently associated with the image
 		currentTagsBytes := imgBucket.Get([]byte(imagePath))
@@ -339,31 +313,13 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 
 		// 2. For each tag, remove the imagePath from that tag's list of images
 		for _, tag := range currentTags {
-			currentImagesBytes := tagBucket.Get([]byte(tag))
-			if currentImagesBytes == nil {
-				// Tag doesn't exist or has no images, skip
-				continue
-			}
-			currentImages, err := decodeList(currentImagesBytes)
+			// The _updateStoredList helper handles decoding, removing, encoding, and deleting the key if the list becomes empty.
+			// It also handles the case where the tag might not exist or its list is already empty.
+			// The 'changed' boolean return isn't strictly needed here but the error is.
+			_, err := tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, false)
 			if err != nil {
-				return fmt.Errorf("failed to decode images for tag %s during cleanup of %s: %w", tag, imagePath, err)
-			}
-
-			updatedImages := removeFromList(currentImages, imagePath)
-			if len(updatedImages) != len(currentImages) { // If changed
-				if len(updatedImages) == 0 {
-					if err := tagBucket.Delete([]byte(tag)); err != nil {
-						return fmt.Errorf("failed to delete empty image list for tag %s: %w", tag, err)
-					}
-				} else {
-					updatedImagesBytes, err := encodeList(updatedImages)
-					if err != nil {
-						return fmt.Errorf("failed to encode updated images for tag %s: %w", tag, err)
-					}
-					if err := tagBucket.Put([]byte(tag), updatedImagesBytes); err != nil {
-						return fmt.Errorf("failed to put updated images for tag %s: %w", tag, err)
-					}
-				}
+				// If one update fails, the transaction will be rolled back.
+				return fmt.Errorf("failed to remove image '%s' from tag '%s' during cleanup: %w", imagePath, tag, err)
 			}
 		}
 
