@@ -18,9 +18,9 @@ type FileItem struct {
 type FileItems []FileItem
 
 // NewFileItem creates a new FileItem
-func NewFileItem(p string, fi fs.FileInfo) FileItem {
+func NewFileItem(path string, fi fs.FileInfo) FileItem {
 	return FileItem{
-		Path: p,
+		Path: path,
 		Info: fi,
 	}
 

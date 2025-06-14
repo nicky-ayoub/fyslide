@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+const (
+	defaultSlideshowInterval = 2 * time.Second
+)
+
 // SlideshowManager handles the slideshow functionality.
 type SlideshowManager struct {
 	mu                 sync.Mutex
@@ -18,7 +22,7 @@ type SlideshowManager struct {
 // Interval is the time between automatic transitions.
 func NewSlideshowManager(interval time.Duration) *SlideshowManager {
 	if interval <= 0 {
-		interval = 2 * time.Second // Default interval if invalid
+		interval = defaultSlideshowInterval // Default interval if invalid
 	}
 	return &SlideshowManager{
 		isPaused:           false, // Start unpaused (playing) by default
@@ -41,11 +45,9 @@ func (sm *SlideshowManager) Pause(forOperation bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if forOperation {
-		if !sm.isPaused { // If it's currently playing and we're pausing for an op
-			sm.wasPlayingBeforeOp = true
-		} else { // If it's already paused, it wasn't playing before this specific "operation pause"
-			sm.wasPlayingBeforeOp = false
-		}
+		// Record if it was playing *before* this operation's pause.
+		// If already paused, wasPlayingBeforeOp becomes false. If playing, it becomes true.
+		sm.wasPlayingBeforeOp = !sm.isPaused
 	}
 	sm.isPaused = true
 }
