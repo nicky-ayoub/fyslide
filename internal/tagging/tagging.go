@@ -217,6 +217,31 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 	})
 }
 
+// AddTagsToImage associates multiple tags with a single image path within a single transaction.
+func (tdb *TagDB) AddTagsToImage(imagePath string, tags []string) error {
+	if imagePath == "" || len(tags) == 0 {
+		return fmt.Errorf("image path and tags cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		for _, tag := range tags {
+			if tag == "" { // Skip empty tags in the list
+				continue
+			}
+			// 1. Update Image -> Tags mapping
+			_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, true)
+			if err != nil {
+				return fmt.Errorf("updating image->tags for '%s' with tag '%s': %w", imagePath, tag, err)
+			}
+			// 2. Update Tag -> Images mapping
+			_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, true)
+			if err != nil {
+				return fmt.Errorf("updating tag->images for '%s' with image '%s': %w", tag, imagePath, err)
+			}
+		}
+		return nil
+	})
+}
+
 // RemoveTag disassociates a tag from an image path.
 func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 	if imagePath == "" || tag == "" {

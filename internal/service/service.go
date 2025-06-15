@@ -13,6 +13,7 @@ import (
 // TagStore abstracts the tagging DB for easier testing and decoupling.
 type TagStore interface {
 	AddTag(imagePath, tag string) error
+	AddTagsToImage(imagePath string, tags []string) error // New method for batch adding to a single image
 	RemoveTag(imagePath, tag string) error
 	GetTags(imagePath string) ([]string, error)
 	GetImages(tag string) ([]string, error)
@@ -51,12 +52,7 @@ func (s *Service) AddTagsToImage(imagePath string, tags []string) error {
 	if imagePath == "" || len(tags) == 0 {
 		return errors.New("image path and tags required")
 	}
-	for _, tag := range tags {
-		if err := s.TagDB.AddTag(imagePath, tag); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.TagDB.AddTagsToImage(imagePath, tags)
 }
 
 // RemoveTagsFromImage removes one or more tags from an image.
@@ -87,7 +83,7 @@ func (s *Service) ListAllTags() ([]tagging.TagWithCount, error) {
 	return s.TagDB.GetAllTags()
 }
 
-// BatchAddTagsToDirectory adds tags to all supported images in a directory (non-recursive).
+// BatchAddTagsToDirectory adds tags to all supported images in a directory (recursive).
 func (s *Service) BatchAddTagsToDirectory(dir string, tags []string) error {
 	if dir == "" || len(tags) == 0 {
 		return errors.New("directory and tags required")
@@ -206,7 +202,7 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 	return successfulRemovals, errorsEncountered, nil
 }
 
-// BatchRemoveTagsFromDirectory removes tags from all supported images in a directory (non-recursive).
+// BatchRemoveTagsFromDirectory removes tags from all supported images in a directory (recursive).
 func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) (int, int, error) {
 	if dir == "" || len(tags) == 0 {
 		return 0, 0, errors.New("directory and tags required")
@@ -304,15 +300,13 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 // It returns the number of successful additions, errors encountered, and the first error (if any).
 func (s *Service) ApplyTagsToSingleImage(imagePath string, tagsToAdd []string, filesAffected map[string]bool) (successfulAdditions int, errorsEncountered int, firstError error) {
 	s.Logger(fmt.Sprintf("Applying tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(imagePath)))
-	for _, tag := range tagsToAdd {
-		errAdd := s.TagDB.AddTag(imagePath, tag) // More direct for single tag
-		if errAdd != nil {
-			errorsEncountered++
-			if firstError == nil {
-				firstError = fmt.Errorf("failed to add tag '%s' to %s: %w", tag, filepath.Base(imagePath), errAdd)
-			}
-		} else {
-			successfulAdditions++
+	err := s.TagDB.AddTagsToImage(imagePath, tagsToAdd)
+	if err != nil {
+		errorsEncountered = len(tagsToAdd) // If batch fails, assume all attempted tags for this image failed
+		firstError = fmt.Errorf("failed to add tags to %s: %w", filepath.Base(imagePath), err)
+	} else {
+		successfulAdditions = len(tagsToAdd)
+		if len(tagsToAdd) > 0 {
 			filesAffected[imagePath] = true
 		}
 	}

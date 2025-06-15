@@ -1087,41 +1087,32 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 			go func() {
 				defer wg.Done()
 
-				localTagsAttemptedOnThisImage := 0
-				localSuccessfulAdditionsOnThisImage := 0
-				localErrorsOnThisImage := 0
-				var localFirstErrorForThisImage error
-
-				for _, tag := range currentTagsToAdd {
-					localTagsAttemptedOnThisImage++
-					//errAdd := a.tagDB.AddTag(itemPath, tag)
-					errAdd := a.Service.AddTagsToImage(itemPath, []string{tag})
-					if errAdd != nil {
-						// Logged via addLogMessage by the calling function's summary
-						localErrorsOnThisImage++
-						if localFirstErrorForThisImage == nil {
-							localFirstErrorForThisImage = fmt.Errorf("failed to tag %s with '%s': %w", filepath.Base(itemPath), tag, errAdd)
-						}
-					} else {
-						localSuccessfulAdditionsOnThisImage++
-						filesAffected[itemPath] = true
-					}
-				}
+				// Attempt to add all tags for this image in one service call
+				errAdd := a.Service.AddTagsToImage(itemPath, currentTagsToAdd)
 
 				mu.Lock()
 				(*imagesProcessed)++
-				*totalTagsAttempted += localTagsAttemptedOnThisImage
-				*successfulAdditions += localSuccessfulAdditionsOnThisImage
-				*errorsEncountered += localErrorsOnThisImage
-				if localFirstErrorForThisImage != nil && *firstError == nil {
-					*firstError = localFirstErrorForThisImage
+
+				if errAdd != nil {
+					// If the batch add for this image fails, all tags for this image are considered errored.
+					*errorsEncountered += len(currentTagsToAdd)
+					if *firstError == nil { // Capture the first error encountered overall
+						*firstError = fmt.Errorf("failed to tag %s: %w", filepath.Base(itemPath), errAdd)
+					}
+				} else {
+					// If successful, all tags for this image were added.
+					*successfulAdditions += len(currentTagsToAdd)
+					if len(currentTagsToAdd) > 0 { // Only mark affected if tags were actually added
+						filesAffected[itemPath] = true
+					}
 				}
+				// totalTagsAttempted is incremented for each tag regardless of success or failure for this image
+				*totalTagsAttempted += len(currentTagsToAdd)
 				mu.Unlock()
 			}()
 		}
 	}
 	wg.Wait() // Wait for all goroutines to finish
-
 	a.addLogMessage(fmt.Sprintf("Batch tagging for [%s] in '%s' complete. Images processed: %d. Attempts: %d, Successes: %d, Errors: %d.",
 		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
 }
