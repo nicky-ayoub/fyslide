@@ -52,7 +52,11 @@ func (s *Service) AddTagsToImage(imagePath string, tags []string) error {
 	if imagePath == "" || len(tags) == 0 {
 		return errors.New("image path and tags required")
 	}
-	return s.TagDB.AddTagsToImage(imagePath, tags)
+	lowerTags := make([]string, len(tags))
+	for i, tag := range tags {
+		lowerTags[i] = strings.ToLower(tag)
+	}
+	return s.TagDB.AddTagsToImage(imagePath, lowerTags)
 }
 
 // RemoveTagsFromImage removes one or more tags from an image.
@@ -60,8 +64,10 @@ func (s *Service) RemoveTagsFromImage(imagePath string, tags []string) error {
 	if imagePath == "" || len(tags) == 0 {
 		return errors.New("image path and tags required")
 	}
+	// Normalize tags for removal
 	for _, tag := range tags {
-		if err := s.TagDB.RemoveTag(imagePath, tag); err != nil {
+		lowerTag := strings.ToLower(tag)
+		if err := s.TagDB.RemoveTag(imagePath, lowerTag); err != nil {
 			return err
 		}
 	}
@@ -71,15 +77,18 @@ func (s *Service) RemoveTagsFromImage(imagePath string, tags []string) error {
 // ListTagsForImage returns all tags for a given image.
 func (s *Service) ListTagsForImage(imagePath string) ([]string, error) {
 	return s.TagDB.GetTags(imagePath)
+	// Tags are stored in lowercase, so they will be retrieved in lowercase.
 }
 
 // ListImagesForTag returns all images for a given tag.
 func (s *Service) ListImagesForTag(tag string) ([]string, error) {
-	return s.TagDB.GetImages(tag)
+	// Queries should also use lowercase for consistency.
+	return s.TagDB.GetImages(strings.ToLower(tag))
 }
 
 // ListAllTags returns all tags with their image counts.
 func (s *Service) ListAllTags() ([]tagging.TagWithCount, error) {
+	// Tags are stored in lowercase, so they will be retrieved in lowercase.
 	return s.TagDB.GetAllTags()
 }
 
@@ -88,12 +97,16 @@ func (s *Service) BatchAddTagsToDirectory(dir string, tags []string) error {
 	if dir == "" || len(tags) == 0 {
 		return errors.New("directory and tags required")
 	}
+	lowerTags := make([]string, len(tags))
+	for i, tag := range tags {
+		lowerTags[i] = strings.ToLower(tag)
+	}
 	files, err := s.scanDirectoryForImages(dir) // Use service method
 	if err != nil {
 		return err
 	}
 	for _, file := range files {
-		if err := s.AddTagsToImage(file, tags); err != nil {
+		if err := s.AddTagsToImage(file, lowerTags); err != nil { // Use lowerTags
 			s.Logger(fmt.Sprintf("Failed to tag %s: %v", file, err))
 		}
 	}
@@ -157,7 +170,7 @@ func (s *Service) ReplaceTag(oldTag, newTag string) error {
 	if oldTag == "" || newTag == "" || oldTag == newTag {
 		return errors.New("invalid tags")
 	}
-	images, err := s.TagDB.GetImages(oldTag)
+	images, err := s.TagDB.GetImages(strings.ToLower(oldTag)) // Normalize oldTag for query
 	if err != nil {
 		return err
 	}
@@ -165,18 +178,20 @@ func (s *Service) ReplaceTag(oldTag, newTag string) error {
 	for _, img := range images {
 		if err := s.TagDB.RemoveTag(img, oldTag); err != nil {
 			s.Logger(fmt.Sprintf("ReplaceTag: failed to remove old tag '%s' from '%s': %v", oldTag, img, err))
-			if firstErr == nil {
+			if firstErr == nil { // oldTag here is already normalized from the GetImages call
 				firstErr = fmt.Errorf("removing old tag '%s' from '%s': %w", oldTag, img, err)
 			}
 		}
-		if err := s.TagDB.AddTag(img, newTag); err != nil {
-			s.Logger(fmt.Sprintf("ReplaceTag: failed to add new tag '%s' to '%s': %v", newTag, img, err))
+		lowerNewTag := strings.ToLower(newTag)
+		if err := s.TagDB.AddTag(img, lowerNewTag); err != nil {
+			s.Logger(fmt.Sprintf("ReplaceTag: failed to add new tag '%s' to '%s': %v", lowerNewTag, img, err))
 			if firstErr == nil {
-				firstErr = fmt.Errorf("adding new tag '%s' to '%s': %w", newTag, img, err)
+				firstErr = fmt.Errorf("adding new tag '%s' to '%s': %w", lowerNewTag, img, err)
 			}
 		}
 	}
-	s.TagDB.DeleteOrphanedTagKey(oldTag) // Error for this is logged by DeleteOrphanedTagKey if it occurs
+	// Delete the potentially non-normalized oldTag key if it existed.
+	s.TagDB.DeleteOrphanedTagKey(strings.ToLower(oldTag))
 	return firstErr
 }
 
@@ -185,7 +200,7 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 	if tag == "" {
 		return 0, 0, errors.New("tag cannot be empty")
 	}
-	imagePaths, err := s.TagDB.GetImages(tag)
+	imagePaths, err := s.TagDB.GetImages(strings.ToLower(tag)) // Normalize tag for query
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get images for tag '%s': %w", tag, err)
 	}
@@ -193,7 +208,7 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 	errorsEncountered := 0
 	for _, path := range imagePaths {
 		if err := s.TagDB.RemoveTag(path, tag); err != nil {
-			s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", tag, path, err))
+			s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", strings.ToLower(tag), path, err))
 			errorsEncountered++
 		} else {
 			successfulRemovals++
@@ -207,6 +222,10 @@ func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) (int, 
 	if dir == "" || len(tags) == 0 {
 		return 0, 0, errors.New("directory and tags required")
 	}
+	lowerTags := make([]string, len(tags))
+	for i, tag := range tags {
+		lowerTags[i] = strings.ToLower(tag)
+	}
 	files, err := s.scanDirectoryForImages(dir) // Use service method
 	if err != nil {
 		return 0, 0, err
@@ -215,8 +234,8 @@ func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) (int, 
 	errorsEncountered := 0
 	for _, file := range files {
 		for _, tag := range tags {
-			if err := s.TagDB.RemoveTag(file, tag); err != nil {
-				s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", tag, file, err))
+			if err := s.TagDB.RemoveTag(file, strings.ToLower(tag)); err != nil { // Use lowercased tag
+				s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", strings.ToLower(tag), file, err))
 				errorsEncountered++
 			} else {
 				successfulRemovals++
@@ -279,15 +298,17 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 	if existingTag == "" || len(tagsToAdd) == 0 {
 		return 0, errors.New("existing tag and tags to add required")
 	}
-	imagePaths, err := s.TagDB.GetImages(existingTag)
+	lowerExistingTag := strings.ToLower(existingTag)
+	imagePaths, err := s.TagDB.GetImages(lowerExistingTag)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get images for tag '%s': %w", existingTag, err)
+		return 0, fmt.Errorf("failed to get images for tag '%s': %w", lowerExistingTag, err)
 	}
 	added := 0
 	for _, img := range imagePaths {
 		for _, tag := range tagsToAdd {
-			if err := s.TagDB.AddTag(img, tag); err != nil {
-				s.Logger(fmt.Sprintf("Error adding tag '%s' to %s: %v", tag, img, err))
+			lowerTag := strings.ToLower(tag)
+			if err := s.TagDB.AddTag(img, lowerTag); err != nil {
+				s.Logger(fmt.Sprintf("Error adding tag '%s' to %s: %v", lowerTag, img, err))
 			} else {
 				added++
 			}
@@ -300,7 +321,11 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 // It returns the number of successful additions, errors encountered, and the first error (if any).
 func (s *Service) ApplyTagsToSingleImage(imagePath string, tagsToAdd []string, filesAffected map[string]bool) (successfulAdditions int, errorsEncountered int, firstError error) {
 	s.Logger(fmt.Sprintf("Applying tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(imagePath)))
-	err := s.TagDB.AddTagsToImage(imagePath, tagsToAdd)
+	lowerTagsToAdd := make([]string, len(tagsToAdd))
+	for i, tag := range tagsToAdd {
+		lowerTagsToAdd[i] = strings.ToLower(tag)
+	}
+	err := s.TagDB.AddTagsToImage(imagePath, lowerTagsToAdd)
 	if err != nil {
 		errorsEncountered = len(tagsToAdd) // If batch fails, assume all attempted tags for this image failed
 		firstError = fmt.Errorf("failed to add tags to %s: %w", filepath.Base(imagePath), err)

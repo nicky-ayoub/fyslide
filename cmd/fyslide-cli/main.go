@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"fyslide/internal/scan"
 	"fyslide/internal/service"
 	"fyslide/internal/tagging"
 	"log"
@@ -24,17 +25,21 @@ func cliLogger(msg string) {
 	log.Printf("[fyslide-cli] %s", msg)
 }
 
-func main() {
-	rootCmd := &cobra.Command{
+// NewRootCmd creates the root command for the CLI application.
+// It takes a function `getServiceAndDB` which is responsible for initializing
+// and returning the service and tagDB instances. This allows tests to inject mocks
+// or test-specific instances.
+func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error)) *cobra.Command {
+	var rootCmd = &cobra.Command{
 		Use:   "fyslide-cli",
 		Short: "FySlide CLI - manage image tags",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			tagDB, err = tagging.NewTagDB(dbPathFlag, cliLogger)
+			// Use the provided function to get/initialize svc and tagDB
+			svc, tagDB, err = getServiceAndDB(dbPathFlag, cliLogger)
 			if err != nil {
-				return fmt.Errorf("failed to open tag DB: %w", err)
+				return fmt.Errorf("failed to initialize service and tagDB: %w", err)
 			}
-			svc = service.NewService(tagDB, nil, cliLogger)
 			return nil
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
@@ -43,8 +48,6 @@ func main() {
 			}
 		},
 	}
-
-	rootCmd.PersistentFlags().StringVar(&dbPathFlag, "dbpath", "", "Path to tag database")
 
 	// Add command
 	addCmd := &cobra.Command{
@@ -92,7 +95,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			fmt.Println(strings.Join(tags, ", "))
+			cmd.Println(strings.Join(tags, ", "))
 			return nil
 		},
 	}
@@ -110,7 +113,7 @@ func main() {
 				return err
 			}
 			for _, img := range images {
-				fmt.Println(img)
+				cmd.Println(img)
 			}
 			return nil
 		},
@@ -127,7 +130,7 @@ func main() {
 				return err
 			}
 			for _, tag := range tags {
-				fmt.Printf("%s (%d)\n", tag.Name, tag.Count)
+				cmd.Printf("%s (%d)\n", tag.Name, tag.Count)
 			}
 			return nil
 		},
@@ -212,6 +215,24 @@ func main() {
 	}
 	rootCmd.AddCommand(addToTaggedCmd)
 
+	// Define persistent flags on the rootCmd returned by NewRootCmd
+	// This ensures flags are available when NewRootCmd is called from main or tests.
+	rootCmd.PersistentFlags().StringVar(&dbPathFlag, "dbpath", "", "Path to tag database")
+
+	return rootCmd
+}
+
+func main() {
+	// Define the actual service and DB initialization logic for the main application
+	getSvcAndDBFunc := func(dbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
+		tdb, err := tagging.NewTagDB(dbPath, logger)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open tag DB: %w", err)
+		}
+		s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
+		return s, tdb, nil
+	}
+	rootCmd := NewRootCmd(getSvcAndDBFunc)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
