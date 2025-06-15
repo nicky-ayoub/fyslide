@@ -103,7 +103,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-// Helper struct for buildTagsTab to hold tag name and count.
+// tagListItem is a helper struct for buildTagsTab to hold tag name and count.
 // Count = -1 indicates a placeholder message not to be treated as a real tag.
 type tagListItem struct {
 	Name  string
@@ -160,8 +160,7 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	// Function to load/reload tag data from DB and apply current filter
 	loadAndFilterTagData := func() {
 		var err error
-		// a.tagDB.GetAllTags() now returns []tagging.TagWithCount, error
-		fetchedTagsWithCounts, err := a.tagDB.GetAllTags()
+		fetchedTagsWithCounts, err := a.Service.ListAllTags()
 		if err != nil {
 			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
 			allTags = []tagListItem{}

@@ -16,8 +16,8 @@ import (
 
 const (
 	dbFileName         = "fyslide_tags.db"
-	ImagesToTagsBucket = "ImagesToTags" // Exported
-	TagsToImagesBucket = "TagsToImages" // Exported
+	ImagesToTagsBucket = "ImagesToTags" // Bucket name for image path to tags mapping.
+	TagsToImagesBucket = "TagsToImages" // Bucket name for tag to image paths mapping.
 )
 
 // LoggerFunc defines a function signature for logging messages.
@@ -137,7 +137,7 @@ func addToList(list []string, item string) ([]string, bool) {
 	return append(list, item), true
 }
 
-// Removes an item from a list. Returns the modified list.
+// removeFromList removes an item from a list. Returns the modified list.
 func removeFromList(list []string, item string) []string {
 	newList := list[:0] // Re-slice with 0 length but keep capacity
 	for _, existing := range list {

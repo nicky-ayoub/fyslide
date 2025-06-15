@@ -9,6 +9,19 @@ import (
 	"strings"
 )
 
+// FileScanner defines the interface for scanning files.
+type FileScanner interface {
+	Run(dir string, logger LoggerFunc) <-chan FileItem
+}
+
+// FileScannerImpl is a concrete implementation of FileScanner.
+type FileScannerImpl struct{}
+
+// Run delegates to the package-level Run function.
+func (f *FileScannerImpl) Run(dir string, logger LoggerFunc) <-chan FileItem {
+	return Run(dir, logger)
+}
+
 // FileItem represents a file item. Just a path for now
 type FileItem struct {
 	Path string
@@ -30,7 +43,7 @@ func NewFileItem(path string, fi fs.FileInfo) FileItem {
 
 }
 
-// findImageFiles recursively scans dir for image files and sends them to the out channel.
+// findImageFiles recursively scans dir for supported image files and sends them to the out channel.
 // It closes the out channel when done.
 func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
 	defer close(out) // Ensure channel is closed when WalkDir finishes or panics

@@ -1,5 +1,4 @@
-// Package ui Logmanager provides the Logging interface components for the application.
-// LogUIManager manages the UI components related to logging, including displaying log messages
+// Package ui provides the user interface components for the FySlide application.
 package ui
 
 import (

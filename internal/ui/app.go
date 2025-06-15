@@ -2,15 +2,14 @@
 package ui
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"fyslide/internal/history"
 	"fyslide/internal/scan"
-	"fyslide/internal/slideshow" // Import the new package
+	"fyslide/internal/service"
+	"fyslide/internal/slideshow"
 	"fyslide/internal/tagging"
 	"image"
-	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -28,7 +27,6 @@ import (
 
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/rwcarlsen/goexif/exif"
 )
 
 const (
@@ -39,7 +37,6 @@ const (
 // Img struct
 type Img struct {
 	OriginalImage image.Image
-	EditedImage   *image.RGBA
 	Path          string
 	Directory     string
 	EXIFData      map[string]string // To store selected EXIF fields
@@ -107,6 +104,8 @@ type App struct {
 	skipCount      int // NEW: Configurable skip count for PageUp/PageDown
 	maxLogMessages int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
 	logUIManager   *LogUIManager
+	Service        *service.Service
+	ImageService   *service.ImageService
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -213,95 +212,37 @@ func (a *App) addLogMessage(message string) {
 	}
 }
 
-// updateInfoText fetches current image info and tags, then updates the infoText widget.
-func (a *App) updateInfoText() {
-	currentItem := a.getCurrentItem() // Use helper to get current item safely
-
-	if currentItem == nil || a.img.Path == "" { // Check if item exists and path is set
+func (a *App) updateInfoText(info *service.ImageInfo) {
+	if a.img.Path == "" {
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
 		return
 	}
 
-	count := a.getCurrentImageCount() // Use helper
-
-	// --- Use FileInfo from the scanned item ---
-	fileInfo := currentItem.Info // OPTIMIZATION: Use existing FileInfo
-	if fileInfo == nil {
-		// Fallback or handle error if FileInfo wasn't stored during scan
-		a.addLogMessage(fmt.Sprintf("updateInfoText: Warning - FileInfo missing for %s", a.img.Path))
-		// Optionally try os.Stat as a fallback, or show an error
-		var err error
-		fileInfo, err = os.Stat(a.img.Path)
-		if err != nil {
-			a.addLogMessage(fmt.Sprintf("updateInfoText: Fallback os.Stat failed for %s: %v", a.img.Path, err))
-			a.UI.infoText.ParseMarkdown(fmt.Sprintf("## Error\nCould not get file stats for %s", a.img.Path))
-			return
-		}
-	}
-	// --- End Optimization ---
-
-	// Get image dimensions (assuming a.img.OriginalImage is still valid from DisplayImage)
-	imgWidth := 0
-	imgHeight := 0
-	if a.img.OriginalImage != nil {
-		imgWidth = a.img.OriginalImage.Bounds().Max.X
-		imgHeight = a.img.OriginalImage.Bounds().Max.Y
+	if info == nil { // Called when image info isn't available (e.g. load error)
+		a.UI.infoText.ParseMarkdown("# Info\n---\nImage metadata not available.")
+		return
 	}
 
 	// --- Get Tags ---
-	currentTags, errTags := a.tagDB.GetTags(a.img.Path)
-	if errTags != nil {
-		// Log the error, but continue to display other info
-		a.addLogMessage(fmt.Sprintf("Error getting tags for %s: %v", a.img.Path, errTags))
-	}
-	tagsString := "(none)" // Default if no tags or error occurred
+	currentTags, err := a.Service.ListTagsForImage(a.img.Path) // Use service layer
+	tagsString := "(none)"                                     // Default if no tags or error occurred
 	// Only join if no error occurred and tags exist
-	if errTags == nil && len(currentTags) > 0 {
+	if err == nil && len(currentTags) > 0 {
 		tagsString = strings.Join(currentTags, ", ")
 	}
 
-	// --- Build EXIF String ---
 	exifString := "(not available)"
-	if len(a.img.EXIFData) > 0 {
-		var exifParts []string
-		// Define a preferred order or a selection of tags to display
-		displayOrder := []exif.FieldName{ // Use exif.FieldName for keys
-			exif.Make, exif.Model, exif.DateTimeOriginal,
-			exif.ExposureTime, exif.FNumber, exif.ISOSpeedRatings,
-			exif.PixelXDimension, exif.PixelYDimension, // Original dimensions from EXIF
-		}
 
-		// Create a temporary copy to avoid modifying a.img.EXIFData during iteration
-		tempExifData := make(map[string]string)
-		for k, v := range a.img.EXIFData {
-			tempExifData[k] = v
-		}
-
-		for _, keyName := range displayOrder {
-			keyStr := string(keyName)
-			if val, ok := tempExifData[keyStr]; ok {
-				val = strings.Replace(val, "\"", "", -1) // Clean up quotes
-				exifParts = append(exifParts, fmt.Sprintf("**%s:** %s", keyStr, val))
-				delete(tempExifData, keyStr) // Remove from temp map
-			}
-		}
-
-		// Add any remaining tags (that were not in displayOrder), sorted for consistency
-		// This part is optional if you only want to show specific tags from displayOrder.
-		// If you want to show all other found EXIF tags, you would iterate over tempExifData here.
-
-		if len(exifParts) > 0 {
-			exifString = strings.Join(exifParts, "\n\n") // Use double newline for better spacing
+	if len(info.EXIFData) > 0 {
+		exifString = ""
+		for k, v := range info.EXIFData {
+			exifString += fmt.Sprintf("- **%s**: %s\n\n", k, v)
 		}
 	}
-	// --- End EXIF String ---
-
-	// --- Build Markdown ---
 	filterStatus := ""
 	if a.isFiltered {
 		filterStatus = fmt.Sprintf("\n**Filter Active:** %s\n", a.currentFilterTag)
 	}
-
 	md := fmt.Sprintf(`## Stats
 %s
 **Num:** %s
@@ -324,32 +265,27 @@ func (a *App) updateInfoText() {
 ## EXIF Data
 %s
 `, // Added separator and tags section
-		filterStatus,                            // Add filter status
-		formatNumberWithCommas(int64(a.index)),  // Display current index
-		formatNumberWithCommas(int64(count)),    // Use current count
-		formatNumberWithCommas(fileInfo.Size()), // Format size
-		imgWidth,                                // Reverted
-		imgHeight,                               // Reverted
-		fileInfo.ModTime().Format("2006-01-02"),
+		filterStatus,                           // Add filter status
+		formatNumberWithCommas(int64(a.index)), // Display current index
+		formatNumberWithCommas(int64(a.getCurrentImageCount())), // Use current count
+		formatNumberWithCommas(info.Size),                       // Format size
+		info.Width,                                              // Reverted
+		info.Height,                                             // Reverted
+		info.ModTime.Format("2006-01-02 15:04:05"),
 		tagsString, // Add the formatted tags string here
 		exifString, // Add the formatted EXIF string
 	)
 
-	// --- Update Widget ---
 	a.UI.infoText.ParseMarkdown(md)
-	// Optional: Scroll to top if content is long
-	// if scroller, ok := a.UI.infoText.Parent().(*container.Scroll); ok {
-	//     scroller.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -10000}}) // Scroll up significantly
-	// }
 }
 
-// handleImageDisplayError is a helper to set the UI state when an image fails to load or decode.
+// handleImageDisplayError sets the UI state when an image fails to load or decode.
 // formatName is optional and only used if errorType is "Decoding".
 func (a *App) handleImageDisplayError(imagePath, errorType string, originalError error, formatName string) {
 	a.img = Img{Path: imagePath, EXIFData: make(map[string]string)} // Keep path, clear EXIF
 	a.zoomPanArea.SetImage(nil)
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
-	a.updateInfoText()
+	a.updateInfoText(nil)
 	if errorType == "Decoding" && formatName != "" {
 		msg := fmt.Sprintf("Error %s %s (format: %s): %v", errorType, filepath.Base(imagePath), formatName, originalError)
 		a.addLogMessage(msg)
@@ -375,7 +311,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 		a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
-		a.updateInfoText()
+		a.updateInfoText(nil)
 		a.addLogMessage("No images available.")
 		return // Exit the function, no image to load
 	}
@@ -403,7 +339,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 				a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
-				a.updateInfoText()
+				a.updateInfoText(nil)
 				a.addLogMessage("No images available after index reset.")
 			})
 			return
@@ -416,76 +352,28 @@ func (a *App) loadAndDisplayCurrentImage() {
 
 	// Launch goroutine for loading and decoding
 	go func(path string, historyNav bool) {
-		file, err := os.Open(path)
+		// Load all image info at once, including the decoded image
+		imgInfo, imgDecoded, err := a.ImageService.GetImageInfo(path)
 		if err != nil {
 			fyne.Do(func() {
-				a.handleImageDisplayError(path, "Loading", err, "")
-			})
-			return // Exit goroutine
-		}
-		defer file.Close()
-
-		// --- EXIF Parsing ---
-		currentEXIFData := make(map[string]string)
-		// Seek to beginning for EXIF parsing
-		_, seekErr := file.Seek(0, 0)
-		if seekErr != nil {
-			fyne.Do(func() {
-				a.addLogMessage(fmt.Sprintf("Error seeking file for EXIF: %v", seekErr))
-			})
-			// Continue to image decoding if seek fails, EXIF will be empty
-		} else {
-			exifData, exifErr := exif.Decode(file)
-			if exifErr == nil && exifData != nil {
-				// Extract specific tags you're interested in
-				tagsToExtract := []exif.FieldName{
-					exif.DateTimeOriginal, exif.Make, exif.Model,
-					exif.ExposureTime, exif.FNumber, exif.ISOSpeedRatings,
-					exif.PixelXDimension, exif.PixelYDimension,
-				}
-				for _, tagName := range tagsToExtract {
-					tag, errGetTag := exifData.Get(tagName)
-					if errGetTag == nil {
-						currentEXIFData[string(tagName)] = tag.String()
-					}
-				}
-			} else if exifErr != nil && !errors.Is(exifErr, io.EOF) && exifErr.Error() != "EOF" && exifErr.Error() != "no EXIF data" {
-				// Log only significant errors, not "no EXIF data" or simple EOF
-				fyne.Do(func() {
-					a.addLogMessage(fmt.Sprintf("EXIF parsing error for %s: %v", filepath.Base(path), exifErr))
-				})
-			}
-		}
-		// --- End EXIF Parsing ---
-
-		// IMPORTANT: Seek back to the beginning for image decoding
-		_, seekErr = file.Seek(0, 0)
-		if seekErr != nil {
-			fyne.Do(func() {
-				a.handleImageDisplayError(path, "Seeking before Decode", seekErr, "")
+				a.handleImageDisplayError(path, "loading/decoding", err, "") // formatName not directly available here
 			})
 			return
 		}
 
-		imageDecoded, formatName, err := image.Decode(file)
-		if err != nil {
-			fyne.Do(func() {
-				a.handleImageDisplayError(file.Name(), "Decoding", err, formatName)
-			})
-			return // Exit goroutine
-		}
-
 		// Successfully decoded image - perform UI updates on the Fyne thread
 		fyne.Do(func() {
-			a.img.OriginalImage = imageDecoded
-			a.img.Path = file.Name()                    // Update the path in the Img struct
-			a.img.EXIFData = currentEXIFData            // Store parsed EXIF data
+			a.img = Img{
+				OriginalImage: imgDecoded,
+				Path:          path,
+				EXIFData:      imgInfo.EXIFData,
+			}
 			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
 
 			// Update Title, Status Bar, and Info Text
-			a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - %v", a.img.Path))
+			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
-			a.updateInfoText()
+			a.updateInfoText(imgInfo)
 
 			// History Update (only if not navigating history)
 			if a.historyManager != nil && !historyNav {
@@ -498,7 +386,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 
 // showFilterDialog displays a dialog to select a tag for filtering.
 func (a *App) showFilterDialog() {
-	allTagsWithCounts, err := a.tagDB.GetAllTags() // This now returns []tagging.TagWithCount
+	//allTagsWithCounts, err := a.tagDB.GetAllTags() // This now returns []tagging.TagWithCount
+	allTagsWithCounts, err := a.Service.ListAllTags()
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to get tags for filtering: %w", err), a.UI.MainWin)
 		return
@@ -587,7 +476,8 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 // applyFilter filters the image list based on the selected tag.
 func (a *App) applyFilter(tag string) {
 	a.addLogMessage(fmt.Sprintf("Applying filter for tag: %s", tag))
-	tagImagesPaths, err := a.tagDB.GetImages(tag)
+	//tagImagesPaths, err := a.tagDB.GetImages(tag)
+	tagImagesPaths, err := a.Service.ListImagesForTag(tag)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tag, err), a.UI.MainWin)
 		a.clearFilter() // Revert if error occurs
@@ -634,8 +524,8 @@ func (a *App) applyFilter(tag string) {
 
 	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
 	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
-	a.updateInfoText()             // Update info panel immediately
-	a.updateStatusBar()
+	//a.updateInfoText(nil)          // Update info panel immediately
+	//a.updateStatusBar()
 }
 
 // clearFilter removes any active tag filter.
@@ -652,8 +542,8 @@ func (a *App) clearFilter() {
 
 	a.isNavigatingHistory = false  // Clearing a filter is a new view state
 	a.loadAndDisplayCurrentImage() // Display the first image in the full set
-	a.updateInfoText()             // Update info panel immediately
-	a.updateStatusBar()
+	//a.updateInfoText()             // Update info panel immediately
+	//a.updateStatusBar()
 }
 
 func (a *App) firstImage() {
@@ -869,17 +759,9 @@ func (a *App) deleteFile() {
 		return
 	} // No image loaded
 
-	// 1. Remove from OS
-	if err := os.Remove(deletedPath); err != nil {
-		dialog.ShowError(err, a.UI.MainWin)
-		return
-	}
-	a.addLogMessage(fmt.Sprintf("Deleted file: %s", deletedPath))
-
-	// 2. Remove tags associated with this file from DB
-	err := a.tagDB.RemoveAllTagsForImage(deletedPath)
+	err := a.Service.DeleteImageFile(deletedPath)
 	if err != nil {
-		a.addLogMessage(fmt.Sprintf("Warn: Failed to remove tags for deleted file %s: %v", deletedPath, err))
+		a.addLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
 	}
 
 	// 3. Remove from the main image list (a.images)
@@ -938,8 +820,8 @@ func (a *App) deleteFile() {
 	}
 	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
-	a.updateInfoText()
-	a.updateStatusBar()
+	// a.updateInfoText()
+	// a.updateStatusBar()
 }
 
 // func pathToURI(path string) (fyne.URI, error) {
@@ -958,8 +840,9 @@ func (a *App) loadImages(root string) {
 		// and a.addLogMessage directly updates UI. a.addLogMessage itself uses logUIManager.
 		fyne.Do(func() { a.addLogMessage(message) })
 	}
-	imageChan := scan.Run(root, scanLogger) // Pass the logger
-	for item := range imageChan {           // Loop until the channel is closed
+	//imageChan := scan.Run(root, scanLogger) // Pass the logger
+	imageChan := a.Service.FileScan.Run(root, scanLogger)
+	for item := range imageChan { // Loop until the channel is closed
 		a.images = append(a.images, item)
 		// Optionally, you could update a progress indicator here
 		// if the GUI needs to show loading progress.
@@ -1091,6 +974,10 @@ func CreateApplication() {
 	if err != nil {
 		log.Fatalf("Failed to initialize tag database: %v", err)
 	}
+	// --- Service Layer Integration ---
+	fileScanner := scan.FileScannerImpl{} // You may need to implement this as shown earlier
+	ui.Service = service.NewService(ui.tagDB, &fileScanner, appLoggerFunc)
+	ui.ImageService = service.NewImageService()
 	// Initialize UI components that need the app instance
 	ui.UI.MainWin = a.NewWindow("FySlide")
 	ui.UI.MainWin.SetCloseIntercept(func() {
@@ -1137,7 +1024,7 @@ func CreateApplication() {
 	} else {
 		// This case is also hit on timeout if no images loaded.
 		ui.updateStatusBar() // Will show "No images available" or similar.
-		ui.updateInfoText()
+		ui.updateInfoText(nil)
 	}
 
 	ui.UI.MainWin.ShowAndRun()
@@ -1171,77 +1058,17 @@ func (a *App) pauser(ticker *time.Ticker) {
 	}
 }
 
-// removeTagGlobally removes a specific tag from all images in the database.
 func (a *App) removeTagGlobally(tag string) error {
 	if tag == "" {
-		return fmt.Errorf("cannot remove an empty tag")
+		return nil
 	}
 	a.addLogMessage(fmt.Sprintf("Global removal for tag '%s' started.", tag))
-
-	// 1. Get all images associated with this tag
-	imagePaths, err := a.tagDB.GetImages(tag)
-	if err != nil {
-		// Log the error, but maybe the tag just doesn't exist (which is fine for removal)
-		a.addLogMessage(fmt.Sprintf("Error getting images for tag '%s' during global removal: %v", tag, err))
-		// Check if it's a "not found" type error if your DB layer provides it.
-		// If it's just not found, we can consider it a success (nothing to remove).
-		// For BoltDB, GetImages returns an empty list if the tag key doesn't exist, not an error.
-		// So, an error here is likely a real DB issue.
-		return fmt.Errorf("database error while getting images for tag '%s': %w", tag, err)
-	}
-
-	if len(imagePaths) == 0 {
-		a.addLogMessage(fmt.Sprintf("Tag '%s' not found or no images associated with it. Global removal complete.", tag))
-		return nil // No images had this tag, so removal is effectively done.
-	}
-
-	a.addLogMessage(fmt.Sprintf("Found %d images with tag '%s'. Removing...", len(imagePaths), tag))
-
-	// 2. Iterate and remove the tag from each image
-	var firstError error
-	errorsEncountered := 0
-	successfulRemovals := 0
-
-	for _, path := range imagePaths {
-		// RemoveTag handles both Image->Tag and Tag->Image mappings.
-		// It should also delete the Tag key if the image list becomes empty.
-		errRemove := a.tagDB.RemoveTag(path, tag)
-		if errRemove != nil {
-			a.addLogMessage(fmt.Sprintf("Error removing tag '%s' from image '%s': %v", tag, filepath.Base(path), errRemove))
-			errorsEncountered++
-			if firstError == nil {
-				firstError = fmt.Errorf("failed removing tag '%s' from %s: %w", tag, filepath.Base(path), errRemove)
-			}
-		} else {
-			successfulRemovals++
-		}
-	}
-
-	a.addLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successfulRemovals, errorsEncountered))
-
-	// 3. Update UI if the currently displayed image was affected
-	// Check if the current image *had* the tag that was just removed
-	currentItem := a.getCurrentItem()
-	if currentItem != nil {
-		// Check if the current item's path was in the list we just processed
-		wasAffected := false
-		for _, path := range imagePaths {
-			if currentItem.Path == path {
-				wasAffected = true
-				break
-			}
-		}
-		if wasAffected {
-			a.addLogMessage(fmt.Sprintf("Current image %s affected by global tag removal.", filepath.Base(currentItem.Path)))
-			a.updateInfoText() // Refresh the info panel to show updated tags
-		}
-	}
-
-	// 4. Return the first error encountered, if any
-	return firstError
+	successes, errors, err := a.Service.RemoveTagGlobally(tag)
+	a.addLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successes, errors))
+	return err
 }
 
-// _addTagsToDirectory is a helper to apply a list of tags to all images in a given directory.
+// _addTagsToDirectory applies a list of tags to all images in a given directory.
 // It uses goroutines for concurrent database operations.
 func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
@@ -1267,7 +1094,8 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 
 				for _, tag := range currentTagsToAdd {
 					localTagsAttemptedOnThisImage++
-					errAdd := a.tagDB.AddTag(itemPath, tag)
+					//errAdd := a.tagDB.AddTag(itemPath, tag)
+					errAdd := a.Service.AddTagsToImage(itemPath, []string{tag})
 					if errAdd != nil {
 						// Logged via addLogMessage by the calling function's summary
 						localErrorsOnThisImage++
@@ -1298,28 +1126,6 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
 }
 
-// _applyTagsToSingleImage applies a list of tags to a single image path.
-func (a *App) _applyTagsToSingleImage(imagePath string, tagsToAdd []string, filesAffected map[string]bool) (successfulAdditions int, errorsEncountered int, firstError error) {
-	a.addLogMessage(fmt.Sprintf("Applying tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(imagePath)))
-	for _, tag := range tagsToAdd {
-		errAdd := a.tagDB.AddTag(imagePath, tag)
-		if errAdd != nil {
-			errorsEncountered++
-			if firstError == nil {
-				firstError = fmt.Errorf("failed to add tag '%s' to %s: %w", tag, filepath.Base(imagePath), errAdd)
-			}
-		} else {
-			successfulAdditions++
-			filesAffected[imagePath] = true
-		}
-	}
-	if imagePath == a.img.Path && successfulAdditions > 0 { // If current image was affected
-		fyne.Do(func() { a.updateInfoText() })
-	}
-	a.addLogMessage(fmt.Sprintf("Applied tags to %s. Successes: %d, Errors: %d", filepath.Base(imagePath), successfulAdditions, errorsEncountered))
-	return
-}
-
 // addTag shows a dialog to add a new tag to the current image
 func (a *App) addTag() {
 	if a.img.Path == "" {
@@ -1332,7 +1138,7 @@ func (a *App) addTag() {
 		a.addLogMessage("Slideshow paused for tagging.")
 	}
 
-	currentTags, err := a.tagDB.GetTags(a.img.Path)
+	currentTags, err := a.Service.ListTagsForImage(a.img.Path)
 	if err != nil {
 		a.slideshowManager.ResumeAfterOperation() // Ensure resume on error
 		if !a.slideshowManager.IsPaused() {
@@ -1420,7 +1226,9 @@ func (a *App) addTag() {
 			}
 		} else {
 			// Apply tags only to the current image
-			successfulAdditions, errorsEncountered, errAddOp = a._applyTagsToSingleImage(a.img.Path, tagsToAdd, filesAffected)
+			successfulAdditions, errorsEncountered, errAddOp = a.Service.ApplyTagsToSingleImage(a.img.Path, tagsToAdd, filesAffected)
+			// updateInfoText will be called if current image is affected and successfulAdditions > 0
+
 			totalTagsAttempted = len(tagsToAdd) // All tags were attempted on the single image
 
 			logMessage = fmt.Sprintf("Tagging %s: %d attempts, %d successes, %d errors.", filepath.Base(a.img.Path), totalTagsAttempted, successfulAdditions, errorsEncountered)
@@ -1446,7 +1254,13 @@ func (a *App) addTag() {
 		}
 		if len(filesAffected) > 0 { // Only update info/refresh if something actually changed
 			if _, ok := filesAffected[a.img.Path]; ok { // If current image was affected
-				a.updateInfoText() // Update info panel for the current image
+				// Reload image info to get fresh tags for the info panel
+				imgInfo, _, err := a.ImageService.GetImageInfo(a.img.Path)
+				if err == nil && imgInfo != nil {
+					a.updateInfoText(imgInfo)
+				} else {
+					a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tagging: %v", err))
+				}
 			}
 			if a.refreshTagsFunc != nil {
 				// log.Println("Calling Tags tab refresh function.") // Developer log, not for UI
@@ -1466,19 +1280,15 @@ func (a *App) addTag() {
 // _removeTagFromSingleImage removes a tag from a single image path.
 func (a *App) _removeTagFromSingleImage(imagePath string, tagToRemove string) (errRemove error) {
 	a.addLogMessage(fmt.Sprintf("Removing tag '%s' from %s", tagToRemove, filepath.Base(imagePath)))
-	errRemove = a.tagDB.RemoveTag(imagePath, tagToRemove)
-	if errRemove == nil {
-		a.addLogMessage(fmt.Sprintf("Successfully removed tag '%s' from %s.", tagToRemove, filepath.Base(imagePath)))
-		if imagePath == a.img.Path { // If current image was affected
-			fyne.Do(func() { a.updateInfoText() })
-		}
-	} else {
-		a.addLogMessage(fmt.Sprintf("Error removing tag '%s' from %s: %v", tagToRemove, filepath.Base(imagePath), errRemove))
+	// Example usage in a batch remove dialog handler:
+	err := a.Service.RemoveTagsFromImage(imagePath, []string{tagToRemove})
+	if err != nil {
+		a.addLogMessage(fmt.Sprintf("Remove Single tag error: %v", err))
 	}
-	return
+	return err
 }
 
-// _removeTagFromDirectory is a helper to remove a tag from all images in a given directory.
+// _removeTagFromDirectory removes a tag from all images in a given directory.
 func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string,
 	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
 	imagesUntaggedCount *int, errorsEncountered *int) {
@@ -1493,7 +1303,8 @@ func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string,
 			wg.Add(1)
 			go func(path string, tag string) { // Pass path and tag to goroutine
 				defer wg.Done()
-				errRemove := a.tagDB.RemoveTag(path, tag)
+				//errRemove := a.tagDB.RemoveTag(path, tag)
+				errRemove := a.Service.RemoveTagsFromImage(path, []string{tagToRemove})
 				mu.Lock()
 				defer mu.Unlock()
 				if errRemove != nil {
@@ -1527,7 +1338,7 @@ func (a *App) removeTag() {
 	}
 
 	// 1. Get current tags for the image to populate the selector
-	currentTags, err := a.tagDB.GetTags(a.img.Path)
+	currentTags, err := a.Service.ListTagsForImage(a.img.Path)
 	if err != nil {
 		a.slideshowManager.ResumeAfterOperation()
 		if !a.slideshowManager.IsPaused() {
@@ -1623,7 +1434,13 @@ func (a *App) removeTag() {
 				a.refreshTagsFunc()
 			}
 			if imagesUntaggedCount > 0 && (a.img.Path != "" && (removeFromAll || (!removeFromAll && selectedTag != ""))) { // Check if current image could have been affected
-				a.updateInfoText() // Refresh info text if current image might have changed
+				// Reload image info to get fresh tags for the info panel
+				imgInfo, _, err := a.ImageService.GetImageInfo(a.img.Path)
+				if err == nil && imgInfo != nil {
+					a.updateInfoText(imgInfo)
+				} else {
+					a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tag removal: %v", err))
+				}
 			}
 		}
 	}, a.UI.MainWin)

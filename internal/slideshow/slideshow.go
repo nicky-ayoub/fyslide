@@ -24,7 +24,7 @@ type SlideshowManager struct {
 }
 
 // NewSlideshowManager creates a new SlideshowManager.
-// Interval is the time between automatic transitions.
+// interval is the time between automatic transitions.
 // logger is an optional logging function.
 func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *SlideshowManager {
 	if interval <= 0 {
