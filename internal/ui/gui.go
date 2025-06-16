@@ -29,28 +29,24 @@ func (a *App) selectStackView(index int) {
 		return
 	}
 
-	var targetView fyne.CanvasObject
-	if index == imageViewIndex {
-		targetView = a.UI.imageContentView
-	} else if index == tagsViewIndex {
-		targetView = a.UI.tagsContentView
-	} else {
+	if index < 0 || index >= len(a.UI.contentStack.Objects) {
 		a.addLogMessage(fmt.Sprintf("Internal UI Error: Invalid view index %d.", index))
 		return
 	}
-
-	if targetView == nil {
+	// Check if the object at the target index is nil
+	if a.UI.contentStack.Objects[index] == nil {
 		a.addLogMessage(fmt.Sprintf("Internal UI Error: Target view for index %d is not available.", index))
 		return
 	}
 
-	// Hide all objects in the stack first
-	for _, obj := range a.UI.contentStack.Objects {
-		obj.Hide()
+	// Show the target object and hide others
+	for i, obj := range a.UI.contentStack.Objects {
+		if i != index {
+			obj.Hide()
+		} else {
+			obj.Show() // This is the targetView
+		}
 	}
-
-	// Show the target object
-	targetView.Show()
 
 	// Refresh the stack container to apply visibility changes
 	a.UI.contentStack.Refresh()

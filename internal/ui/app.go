@@ -762,6 +762,10 @@ func (a *App) deleteFile() {
 	err := a.Service.DeleteImageFile(deletedPath)
 	if err != nil {
 		a.addLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
+		// If the service layer couldn't delete the file (and its tags),
+		// it might be best to not alter the UI lists further.
+		dialog.ShowError(err, a.UI.MainWin)
+		return
 	}
 
 	// 3. Remove from the main image list (a.images)

@@ -170,16 +170,17 @@ func (s *Service) ReplaceTag(oldTag, newTag string) error {
 	if oldTag == "" || newTag == "" || oldTag == newTag {
 		return errors.New("invalid tags")
 	}
-	images, err := s.TagDB.GetImages(strings.ToLower(oldTag)) // Normalize oldTag for query
+	lowerOldTag := strings.ToLower(oldTag)
+	images, err := s.TagDB.GetImages(lowerOldTag)
 	if err != nil {
 		return err
 	}
 	var firstErr error
 	for _, img := range images {
-		if err := s.TagDB.RemoveTag(img, oldTag); err != nil {
-			s.Logger(fmt.Sprintf("ReplaceTag: failed to remove old tag '%s' from '%s': %v", oldTag, img, err))
+		if err := s.TagDB.RemoveTag(img, lowerOldTag); err != nil { // Use lowerOldTag
+			s.Logger(fmt.Sprintf("ReplaceTag: failed to remove old tag '%s' from '%s': %v", lowerOldTag, img, err))
 			if firstErr == nil { // oldTag here is already normalized from the GetImages call
-				firstErr = fmt.Errorf("removing old tag '%s' from '%s': %w", oldTag, img, err)
+				firstErr = fmt.Errorf("removing old tag '%s' from '%s': %w", lowerOldTag, img, err)
 			}
 		}
 		lowerNewTag := strings.ToLower(newTag)
@@ -191,7 +192,7 @@ func (s *Service) ReplaceTag(oldTag, newTag string) error {
 		}
 	}
 	// Delete the potentially non-normalized oldTag key if it existed.
-	s.TagDB.DeleteOrphanedTagKey(strings.ToLower(oldTag))
+	s.TagDB.DeleteOrphanedTagKey(lowerOldTag)
 	return firstErr
 }
 
@@ -200,15 +201,16 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 	if tag == "" {
 		return 0, 0, errors.New("tag cannot be empty")
 	}
-	imagePaths, err := s.TagDB.GetImages(strings.ToLower(tag)) // Normalize tag for query
+	lowerTag := strings.ToLower(tag)
+	imagePaths, err := s.TagDB.GetImages(lowerTag)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get images for tag '%s': %w", tag, err)
 	}
 	successfulRemovals := 0
 	errorsEncountered := 0
 	for _, path := range imagePaths {
-		if err := s.TagDB.RemoveTag(path, tag); err != nil {
-			s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", strings.ToLower(tag), path, err))
+		if err := s.TagDB.RemoveTag(path, lowerTag); err != nil { // Use lowerTag
+			s.Logger(fmt.Sprintf("Error removing tag '%s' from %s: %v", lowerTag, path, err))
 			errorsEncountered++
 		} else {
 			successfulRemovals++
