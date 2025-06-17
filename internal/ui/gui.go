@@ -22,6 +22,37 @@ const (
 	initialSplitOffset   = 0.85
 )
 
+// UI struct
+type UI struct {
+	MainWin    fyne.Window
+	mainModKey fyne.KeyModifier
+
+	split      *container.Split
+	clockLabel *widget.Label
+	infoText   *widget.RichText
+
+	//ribbonBar *fyne.Container
+	// pauseBtn     *widget.Button
+	// removeTagBtn *widget.Button
+	// tagBtn       *widget.Button
+	// randomBtn    *widget.Button
+
+	toolBar            *widget.Toolbar
+	randomAction       *widget.ToolbarAction // Action for toggling random mode
+	pauseAction        *widget.ToolbarAction // Action for toggling play/pause
+	showFullSizeAction *widget.ToolbarAction // Action for showing image at full size
+
+	contentStack     *fyne.Container   // To hold the main views
+	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
+	tagsContentView  fyne.CanvasObject // ADDED: Holds the tags view content
+	// --- Status Bar Elements ---
+	statusBar        *fyne.Container // Changed from *widget.Label to *fyne.Container
+	statusPathLabel  *widget.Label   // For file path and image count
+	statusLogLabel   *widget.Label   // For log messages
+	statusLogUpBtn   *widget.Button
+	statusLogDownBtn *widget.Button
+}
+
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
 func (a *App) selectStackView(index int) {
 	if a.UI.contentStack == nil {

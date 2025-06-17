@@ -20,7 +20,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 
 	//"fyne.io/fyne/v2/data/binding"
@@ -40,37 +39,6 @@ type Img struct {
 	Path          string
 	Directory     string
 	EXIFData      map[string]string // To store selected EXIF fields
-}
-
-// UI struct
-type UI struct {
-	MainWin    fyne.Window
-	mainModKey fyne.KeyModifier
-
-	split      *container.Split
-	clockLabel *widget.Label
-	infoText   *widget.RichText
-
-	//ribbonBar *fyne.Container
-	// pauseBtn     *widget.Button
-	// removeTagBtn *widget.Button
-	// tagBtn       *widget.Button
-	// randomBtn    *widget.Button
-
-	toolBar            *widget.Toolbar
-	randomAction       *widget.ToolbarAction // Action for toggling random mode
-	pauseAction        *widget.ToolbarAction // Action for toggling play/pause
-	showFullSizeAction *widget.ToolbarAction // Action for showing image at full size
-
-	contentStack     *fyne.Container   // To hold the main views
-	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
-	tagsContentView  fyne.CanvasObject // ADDED: Holds the tags view content
-	// --- Status Bar Elements ---
-	statusBar        *fyne.Container // Changed from *widget.Label to *fyne.Container
-	statusPathLabel  *widget.Label   // For file path and image count
-	statusLogLabel   *widget.Label   // For log messages
-	statusLogUpBtn   *widget.Button
-	statusLogDownBtn *widget.Button
 }
 
 // App represents the whole application with all its windows, widgets and functions
