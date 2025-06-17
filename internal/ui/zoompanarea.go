@@ -2,6 +2,8 @@ package ui
 
 import (
 	"image"
+	"image/color"
+	"math"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -13,6 +15,16 @@ const (
 	defaultMinZoom        float32 = 0.1  // Example: 10% zoom
 	defaultMaxZoom        float32 = 10.0 // Example: 1000% zoom
 	defaultZoomScrollStep float32 = 0.1  // Zoom step for scroll events
+)
+
+// ScaleAlgorithmType defines the type of scaling algorithm.
+type ScaleAlgorithmType int
+
+const (
+	// NearestNeighbor uses the nearest pixel, fast but can be blocky.
+	NearestNeighbor ScaleAlgorithmType = iota
+	// Bilinear uses linear interpolation of four nearest pixels, smoother.
+	Bilinear
 )
 
 // ZoomPanArea is a custom widget for displaying an image with zoom and pan.
@@ -31,20 +43,22 @@ type ZoomPanArea struct {
 	isPanning    bool
 	lastMousePos fyne.Position
 
-	OnInteraction   func() // Callback for when user interacts (scrolls, drags) - e.g., to pause slideshow
-	onZoomPanChange func() // Callback for when zoom or pan changes - e.g., to update UI elements
+	OnInteraction    func() // Callback for when user interacts (scrolls, drags) - e.g., to pause slideshow
+	onZoomPanChange  func() // Callback for when zoom or pan changes - e.g., to update UI elements
+	currentAlgorithm ScaleAlgorithmType
 }
 
 // NewZoomPanArea creates a new ZoomPanArea widget.
 // The onInteraction func will be called when the user zooms or starts panning.
 func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 	zpa := &ZoomPanArea{
-		originalImg:   img,
-		zoomFactor:    1.0,
-		panOffset:     fyne.Position{},
-		minZoom:       defaultMinZoom,
-		maxZoom:       defaultMaxZoom,
-		OnInteraction: onInteraction,
+		originalImg:      img,
+		zoomFactor:       1.0,
+		panOffset:        fyne.Position{},
+		minZoom:          defaultMinZoom,
+		maxZoom:          defaultMaxZoom,
+		OnInteraction:    onInteraction,
+		currentAlgorithm: Bilinear, // Default to Bilinear for better quality
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
 	zpa.ExtendBaseWidget(zpa)
@@ -52,6 +66,19 @@ func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 		zpa.Reset() // Center the initial image
 	}
 	return zpa
+}
+
+// SetScaleAlgorithm sets the scaling algorithm to be used.
+func (zpa *ZoomPanArea) SetScaleAlgorithm(algo ScaleAlgorithmType) {
+	if zpa.currentAlgorithm != algo {
+		zpa.currentAlgorithm = algo
+		zpa.Refresh() // Redraw with the new algorithm
+	}
+}
+
+// GetScaleAlgorithm returns the currently selected scaling algorithm.
+func (zpa *ZoomPanArea) GetScaleAlgorithm() ScaleAlgorithmType {
+	return zpa.currentAlgorithm
 }
 
 // SetImage updates the image displayed by the widget.
@@ -134,6 +161,62 @@ func (zpa *ZoomPanArea) IsOriginalLargerThanView() bool {
 	return float32(imgBounds.Dx()) > zpa.Size().Width || float32(imgBounds.Dy()) > zpa.Size().Height
 }
 
+// clampInt ensures val is within min and max (inclusive).
+func clampInt(val, min, max int) int {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
+
+// bilinearInterpolate calculates the color at a floating-point coordinate using bilinear interpolation.
+func (zpa *ZoomPanArea) bilinearInterpolate(x, y float32) color.Color {
+	img := zpa.originalImg
+	bounds := img.Bounds()
+	maxX := bounds.Max.X - 1
+	maxY := bounds.Max.Y - 1
+
+	// Fallback for tiny images where interpolation isn't meaningful or might fail.
+	if maxX < bounds.Min.X || maxY < bounds.Min.Y {
+		return img.At(clampInt(int(x), bounds.Min.X, maxX), clampInt(int(y), bounds.Min.Y, maxY))
+	}
+
+	x0 := int(math.Floor(float64(x)))
+	y0 := int(math.Floor(float64(y)))
+	x1 := x0 + 1
+	y1 := y0 + 1
+
+	// Clamp coordinates to be within image bounds for sampling
+	x0c := clampInt(x0, bounds.Min.X, maxX)
+	y0c := clampInt(y0, bounds.Min.Y, maxY)
+	x1c := clampInt(x1, bounds.Min.X, maxX)
+	y1c := clampInt(y1, bounds.Min.Y, maxY)
+
+	c00 := img.At(x0c, y0c) // Top-left
+	c10 := img.At(x1c, y0c) // Top-right
+	c01 := img.At(x0c, y1c) // Bottom-left
+	c11 := img.At(x1c, y1c) // Bottom-right
+
+	r00, g00, b00, a00 := c00.RGBA()
+	r10, g10, b10, a10 := c10.RGBA()
+	r01, g01, b01, a01 := c01.RGBA()
+	r11, g11, b11, a11 := c11.RGBA()
+
+	tx := x - float32(x0) // Fractional part for x
+	ty := y - float32(y0) // Fractional part for y
+
+	// Interpolate each channel
+	finalR := uint16((float32(r00)*(1-tx)+float32(r10)*tx)*(1-ty) + (float32(r01)*(1-tx)+float32(r11)*tx)*ty)
+	finalG := uint16((float32(g00)*(1-tx)+float32(g10)*tx)*(1-ty) + (float32(g01)*(1-tx)+float32(g11)*tx)*ty)
+	finalB := uint16((float32(b00)*(1-tx)+float32(b10)*tx)*(1-ty) + (float32(b01)*(1-tx)+float32(b11)*tx)*ty)
+	finalA := uint16((float32(a00)*(1-tx)+float32(a10)*tx)*(1-ty) + (float32(a01)*(1-tx)+float32(a11)*tx)*ty)
+
+	return color.RGBA64{R: finalR, G: finalG, B: finalB, A: finalA}
+}
+
 // draw is the rendering function for the canvas.Raster.
 func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 	if zpa.originalImg == nil || w <= 0 || h <= 0 {
@@ -143,23 +226,26 @@ func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	srcBounds := zpa.originalImg.Bounds()
 
-	// Pre-calculate inverse zoom factor to avoid division in the loop.
-	// zpa.minZoom should prevent zpa.zoomFactor from being zero.
 	invZoomFactor := float32(1.0) / zpa.zoomFactor
 
-	// Transform defines how to map destination pixels to source pixels
-	// For each pixel (dx, dy) in dst, find corresponding (sx, sy) in src
 	for dy := 0; dy < h; dy++ {
 		for dx := 0; dx < w; dx++ {
-			// Screen point (dx, dy) to image point (sx, sy)
-			// Inverse of pan, then inverse of zoom
 			sx := (float32(dx) - zpa.panOffset.X) * invZoomFactor
 			sy := (float32(dy) - zpa.panOffset.Y) * invZoomFactor
 
 			// Check if the source point is within the original image bounds
 			if sx >= float32(srcBounds.Min.X) && sx < float32(srcBounds.Max.X) &&
 				sy >= float32(srcBounds.Min.Y) && sy < float32(srcBounds.Max.Y) {
-				dst.Set(dx, dy, zpa.originalImg.At(int(sx), int(sy)))
+
+				switch zpa.currentAlgorithm {
+				case Bilinear:
+					dst.Set(dx, dy, zpa.bilinearInterpolate(sx, sy))
+				case NearestNeighbor:
+					fallthrough
+				default: // Default to NearestNeighbor
+					// int(sx), int(sy) effectively performs nearest neighbor
+					dst.Set(dx, dy, zpa.originalImg.At(int(sx), int(sy)))
+				}
 			}
 		}
 	}
