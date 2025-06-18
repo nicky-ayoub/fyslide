@@ -17,7 +17,7 @@ LDFLAGS := -s -w
 # Default build target can build everything or just the GUI
 all: build
 
-build: deps build-gui build-cli
+build: deps  build-gui build-cli
 
 build-gui:
 	$(GO_CMD) build -ldflags="$(LDFLAGS)" -o $(GUI_OUTPUT) $(GUI_MAIN_SRC)

@@ -1122,12 +1122,17 @@ func (a *App) addTag() {
 	applyToAllCheck := widget.NewCheck("Apply tag(s) to all images in this directory", nil)
 	applyToAllCheck.SetChecked(true)
 
-	// Keep the rest of the addTag (formerly tagFile) function body the same...
-	dialog.ShowForm("Add Tag", "Add", "Cancel", []*widget.FormItem{
+	formItems := []*widget.FormItem{
 		widget.NewFormItem("", currentTagsLabel), // Display current tags
 		widget.NewFormItem("New Tag(s) (comma-separated)", tagEntry),
 		widget.NewFormItem("", applyToAllCheck), // --- NEW: Add checkbox to form ---
-	}, func(confirm bool) {
+	}
+	dialogCallback := func(confirm bool) {
+		// This callback executes when the dialog is submitted or cancelled.
+		// The slideshow resume logic is correctly placed here.
+		// We set the focus *after* ShowForm is called, but *before* this callback.
+
+		// Defer slideshow resume logic
 
 		defer func() {
 			a.slideshowManager.ResumeAfterOperation()
@@ -1237,7 +1242,25 @@ func (a *App) addTag() {
 			// Replace dialog with status bar message
 			a.addLogMessage(fmt.Sprintf("Tagging Status: %s", statusMessage))
 		}
-	}, a.UI.MainWin)
+	}
+
+	// Create the form dialog instance using NewForm to get a reference to it.
+	formDialog := dialog.NewForm("Add Tag", "Add", "Cancel", formItems, dialogCallback, a.UI.MainWin)
+
+	// Set OnSubmitted for the tagEntry.
+	// When Enter is pressed in tagEntry, this function will be called.
+	tagEntry.OnSubmitted = func(text string) {
+		if text != "" { // Only submit if there's text in the entry
+			// Add an immediate status update to the log UI
+			a.addLogMessage(fmt.Sprintf("Submitting tags for processing: %s", text))
+			formDialog.Submit() // Programmatically submit the dialog
+		}
+	}
+
+	formDialog.Show()
+	// Set focus to the tagEntry widget after the dialog is shown
+	// Ensure the window and its canvas are available.
+	a.UI.MainWin.Canvas().Focus(tagEntry)
 }
 
 // _removeTagFromSingleImage removes a tag from a single image path.
