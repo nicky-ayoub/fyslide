@@ -31,12 +31,6 @@ type UI struct {
 	clockLabel *widget.Label
 	infoText   *widget.RichText
 
-	//ribbonBar *fyne.Container
-	// pauseBtn     *widget.Button
-	// removeTagBtn *widget.Button
-	// tagBtn       *widget.Button
-	// randomBtn    *widget.Button
-
 	toolBar            *widget.Toolbar
 	randomAction       *widget.ToolbarAction // Action for toggling random mode
 	pauseAction        *widget.ToolbarAction // Action for toggling play/pause
