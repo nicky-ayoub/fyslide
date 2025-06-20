@@ -1133,51 +1133,66 @@ func (a *App) handleTagOperation(
 
 // _addTagsToDirectory applies a list of tags to all images in a given directory.
 // It uses goroutines for concurrent database operations.
-func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
-	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
-	totalTagsAttempted *int, successfulAdditions *int, errorsEncountered *int, imagesProcessed *int, filesAffected map[string]bool) {
+func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string) (successfulAdditions, errorsEncountered, imagesProcessed int, firstError error, filesAffected map[string]bool) {
 
 	a.addLogMessage(fmt.Sprintf("Batch tagging directory: %s with [%s]", filepath.Base(currentDir), strings.Join(tagsToAdd, ", ")))
 
-	for _, imageItem := range a.images { // Iterate through the original full list
-		// Capture loop variables for the goroutine
-		itemPath := imageItem.Path
-		currentTagsToAdd := tagsToAdd // Capture for goroutine
+	type result struct {
+		path      string
+		err       error
+		tagsAdded int
+	}
 
-		itemDir := filepath.Dir(itemPath)
-		if itemDir == currentDir {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				// Attempt to add all tags for this image in one service call
-				errAdd := a.Service.AddTagsToImage(itemPath, currentTagsToAdd)
-
-				mu.Lock()
-				(*imagesProcessed)++
-
-				if errAdd != nil {
-					// If the batch add for this image fails, all tags for this image are considered errored.
-					*errorsEncountered += len(currentTagsToAdd)
-					if *firstError == nil { // Capture the first error encountered overall
-						*firstError = fmt.Errorf("failed to tag %s: %w", filepath.Base(itemPath), errAdd)
-					}
-				} else {
-					// If successful, all tags for this image were added.
-					*successfulAdditions += len(currentTagsToAdd)
-					if len(currentTagsToAdd) > 0 { // Only mark affected if tags were actually added
-						filesAffected[itemPath] = true
-					}
-				}
-				// totalTagsAttempted is incremented for each tag regardless of success or failure for this image
-				*totalTagsAttempted += len(currentTagsToAdd)
-				mu.Unlock()
-			}()
+	var imagesToProcess []string
+	for _, imageItem := range a.images {
+		if filepath.Dir(imageItem.Path) == currentDir {
+			imagesToProcess = append(imagesToProcess, imageItem.Path)
 		}
 	}
-	wg.Wait() // Wait for all goroutines to finish
+
+	if len(imagesToProcess) == 0 {
+		return 0, 0, 0, nil, make(map[string]bool)
+	}
+
+	resultsChan := make(chan result, len(imagesToProcess))
+	var wg sync.WaitGroup
+
+	for _, path := range imagesToProcess {
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			err := a.Service.AddTagsToImage(p, tagsToAdd)
+			if err != nil {
+				resultsChan <- result{path: p, err: err, tagsAdded: 0}
+			} else {
+				resultsChan <- result{path: p, err: nil, tagsAdded: len(tagsToAdd)}
+			}
+		}(path)
+	}
+
+	wg.Wait()
+	close(resultsChan)
+
+	filesAffected = make(map[string]bool)
+	for res := range resultsChan {
+		imagesProcessed++
+		if res.err != nil {
+			errorsEncountered += len(tagsToAdd)
+			if firstError == nil {
+				firstError = fmt.Errorf("failed to tag %s: %w", filepath.Base(res.path), res.err)
+			}
+		} else {
+			successfulAdditions += res.tagsAdded
+			if res.tagsAdded > 0 {
+				filesAffected[res.path] = true
+			}
+		}
+	}
+
+	totalTagsAttempted := imagesProcessed * len(tagsToAdd)
 	a.addLogMessage(fmt.Sprintf("Batch tagging for [%s] in '%s' complete. Images processed: %d. Attempts: %d, Successes: %d, Errors: %d.",
-		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), *imagesProcessed, *totalTagsAttempted, *successfulAdditions, *errorsEncountered))
+		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), imagesProcessed, totalTagsAttempted, successfulAdditions, errorsEncountered))
+	return
 }
 
 // addTag shows a dialog to add a new tag to the current image
@@ -1232,11 +1247,8 @@ func (a *App) addTag() {
 
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			var wg sync.WaitGroup
-			var mu sync.Mutex
-			imagesProcessed, totalTagsAttempted := 0, 0
-			a._addTagsToDirectory(tagsToAdd, currentDir, &wg, &mu, &errAddOp, &totalTagsAttempted, &successfulAdditions, &errorsEncountered, &imagesProcessed, filesAffected)
-			a.addLogMessage(fmt.Sprintf("Batch Add: %d successes, %d errors for tag(s) [%s] in %s.", successfulAdditions, errorsEncountered, strings.Join(tagsToAdd, ", "), filepath.Base(currentDir)))
+			successfulAdditions, errorsEncountered, _, errAddOp, filesAffected = a._addTagsToDirectory(tagsToAdd, currentDir)
+			// The detailed log is now inside _addTagsToDirectory
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
 			} else if successfulAdditions > 0 {
@@ -1269,39 +1281,55 @@ func (a *App) _removeTagFromSingleImage(imagePath string, tagToRemove string) (e
 }
 
 // _removeTagFromDirectory removes a tag from all images in a given directory.
-func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string,
-	wg *sync.WaitGroup, mu *sync.Mutex, firstError *error,
-	imagesUntaggedCount *int, errorsEncountered *int) {
+func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string) (imagesUntaggedCount, errorsEncountered int, firstError error) {
 
 	a.addLogMessage(fmt.Sprintf("Batch untagging directory: %s for tag [%s]", filepath.Base(currentDir), tagToRemove))
 
-	for _, imageItem := range a.images {
-		itemPath := imageItem.Path
-		itemDir := filepath.Dir(itemPath)
+	type result struct {
+		path string
+		err  error
+	}
 
-		if itemDir == currentDir {
-			wg.Add(1)
-			go func(path string, tag string) { // Pass path and tag to goroutine
-				defer wg.Done()
-				//errRemove := a.tagDB.RemoveTag(path, tag)
-				errRemove := a.Service.RemoveTagsFromImage(path, []string{tagToRemove})
-				mu.Lock()
-				defer mu.Unlock()
-				if errRemove != nil {
-					(*errorsEncountered)++
-					if *firstError == nil {
-						*firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(path), errRemove)
-					}
-				} else {
-					(*imagesUntaggedCount)++
-				}
-			}(itemPath, tagToRemove) // Pass itemPath and tagToRemove
+	var imagesToProcess []string
+	for _, imageItem := range a.images {
+		if filepath.Dir(imageItem.Path) == currentDir {
+			imagesToProcess = append(imagesToProcess, imageItem.Path)
 		}
 	}
-	wg.Wait() // Wait for all goroutines to finish
+
+	if len(imagesToProcess) == 0 {
+		return 0, 0, nil
+	}
+
+	resultsChan := make(chan result, len(imagesToProcess))
+	var wg sync.WaitGroup
+
+	for _, path := range imagesToProcess {
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			err := a.Service.RemoveTagsFromImage(p, []string{tagToRemove})
+			resultsChan <- result{path: p, err: err}
+		}(path)
+	}
+
+	wg.Wait()
+	close(resultsChan)
+
+	for res := range resultsChan {
+		if res.err != nil {
+			errorsEncountered++
+			if firstError == nil {
+				firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(res.path), res.err)
+			}
+		} else {
+			imagesUntaggedCount++
+		}
+	}
 
 	a.addLogMessage(fmt.Sprintf("Batch untagging for [%s] in '%s' complete. Images untagged: %d, Errors: %d.",
-		tagToRemove, filepath.Base(currentDir), *imagesUntaggedCount, *errorsEncountered))
+		tagToRemove, filepath.Base(currentDir), imagesUntaggedCount, errorsEncountered))
+	return
 }
 
 // removeTag shows a dialog to remove an existing tag from the current image,
@@ -1345,10 +1373,8 @@ func (a *App) removeTag() {
 
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			var wg sync.WaitGroup
-			var mu sync.Mutex
-			a._removeTagFromDirectory(selectedTag, currentDir, &wg, &mu, &errRemoveOp, &imagesUntaggedCount, &errorsEncountered)
-			a.addLogMessage(fmt.Sprintf("Batch Remove: %d successes, %d errors for tag '%s' in %s.", imagesUntaggedCount, errorsEncountered, selectedTag, filepath.Base(currentDir)))
+			imagesUntaggedCount, errorsEncountered, errRemoveOp = a._removeTagFromDirectory(selectedTag, currentDir)
+			// The detailed log is now inside _removeTagFromDirectory
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
 			} else if imagesUntaggedCount > 0 {
