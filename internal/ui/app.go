@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -202,10 +203,18 @@ func (a *App) updateInfoText(info *service.ImageInfo) {
 	exifString := "(not available)"
 
 	if len(info.EXIFData) > 0 {
-		exifString = ""
-		for k, v := range info.EXIFData {
-			exifString += fmt.Sprintf("- **%s**: %s\n\n", k, v)
+		// Get keys and sort them to ensure a consistent order
+		keys := make([]string, 0, len(info.EXIFData))
+		for k := range info.EXIFData {
+			keys = append(keys, k)
 		}
+		sort.Strings(keys)
+
+		var builder strings.Builder
+		for _, k := range keys {
+			builder.WriteString(fmt.Sprintf("- **%s**: %s\n\n", k, info.EXIFData[k]))
+		}
+		exifString = builder.String()
 	}
 	filterStatus := ""
 	if a.isFiltered {
