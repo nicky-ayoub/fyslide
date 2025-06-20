@@ -1047,6 +1047,90 @@ func (a *App) removeTagGlobally(tag string) error {
 	return err
 }
 
+// postOperationUpdate handles UI updates after a tag operation.
+func (a *App) postOperationUpdate(errOp error, statusMessage string, filesAffectedCount int, wasCurrentFileAffected bool) {
+	if errOp != nil {
+		dialog.ShowError(errOp, a.UI.MainWin)
+		a.addLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
+	} else {
+		if statusMessage != "" {
+			a.addLogMessage(fmt.Sprintf("Tag Operation Status: %s", statusMessage))
+		}
+	}
+
+	if filesAffectedCount > 0 {
+		// If any files were affected, refresh the global tags list view
+		if a.refreshTagsFunc != nil {
+			a.refreshTagsFunc()
+		}
+
+		// If the currently displayed image was one of those affected, update its info panel
+		if wasCurrentFileAffected {
+			imgInfo, _, err := a.ImageService.GetImageInfo(a.img.Path)
+			if err == nil && imgInfo != nil {
+				a.updateInfoText(imgInfo)
+			} else {
+				a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
+			}
+		}
+	}
+}
+
+// handleTagOperation provides a generic framework for creating a tag operation dialog.
+func (a *App) handleTagOperation(
+	title string,
+	verb string,
+	formItems []*widget.FormItem,
+	focusableWidget fyne.Focusable,
+	preDialogCheck func() bool,
+	execute func(confirm bool),
+) {
+	if a.img.Path == "" {
+		dialog.ShowInformation(title, "No image loaded to "+strings.ToLower(verb)+" tags.", a.UI.MainWin)
+		return
+	}
+
+	if preDialogCheck != nil && !preDialogCheck() {
+		return
+	}
+
+	a.slideshowManager.Pause(true)
+	if a.slideshowManager.IsPaused() {
+		a.addLogMessage(fmt.Sprintf("Slideshow paused for tag %s.", strings.ToLower(verb)))
+	}
+
+	dialogCallback := func(confirm bool) {
+		defer func() {
+			a.slideshowManager.ResumeAfterOperation()
+			if !a.slideshowManager.IsPaused() {
+				a.addLogMessage("Slideshow resumed.")
+			}
+		}()
+
+		if !confirm {
+			return
+		}
+		execute(confirm)
+	}
+
+	formDialog := dialog.NewForm(title, verb, "Cancel", formItems, dialogCallback, a.UI.MainWin)
+
+	// If the focusable widget is an entry, set its OnSubmitted behavior
+	if entry, ok := focusableWidget.(*widget.Entry); ok {
+		entry.OnSubmitted = func(text string) {
+			if text != "" {
+				a.addLogMessage(fmt.Sprintf("Submitting %s for processing: %s", strings.ToLower(title), text))
+				formDialog.Submit()
+			}
+		}
+	}
+
+	formDialog.Show()
+	if focusableWidget != nil {
+		a.UI.MainWin.Canvas().Focus(focusableWidget)
+	}
+}
+
 // _addTagsToDirectory applies a list of tags to all images in a given directory.
 // It uses goroutines for concurrent database operations.
 func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
@@ -1098,22 +1182,8 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string,
 
 // addTag shows a dialog to add a new tag to the current image
 func (a *App) addTag() {
-	if a.img.Path == "" {
-		dialog.ShowInformation("Add Tag", "No image loaded to tag.", a.UI.MainWin) // Updated title
-		return
-	}
-
-	a.slideshowManager.Pause(true)     // Pause for the tagging operation
-	if a.slideshowManager.IsPaused() { // Check if it's actually paused now
-		a.addLogMessage("Slideshow paused for tagging.")
-	}
-
 	currentTags, err := a.Service.ListTagsForImage(a.img.Path)
 	if err != nil {
-		a.slideshowManager.ResumeAfterOperation() // Ensure resume on error
-		if !a.slideshowManager.IsPaused() {
-			a.addLogMessage("Slideshow resumed.")
-		}
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), a.UI.MainWin)
 		return
 	}
@@ -1121,153 +1191,70 @@ func (a *App) addTag() {
 	tagEntry := widget.NewEntry()
 	tagEntry.SetPlaceHolder("Enter tag(s) separated by commas...")
 
-	currentTagsLabel := widget.NewLabel(fmt.Sprintf("Current tags: %s", strings.Join(currentTags, ", ")))
-	if len(currentTags) == 0 {
-		currentTagsLabel.SetText("Current tags: (none)")
+	currentTagsText := "Current tags: (none)"
+	if len(currentTags) > 0 {
+		currentTagsText = fmt.Sprintf("Current tags: %s", strings.Join(currentTags, ", "))
 	}
+	currentTagsLabel := widget.NewLabel(currentTagsText)
 
 	applyToAllCheck := widget.NewCheck("Apply tag(s) to all images in this directory", nil)
 	applyToAllCheck.SetChecked(true)
 
 	formItems := []*widget.FormItem{
 		widget.NewFormItem("", currentTagsLabel), // Display current tags
-		widget.NewFormItem("New Tag(s) (comma-separated)", tagEntry),
-		widget.NewFormItem("", applyToAllCheck), // --- NEW: Add checkbox to form ---
+		widget.NewFormItem("New Tag(s)", tagEntry),
+		widget.NewFormItem("", applyToAllCheck),
 	}
-	dialogCallback := func(confirm bool) {
-		// This callback executes when the dialog is submitted or cancelled.
-		// The slideshow resume logic is correctly placed here.
-		// We set the focus *after* ShowForm is called, but *before* this callback.
 
-		// Defer slideshow resume logic
-
-		defer func() {
-			a.slideshowManager.ResumeAfterOperation()
-			if !a.slideshowManager.IsPaused() {
-				a.addLogMessage("Slideshow resumed.")
-			}
-		}()
-
-		if !confirm {
-			return
-		}
-
+	execute := func(confirm bool) {
 		rawInput := tagEntry.Text
 		potentialTags := strings.Split(rawInput, ",")
 		var tagsToAdd []string
-		uniqueTags := make(map[string]bool) // Use a map to handle duplicates in input
+		uniqueTags := make(map[string]bool)
 		for _, pt := range potentialTags {
-			tag := strings.ToLower(strings.TrimSpace(pt)) // Normalize to lowercase
-			if tag != "" && !uniqueTags[tag] {            // Only add non-empty, unique tags
+			tag := strings.ToLower(strings.TrimSpace(pt))
+			if tag != "" && !uniqueTags[tag] {
 				tagsToAdd = append(tagsToAdd, tag)
 				uniqueTags[tag] = true
 			}
 		}
 
 		if len(tagsToAdd) == 0 {
-			dialog.ShowInformation("Add Tag(s)", "No valid tags entered.", a.UI.MainWin)
-			return // No valid tags, defer handles resume
+			dialog.ShowInformation("Add Tags", "No valid tags entered.", a.UI.MainWin)
+			return
 		}
 
-		applyToAll := applyToAllCheck.Checked // --- NEW: Get checkbox state ---
-
-		var errAddOp error // Store the first error encountered for the operation
+		applyToAll := applyToAllCheck.Checked
+		var errAddOp error
 		var statusMessage string
-		showMessage := false
-		var logMessage string
-		filesAffected := make(map[string]bool) // Track files that had tags successfully added
-		totalTagsAttempted := 0
-		successfulAdditions := 0
-		errorsEncountered := 0
+		filesAffected := make(map[string]bool)
+		var successfulAdditions, errorsEncountered int
 
-		// --- It correctly iterates through the 'tagsToAdd' slice ---
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
 			var wg sync.WaitGroup
-			var mu sync.Mutex // Mutex to protect shared variables
-			imagesProcessed := 0
-			a.addLogMessage(fmt.Sprintf("Adding tag(s) [%s] to all images in %s...", strings.Join(tagsToAdd, ", "), filepath.Base(currentDir)))
+			var mu sync.Mutex
+			imagesProcessed, totalTagsAttempted := 0, 0
 			a._addTagsToDirectory(tagsToAdd, currentDir, &wg, &mu, &errAddOp, &totalTagsAttempted, &successfulAdditions, &errorsEncountered, &imagesProcessed, filesAffected)
-
-			logMessage = fmt.Sprintf("Added tag(s) [%s] to %d images in %s. Successes: %d, Errors: %d",
-				strings.Join(tagsToAdd, ", "), imagesProcessed, filepath.Base(currentDir), successfulAdditions, errorsEncountered)
-
+			a.addLogMessage(fmt.Sprintf("Batch Add: %d successes, %d errors for tag(s) [%s] in %s.", successfulAdditions, errorsEncountered, strings.Join(tagsToAdd, ", "), filepath.Base(currentDir)))
 			if errorsEncountered > 0 {
-				showMessage = true
-				statusMessage = fmt.Sprintf("%d tag(s) applied partially across %d images.\n%d errors occurred (see logs).", len(tagsToAdd), imagesProcessed, errorsEncountered)
-			} else if successfulAdditions > 0 { // Only show success if something was actually added
-				showMessage = true
-				statusMessage = fmt.Sprintf("%d tag(s) applied to %d images in %s.", len(tagsToAdd), len(filesAffected), filepath.Base(currentDir))
+				statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
+			} else if successfulAdditions > 0 {
+				statusMessage = fmt.Sprintf("Added tag(s) to %d images in %s.", len(filesAffected), filepath.Base(currentDir))
 			}
 		} else {
-			// Apply tags only to the current image
 			successfulAdditions, errorsEncountered, errAddOp = a.Service.ApplyTagsToSingleImage(a.img.Path, tagsToAdd, filesAffected)
-			// updateInfoText will be called if current image is affected and successfulAdditions > 0
-
-			totalTagsAttempted = len(tagsToAdd) // All tags were attempted on the single image
-
-			logMessage = fmt.Sprintf("Tagging %s: %d attempts, %d successes, %d errors.", filepath.Base(a.img.Path), totalTagsAttempted, successfulAdditions, errorsEncountered)
+			a.addLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(a.img.Path), successfulAdditions, errorsEncountered))
 			if errorsEncountered > 0 {
-				statusMessage = fmt.Sprintf("%d tag(s) applied partially.\n%d errors occurred (see logs).", len(tagsToAdd), errorsEncountered)
-				showMessage = true // Show message for partial success on single image too
-			}
-			if successfulAdditions > 0 && errorsEncountered == 0 { // Only show success if something was actually added and no errors
-				showMessage = true
-				statusMessage = fmt.Sprintf("%d tag(s) applied to current image.", len(tagsToAdd))
+				statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
+			} else if successfulAdditions > 0 {
+				statusMessage = fmt.Sprintf("Added %d tag(s) to current image.", len(tagsToAdd))
 			}
 		}
-
-		a.addLogMessage(logMessage)
-
-		// --- Common Post-Processing ---
-		if errAddOp != nil {
-			// Show the first error encountered
-			dialog.ShowError(errAddOp, a.UI.MainWin) // Simplified error message
-			a.addLogMessage(fmt.Sprintf("Error adding tags: %v", errAddOp))
-		} else {
-			// No critical error, logMessage already added by a.addLogMessage
-		}
-		if len(filesAffected) > 0 { // Only update info/refresh if something actually changed
-			if _, ok := filesAffected[a.img.Path]; ok { // If current image was affected
-				// Reload image info to get fresh tags for the info panel
-				imgInfo, _, err := a.ImageService.GetImageInfo(a.img.Path)
-				if err == nil && imgInfo != nil {
-					a.updateInfoText(imgInfo)
-				} else {
-					a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tagging: %v", err))
-				}
-			}
-			if a.refreshTagsFunc != nil {
-				// log.Println("Calling Tags tab refresh function.") // Developer log, not for UI
-				a.refreshTagsFunc()
-			} else {
-				a.addLogMessage("Warning: Tags tab refresh function not set.")
-			}
-		}
-		if showMessage { // This is for partial success messages or full success
-			// dialog.ShowInformation("Tagging Status", statusMessage, a.UI.MainWin)
-			// Replace dialog with status bar message
-			a.addLogMessage(fmt.Sprintf("Tagging Status: %s", statusMessage))
-		}
+		a.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[a.img.Path])
 	}
 
-	// Create the form dialog instance using NewForm to get a reference to it.
-	formDialog := dialog.NewForm("Add Tag", "Add", "Cancel", formItems, dialogCallback, a.UI.MainWin)
-
-	// Set OnSubmitted for the tagEntry.
-	// When Enter is pressed in tagEntry, this function will be called.
-	tagEntry.OnSubmitted = func(text string) {
-		if text != "" { // Only submit if there's text in the entry
-			// Add an immediate status update to the log UI
-			a.addLogMessage(fmt.Sprintf("Submitting tags for processing: %s", text))
-			formDialog.Submit() // Programmatically submit the dialog
-		}
-	}
-
-	formDialog.Show()
-	// Set focus to the tagEntry widget after the dialog is shown
-	// Ensure the window and its canvas are available.
-	a.UI.MainWin.Canvas().Focus(tagEntry)
+	a.handleTagOperation("Add Tag", "Add", formItems, tagEntry, nil, execute)
 }
 
 // _removeTagFromSingleImage removes a tag from a single image path.
@@ -1320,121 +1307,65 @@ func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string,
 // removeTag shows a dialog to remove an existing tag from the current image,
 // with an option to remove it from all images in the same directory.
 func (a *App) removeTag() {
-	if a.img.Path == "" {
-		dialog.ShowInformation("Remove Tag", "No image loaded to remove tags from.", a.UI.MainWin)
-		return
-	}
-
-	a.slideshowManager.Pause(true) // Pause for the operation
-	if a.slideshowManager.IsPaused() {
-		a.addLogMessage("Slideshow paused for tag removal.")
-	}
-
-	// 1. Get current tags for the image to populate the selector
 	currentTags, err := a.Service.ListTagsForImage(a.img.Path)
 	if err != nil {
-		a.slideshowManager.ResumeAfterOperation()
-		if !a.slideshowManager.IsPaused() {
-			a.addLogMessage("Slideshow resumed.")
-		}
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), a.UI.MainWin)
 		return
 	}
 
-	// 2. Check if there are any tags to remove
-	if len(currentTags) == 0 {
-		a.slideshowManager.ResumeAfterOperation()
-		if !a.slideshowManager.IsPaused() {
-			a.addLogMessage("Slideshow resumed.")
+	preCheck := func() bool {
+		if len(currentTags) == 0 {
+			dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", a.UI.MainWin)
+			return false
 		}
-		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", a.UI.MainWin)
-		return
+		return true
 	}
 
-	// 3. Prepare UI for tag selection
 	var selectedTag string
-	tagSelector := widget.NewSelect(currentTags, func(selected string) {
-		selectedTag = selected
-	})
-	// Pre-select the first tag to avoid issues if the user confirms without selecting
+	tagSelector := widget.NewSelect(currentTags, func(s string) { selectedTag = s })
 	tagSelector.SetSelected(currentTags[0])
-	selectedTag = currentTags[0] // Initialize selectedTag
+	selectedTag = currentTags[0]
 
-	// --- NEW: Checkbox for removing from all in directory ---
-	removeFromAllCheck := widget.NewCheck("Remove tag from all images in this directory", nil)
-	// --- End NEW ---
+	removeFromAllCheck := widget.NewCheck("Remove tag(s) from all images in this directory", nil)
 
-	// 4. Show the removal dialog
-	dialog.ShowForm("Remove Tag", "Remove", "Cancel", []*widget.FormItem{
+	formItems := []*widget.FormItem{
 		widget.NewFormItem("Select Tag to Remove", tagSelector),
-		widget.NewFormItem("", removeFromAllCheck), // --- NEW: Add checkbox to form ---
-	}, func(confirm bool) {
-		defer func() {
-			a.slideshowManager.ResumeAfterOperation()
-			if !a.slideshowManager.IsPaused() {
-				a.addLogMessage("Slideshow resumed.")
-			}
-		}()
-		if !confirm || selectedTag == "" {
-			return // User cancelled or somehow didn't select a tag
+		widget.NewFormItem("", removeFromAllCheck),
+	}
+
+	execute := func(confirm bool) {
+		if selectedTag == "" {
+			return
 		}
+		applyToAll := removeFromAllCheck.Checked
+		var errRemoveOp error
+		var statusMessage string
+		var imagesUntaggedCount, errorsEncountered int
+		var wasCurrentFileAffected bool
 
-		removeFromAll := removeFromAllCheck.Checked // --- NEW: Get checkbox state ---
-
-		var errRemoveOp error    // Use a local error variable for the operation
-		var statusMessage string // For success or partial success
-		//var logMessage string
-		imagesUntaggedCount := 0
-		errorsEncountered := 0
-
-		if removeFromAll {
-			// --- NEW: Logic to remove tag from all images in the directory ---
+		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
 			var wg sync.WaitGroup
 			var mu sync.Mutex
 			a._removeTagFromDirectory(selectedTag, currentDir, &wg, &mu, &errRemoveOp, &imagesUntaggedCount, &errorsEncountered)
-
-			// if imagesUntaggedCount > 0 || errorsEncountered > 0 { // Only log if something was attempted
-			// 	logMessage = fmt.Sprintf("Removed tag '%s'. Images untagged: %d in %s. Errors: %d.",
-			// 		selectedTag, imagesUntaggedCount, filepath.Base(currentDir), errorsEncountered)
-			// } else {
-			// 	logMessage = fmt.Sprintf("No images in directory %s found requiring removal of tag '%s'.", filepath.Base(currentDir), selectedTag)
-			// }
-			// Log message is now handled by _removeTagFromDirectory or _removeTagFromSingleImage
-
+			a.addLogMessage(fmt.Sprintf("Batch Remove: %d successes, %d errors for tag '%s' in %s.", imagesUntaggedCount, errorsEncountered, selectedTag, filepath.Base(currentDir)))
 			if errorsEncountered > 0 {
-				statusMessage = fmt.Sprintf("Tag '%s' removal attempted. %d images untagged.\n%d errors occurred (see logs).", selectedTag, imagesUntaggedCount, errorsEncountered)
+				statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
 			} else if imagesUntaggedCount > 0 {
 				statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", selectedTag, imagesUntaggedCount, filepath.Base(currentDir))
 			}
-		} else { // Remove only from the current image
+			wasCurrentFileAffected = imagesUntaggedCount > 0 // Approximation
+		} else {
 			errRemoveOp = a._removeTagFromSingleImage(a.img.Path, selectedTag)
-			if errRemoveOp == nil { // If successful
+			if errRemoveOp == nil {
 				imagesUntaggedCount = 1
 				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
 			}
+			a.addLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(a.img.Path), imagesUntaggedCount, errorsEncountered))
+			wasCurrentFileAffected = imagesUntaggedCount > 0
 		}
+		a.postOperationUpdate(errRemoveOp, statusMessage, imagesUntaggedCount, wasCurrentFileAffected)
+	}
 
-		if errRemoveOp != nil {
-			dialog.ShowError(fmt.Errorf("failed to remove tag '%s': %w", selectedTag, errRemoveOp), a.UI.MainWin)
-			a.addLogMessage(fmt.Sprintf("Error removing tag '%s': %v", selectedTag, errRemoveOp))
-		} else {
-			if statusMessage != "" { // Show success or partial success summary
-				// dialog.ShowInformation("Tag Removal Status", statusMessage, a.UI.MainWin)
-				a.addLogMessage(fmt.Sprintf("Tag Removal Status: %s", statusMessage))
-			}
-			if a.refreshTagsFunc != nil && imagesUntaggedCount > 0 {
-				a.refreshTagsFunc()
-			}
-			if imagesUntaggedCount > 0 && (a.img.Path != "" && (removeFromAll || (!removeFromAll && selectedTag != ""))) { // Check if current image could have been affected
-				// Reload image info to get fresh tags for the info panel
-				imgInfo, _, err := a.ImageService.GetImageInfo(a.img.Path)
-				if err == nil && imgInfo != nil {
-					a.updateInfoText(imgInfo)
-				} else {
-					a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tag removal: %v", err))
-				}
-			}
-		}
-	}, a.UI.MainWin)
+	a.handleTagOperation("Remove Tag", "Remove", formItems, nil, preCheck, execute)
 }
