@@ -571,12 +571,10 @@ func (a *App) skipImages(offset int) {
 
 	a.index += offset
 
-	// Clamp index to be within bounds [0, count-1]
-	if a.index >= count {
-		a.index = count - 1
-	}
 	if a.index < 0 {
 		a.index = 0
+	} else if a.index >= count {
+		a.index = count - 1
 	}
 	a.loadAndDisplayCurrentImage()
 }
