@@ -318,25 +318,3 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 	}
 	return added, nil
 }
-
-// ApplyTagsToSingleImage applies a list of tags to a single image path.
-// It returns the number of successful additions, errors encountered, and the first error (if any).
-func (s *Service) ApplyTagsToSingleImage(imagePath string, tagsToAdd []string, filesAffected map[string]bool) (successfulAdditions int, errorsEncountered int, firstError error) {
-	s.Logger(fmt.Sprintf("Applying tag(s) [%s] to %s", strings.Join(tagsToAdd, ", "), filepath.Base(imagePath)))
-	lowerTagsToAdd := make([]string, len(tagsToAdd))
-	for i, tag := range tagsToAdd {
-		lowerTagsToAdd[i] = strings.ToLower(tag)
-	}
-	err := s.TagDB.AddTagsToImage(imagePath, lowerTagsToAdd)
-	if err != nil {
-		errorsEncountered = len(tagsToAdd) // If batch fails, assume all attempted tags for this image failed
-		firstError = fmt.Errorf("failed to add tags to %s: %w", filepath.Base(imagePath), err)
-	} else {
-		successfulAdditions = len(tagsToAdd)
-		if len(tagsToAdd) > 0 {
-			filesAffected[imagePath] = true
-		}
-	}
-	s.Logger(fmt.Sprintf("Applied tags to %s. Successes: %d, Errors: %d", filepath.Base(imagePath), successfulAdditions, errorsEncountered))
-	return
-}

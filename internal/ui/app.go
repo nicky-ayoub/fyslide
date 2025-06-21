@@ -1137,16 +1137,23 @@ func (a *App) handleTagOperation(
 	}
 }
 
-// _addTagsToDirectory applies a list of tags to all images in a given directory.
-// It uses goroutines for concurrent database operations.
-func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string) (successfulAdditions, errorsEncountered, imagesProcessed int, firstError error, filesAffected map[string]bool) {
+// tagOperationFunc defines a function that performs a tag operation on a single image path with a set of tags.
+type tagOperationFunc func(imagePath string, tags []string) error
 
-	a.addLogMessage(fmt.Sprintf("Batch tagging directory: %s with [%s]", filepath.Base(currentDir), strings.Join(tagsToAdd, ", ")))
+// _processTagsForDirectory handles batch tag operations (add/remove) for all images in a directory.
+// It uses goroutines for concurrent database operations.
+func (a *App) _processTagsForDirectory(
+	currentDir string,
+	tags []string,
+	operation tagOperationFunc,
+	operationVerb string, // e.g., "tagging" or "untagging"
+) (successfulImages, erroredImages, imagesProcessed int, firstError error, filesAffected map[string]bool) {
+
+	a.addLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
 
 	type result struct {
-		path      string
-		err       error
-		tagsAdded int
+		path string
+		err  error
 	}
 
 	var imagesToProcess []string
@@ -1167,12 +1174,8 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string) (succes
 		wg.Add(1)
 		go func(p string) {
 			defer wg.Done()
-			err := a.Service.AddTagsToImage(p, tagsToAdd)
-			if err != nil {
-				resultsChan <- result{path: p, err: err, tagsAdded: 0}
-			} else {
-				resultsChan <- result{path: p, err: nil, tagsAdded: len(tagsToAdd)}
-			}
+			err := operation(p, tags)
+			resultsChan <- result{path: p, err: err}
 		}(path)
 	}
 
@@ -1183,21 +1186,18 @@ func (a *App) _addTagsToDirectory(tagsToAdd []string, currentDir string) (succes
 	for res := range resultsChan {
 		imagesProcessed++
 		if res.err != nil {
-			errorsEncountered += len(tagsToAdd)
+			erroredImages++
 			if firstError == nil {
-				firstError = fmt.Errorf("failed to tag %s: %w", filepath.Base(res.path), res.err)
+				firstError = fmt.Errorf("failed to %s %s: %w", operationVerb, filepath.Base(res.path), res.err)
 			}
 		} else {
-			successfulAdditions += res.tagsAdded
-			if res.tagsAdded > 0 {
-				filesAffected[res.path] = true
-			}
+			successfulImages++
+			filesAffected[res.path] = true
 		}
 	}
 
-	totalTagsAttempted := imagesProcessed * len(tagsToAdd)
-	a.addLogMessage(fmt.Sprintf("Batch tagging for [%s] in '%s' complete. Images processed: %d. Attempts: %d, Successes: %d, Errors: %d.",
-		strings.Join(tagsToAdd, ", "), filepath.Base(currentDir), imagesProcessed, totalTagsAttempted, successfulAdditions, errorsEncountered))
+	a.addLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
+		operationVerb, strings.Join(tags, ", "), filepath.Base(currentDir), imagesProcessed, successfulImages, erroredImages))
 	return
 }
 
@@ -1253,15 +1253,25 @@ func (a *App) addTag() {
 
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			successfulAdditions, errorsEncountered, _, errAddOp, filesAffected = a._addTagsToDirectory(tagsToAdd, currentDir)
-			// The detailed log is now inside _addTagsToDirectory
+			var successfulImages, erroredImages int
+			// Use '=' to assign to the outer errAddOp and filesAffected variables
+			successfulImages, erroredImages, _, errAddOp, filesAffected = a._processTagsForDirectory(currentDir, tagsToAdd, a.Service.AddTagsToImage, "tagging")
+			successfulAdditions = successfulImages * len(tagsToAdd)
+			errorsEncountered = erroredImages * len(tagsToAdd)
+
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
 			} else if successfulAdditions > 0 {
 				statusMessage = fmt.Sprintf("Added tag(s) to %d images in %s.", len(filesAffected), filepath.Base(currentDir))
 			}
 		} else {
-			successfulAdditions, errorsEncountered, errAddOp = a.Service.ApplyTagsToSingleImage(a.img.Path, tagsToAdd, filesAffected)
+			errAddOp = a.Service.AddTagsToImage(a.img.Path, tagsToAdd)
+			if errAddOp == nil {
+				successfulAdditions = len(tagsToAdd)
+				filesAffected[a.img.Path] = true
+			} else {
+				errorsEncountered = len(tagsToAdd)
+			}
 			a.addLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(a.img.Path), successfulAdditions, errorsEncountered))
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
@@ -1273,69 +1283,6 @@ func (a *App) addTag() {
 	}
 
 	a.handleTagOperation("Add Tag", "Add", formItems, tagEntry, nil, execute)
-}
-
-// _removeTagFromSingleImage removes a tag from a single image path.
-func (a *App) _removeTagFromSingleImage(imagePath string, tagToRemove string) (errRemove error) {
-	a.addLogMessage(fmt.Sprintf("Removing tag '%s' from %s", tagToRemove, filepath.Base(imagePath)))
-	// Example usage in a batch remove dialog handler:
-	err := a.Service.RemoveTagsFromImage(imagePath, []string{tagToRemove})
-	if err != nil {
-		a.addLogMessage(fmt.Sprintf("Remove Single tag error: %v", err))
-	}
-	return err
-}
-
-// _removeTagFromDirectory removes a tag from all images in a given directory.
-func (a *App) _removeTagFromDirectory(tagToRemove string, currentDir string) (imagesUntaggedCount, errorsEncountered int, firstError error) {
-
-	a.addLogMessage(fmt.Sprintf("Batch untagging directory: %s for tag [%s]", filepath.Base(currentDir), tagToRemove))
-
-	type result struct {
-		path string
-		err  error
-	}
-
-	var imagesToProcess []string
-	for _, imageItem := range a.images {
-		if filepath.Dir(imageItem.Path) == currentDir {
-			imagesToProcess = append(imagesToProcess, imageItem.Path)
-		}
-	}
-
-	if len(imagesToProcess) == 0 {
-		return 0, 0, nil
-	}
-
-	resultsChan := make(chan result, len(imagesToProcess))
-	var wg sync.WaitGroup
-
-	for _, path := range imagesToProcess {
-		wg.Add(1)
-		go func(p string) {
-			defer wg.Done()
-			err := a.Service.RemoveTagsFromImage(p, []string{tagToRemove})
-			resultsChan <- result{path: p, err: err}
-		}(path)
-	}
-
-	wg.Wait()
-	close(resultsChan)
-
-	for res := range resultsChan {
-		if res.err != nil {
-			errorsEncountered++
-			if firstError == nil {
-				firstError = fmt.Errorf("failed to untag %s: %w", filepath.Base(res.path), res.err)
-			}
-		} else {
-			imagesUntaggedCount++
-		}
-	}
-
-	a.addLogMessage(fmt.Sprintf("Batch untagging for [%s] in '%s' complete. Images untagged: %d, Errors: %d.",
-		tagToRemove, filepath.Base(currentDir), imagesUntaggedCount, errorsEncountered))
-	return
 }
 
 // removeTag shows a dialog to remove an existing tag from the current image,
@@ -1375,28 +1322,30 @@ func (a *App) removeTag() {
 		var errRemoveOp error
 		var statusMessage string
 		var imagesUntaggedCount, errorsEncountered int
-		var wasCurrentFileAffected bool
+		filesAffected := make(map[string]bool)
 
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			imagesUntaggedCount, errorsEncountered, errRemoveOp = a._removeTagFromDirectory(selectedTag, currentDir)
-			// The detailed log is now inside _removeTagFromDirectory
+			op := func(path string, tags []string) error {
+				return a.Service.RemoveTagsFromImage(path, tags)
+			}
+			imagesUntaggedCount, errorsEncountered, _, errRemoveOp, filesAffected = a._processTagsForDirectory(currentDir, []string{selectedTag}, op, "untagging")
+
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
 			} else if imagesUntaggedCount > 0 {
 				statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", selectedTag, imagesUntaggedCount, filepath.Base(currentDir))
 			}
-			wasCurrentFileAffected = imagesUntaggedCount > 0 // Approximation
 		} else {
-			errRemoveOp = a._removeTagFromSingleImage(a.img.Path, selectedTag)
+			errRemoveOp = a.Service.RemoveTagsFromImage(a.img.Path, []string{selectedTag})
 			if errRemoveOp == nil {
 				imagesUntaggedCount = 1
+				filesAffected[a.img.Path] = true
 				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
 			}
 			a.addLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(a.img.Path), imagesUntaggedCount, errorsEncountered))
-			wasCurrentFileAffected = imagesUntaggedCount > 0
 		}
-		a.postOperationUpdate(errRemoveOp, statusMessage, imagesUntaggedCount, wasCurrentFileAffected)
+		a.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[a.img.Path])
 	}
 
 	a.handleTagOperation("Remove Tag", "Remove", formItems, nil, preCheck, execute)
