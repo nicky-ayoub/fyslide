@@ -20,7 +20,7 @@ func (a *App) buildKeyboardShortcuts() {
 		switch key.Name {
 		// move forward/back within the current folder of images
 		case fyne.KeyRight:
-			a.nextImage()
+			a.navigate(1)
 		case fyne.KeyLeft:
 			a.ShowPreviousImage()
 		case fyne.KeyQ:
@@ -28,9 +28,9 @@ func (a *App) buildKeyboardShortcuts() {
 		case fyne.KeyP, fyne.KeySpace:
 			a.togglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
-			a.skipImages(-a.skipCount) // Use new skipImages method
+			a.navigate(-a.skipCount)
 		case fyne.KeyPageDown, fyne.KeyDown:
-			a.skipImages(a.skipCount) // Use new skipImages method
+			a.navigate(a.skipCount)
 		case fyne.KeyHome:
 			a.firstImage()
 		case fyne.KeyEnd:

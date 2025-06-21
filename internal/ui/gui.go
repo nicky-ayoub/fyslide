@@ -110,7 +110,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(theme.MediaSkipPreviousIcon(), a.ShowPreviousImage),
 		a.UI.pauseAction,
-		widget.NewToolbarAction(theme.MediaSkipNextIcon(), a.nextImage),
+		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.navigate(1) }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
@@ -565,7 +565,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
-			fyne.NewMenuItem("Next Image", a.nextImage),
+			fyne.NewMenuItem("Next Image", func() { a.navigate(1) }),
 			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),                              // NEW Separator
 			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option

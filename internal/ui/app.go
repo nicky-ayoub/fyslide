@@ -559,47 +559,49 @@ func (a *App) lastImage() {
 	a.loadAndDisplayCurrentImage()
 }
 
-func (a *App) nextImage() {
+// navigate moves the current image by a given offset.
+// A positive offset moves forward, a negative offset moves backward sequentially.
+// offset=1 handles special "forward in history" logic.
+func (a *App) navigate(offset int) {
 	count := a.getCurrentImageCount() // Use helper
 	if count == 0 {
 		return
 	} // Add check
-	// --- History Navigation Logic ---
-	if a.isNavigatingHistory {
-		// If currently navigating history (came here from a 'back' action),
-		// try to go forward in history first.
+
+	// Special case: If we were navigating history, "next" (offset=1) should try to move forward in history.
+	if offset == 1 && a.isNavigatingHistory {
 		if a.ShowNextImageFromHistory() {
 			return // Successfully moved forward in history
 		}
-		// If ShowNextImageFromHistory returned false, it means we are at the end
-		// of the history stack. Fall through to standard next image logic.
+		// If not, fall through to normal navigation.
 	}
-	// --- Standard Next Image Logic ---
-	a.isNavigatingHistory = false // Ensure this is false for standard navigation
-	newIndex := a.navigationQueue.PopAndAdvance()
-	if newIndex != -1 {
+
+	a.isNavigatingHistory = false // Any other navigation is a new action.
+
+	if offset > 0 { // Forward navigation
+		newIndex := a.index
+		// For a single step, just pop once. For a skip, loop.
+		for i := 0; i < offset; i++ {
+			popped := a.navigationQueue.PopAndAdvance()
+			if popped == -1 {
+				break // Queue is exhausted
+			}
+			newIndex = popped
+		}
 		a.index = newIndex
-		a.loadAndDisplayCurrentImage()
+	} else { // Backward navigation (offset is negative or zero)
+		// Backward navigation is always sequential. If in random mode, turn it off.
+		if a.random {
+			a.toggleRandom()
+		}
+		a.index += offset
+		if a.index < 0 {
+			a.index = 0
+		}
+		// Since we did a sequential jump, the queue must be reset.
+		a.navigationQueue.ResetAndFill(a.index)
 	}
 
-}
-
-// skipImages adjusts the current image index by a given offset and displays the new image.
-func (a *App) skipImages(offset int) {
-	count := a.getCurrentImageCount()
-	if count == 0 {
-		return
-	}
-	a.isNavigatingHistory = false // A skip is a new navigation point, not history traversal
-
-	a.index += offset
-
-	if a.index < 0 {
-		a.index = 0
-	} else if a.index >= count {
-		a.index = count - 1
-	}
-	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -1082,8 +1084,8 @@ func (a *App) pauser(ticker *time.Ticker) {
 		}
 		if !a.slideshowManager.IsPaused() {
 			fyne.Do(func() {
-				a.isNavigatingHistory = false // Standard "next" is not history navigation
-				a.nextImage()
+				a.isNavigatingHistory = false // Standard navigation is not history navigation
+				a.navigate(1)
 			})
 		}
 	}
