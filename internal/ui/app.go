@@ -70,7 +70,9 @@ type App struct {
 	isFiltered       bool   // NEW: Flag to indicate if filtering is active
 	currentFilterTag string // NEW: The tag currently being filtered by
 
-	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
+	// refreshTagsFunc holds the function returned by buildTagsTab, allowing other parts
+	// of the app to trigger a refresh of the tag list view.
+	refreshTagsFunc func()
 
 	skipCount        int // NEW: Configurable skip count for PageUp/PageDown
 	maxLogMessages   int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
@@ -1107,6 +1109,11 @@ func (a *App) removeTagGlobally(tag string) error {
 	return err
 }
 
+// postOperationUpdate handles common UI feedback after a tag operation completes.
+// It shows an error dialog if needed, logs status messages, and refreshes relevant UI parts
+// like the tag list and the current image's info panel if it was affected.
+// - errOp: The error returned from the operation, if any.
+// - statusMessage: A message to be logged for the user.
 // postOperationUpdate handles UI updates after a tag operation.
 func (a *App) postOperationUpdate(errOp error, statusMessage string, filesAffectedCount int, wasCurrentFileAffected bool) {
 	if errOp != nil {
@@ -1136,6 +1143,13 @@ func (a *App) postOperationUpdate(errOp error, statusMessage string, filesAffect
 	}
 }
 
+// handleTagOperation provides a generic framework for creating and managing a tag operation dialog.
+// It handles pausing/resuming the slideshow, setting up the dialog with custom form items,
+// and executing a callback function. This reduces boilerplate for `addTag` and `removeTag`.
+// - title, verb: Strings for the dialog window title and confirm button.
+// - formItems: The custom widgets to display in the dialog's form.
+// - focusableWidget: The widget that should receive focus when the dialog appears.
+// - preDialogCheck: An optional function that can prevent the dialog from showing.
 // handleTagOperation provides a generic framework for creating a tag operation dialog.
 func (a *App) handleTagOperation(
 	title string,

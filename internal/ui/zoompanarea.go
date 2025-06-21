@@ -173,6 +173,10 @@ func clampInt(val, min, max int) int {
 }
 
 // bilinearInterpolate calculates the color at a floating-point coordinate using bilinear interpolation.
+// This provides a smoother appearance than nearest-neighbor when an image is scaled up or down.
+// It works by taking the four nearest pixel colors (c00, c10, c01, c11) and blending them
+// based on the fractional distance (tx, ty) of the target coordinate from the top-left
+// pixel (x0, y0).
 func (zpa *ZoomPanArea) bilinearInterpolate(x, y float32) color.Color {
 	img := zpa.originalImg
 	bounds := img.Bounds()
@@ -218,6 +222,10 @@ func (zpa *ZoomPanArea) bilinearInterpolate(x, y float32) color.Color {
 }
 
 // draw is the rendering function for the canvas.Raster.
+// It's called by Fyne whenever the widget needs to be redrawn.
+// For each pixel (dx, dy) in the destination view, it calculates the corresponding
+// source pixel (sx, sy) in the original image based on the current zoom and pan,
+// then sets the destination pixel's color.
 func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 	if zpa.originalImg == nil || w <= 0 || h <= 0 {
 		return image.NewRGBA(image.Rect(0, 0, w, h)) // Return empty/transparent
@@ -230,6 +238,7 @@ func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 
 	for dy := 0; dy < h; dy++ {
 		for dx := 0; dx < w; dx++ {
+			// Calculate the corresponding source pixel coordinates in the original image.
 			sx := (float32(dx) - zpa.panOffset.X) * invZoomFactor
 			sy := (float32(dy) - zpa.panOffset.Y) * invZoomFactor
 
@@ -263,16 +272,19 @@ func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
 		zpa.OnInteraction()
 	}
 
+	// --- Zoom-towards-point logic ---
+	// 1. Identify the point to zoom towards (center of the view is a stable choice).
 	viewWidth, viewHeight := zpa.Size().Width, zpa.Size().Height
 	// Use event position if available and reliable, otherwise center of view
 	// Fyne's ScrollEvent.Position is often (0,0), so centering is safer.
 	mouseX, mouseY := viewWidth/2, viewHeight/2 // Zoom towards center
 
-	// Point in image space that was under the mouse/center
+	// 2. Calculate which point in the *original image* corresponds to our zoom point.
+	// This is the "anchor" point that should remain stationary relative to the view.
 	imgSpaceX := (mouseX - zpa.panOffset.X) / zpa.zoomFactor
 	imgSpaceY := (mouseY - zpa.panOffset.Y) / zpa.zoomFactor
 
-	// Apply zoom
+	// 3. Apply the new zoom factor.
 	if ev.Scrolled.DY < 0 { // Scroll up/away from user (content moves down) -> zoom out
 		zpa.zoomFactor /= (1.0 + defaultZoomScrollStep)
 	} else if ev.Scrolled.DY > 0 { // Scroll down/towards user (content moves up) -> zoom in
@@ -286,7 +298,8 @@ func (zpa *ZoomPanArea) Scrolled(ev *fyne.ScrollEvent) {
 		zpa.zoomFactor = zpa.maxZoom
 	}
 
-	// Adjust panOffset to keep the point (imgSpaceX, imgSpaceY) under the mouse/center
+	// 4. Adjust the pan offset. The new pan must be set so that the anchor point
+	// (imgSpaceX, imgSpaceY) is still under the same view point (mouseX, mouseY) after zooming.
 	zpa.panOffset.X = mouseX - (imgSpaceX * zpa.zoomFactor)
 	zpa.panOffset.Y = mouseY - (imgSpaceY * zpa.zoomFactor)
 

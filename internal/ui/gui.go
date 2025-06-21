@@ -134,13 +134,14 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-// tagListItem is a helper struct for buildTagsTab to hold a tag name and its usage count.
+// tagListItem is a helper struct for the `buildTagsTab` function, holding a tag name
+// and its usage count for display in the UI.
 type tagListItem struct {
 	Name  string
 	Count int
 }
 
-// buildTagsTab creates the content for the "Tags" tab with search and global removal
+// buildTagsTab constructs the UI for the "Tags" management view.
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	var tagList *widget.List
 	var allTags []tagListItem             // Holds all tags (name and count) fetched from DB
@@ -490,9 +491,7 @@ func (a *App) refreshThumbnailStrip() {
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
-		// Get thumbnail - cached or placeholder, with async load if needed
-		// Create the stack for the thumbnail and its border before the GetThumbnail call
-		// so it can be captured by the callback.
+		// The thumbWidget is a stack that will hold the tappable image and a border if selected.
 		thumbWidget := container.NewStack(tappableThumb)
 
 		initialResource := a.thumbnailManager.GetThumbnail(item.Path, func(resource fyne.Resource) { // Pass thumbWidget to callback
@@ -548,9 +547,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	} else {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
-	//a.UI.ribbonBar = a.buildRibbon()
 	a.UI.toolBar = a.buildToolbar()
-	// main menu
+	// --- Main Menu ---
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
 		fyne.NewMenu("Edit",
@@ -578,7 +576,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
 
-	// image canvas
+	// --- Image View (Canvas and Info Panel) ---
 	a.zoomPanArea = NewZoomPanArea(nil, func() { // Pass the interaction callback
 		a.slideshowManager.Pause(true)
 	})
@@ -620,8 +618,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.statusLogLabel.Alignment = fyne.TextAlignCenter
 	a.UI.statusLogLabel.Truncation = fyne.TextTruncateEllipsis
 
-	// Initialize LogUIManager and connect its methods to the buttons
-	// Note: a.logUIManager will be nil until this point.
 	a.UI.statusLogUpBtn = widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
 		if a.logUIManager != nil {
 			a.logUIManager.ShowPreviousLogMessage()
