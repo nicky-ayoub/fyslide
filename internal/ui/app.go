@@ -11,7 +11,6 @@ import (
 	"fyslide/internal/tagging"
 	"image"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,7 +58,7 @@ type App struct {
 	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
-	direction        int
+	navigationQueue  *NavigationQueue
 
 	random bool
 
@@ -70,11 +69,12 @@ type App struct {
 
 	refreshTagsFunc func() // This will hold the function returned by buildTagsTab
 
-	skipCount      int // NEW: Configurable skip count for PageUp/PageDown
-	maxLogMessages int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
-	logUIManager   *LogUIManager
-	Service        *service.Service
-	ImageService   *service.ImageService
+	skipCount        int // NEW: Configurable skip count for PageUp/PageDown
+	maxLogMessages   int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
+	logUIManager     *LogUIManager
+	Service          *service.Service
+	thumbnailManager *ThumbnailManager
+	ImageService     *service.ImageService
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -293,14 +293,6 @@ func (a *App) loadAndDisplayCurrentImage() {
 		return // Exit the function, no image to load
 	}
 
-	if a.random && !a.isNavigatingHistory {
-		if count == 1 {
-			a.index = 0
-		} else if count > 1 { // count is already guaranteed > 0 here
-			randomNumber := rand.Intn(count)
-			a.index = randomNumber
-		}
-	}
 	imagePath := a.GetImageFullPath() // Get the full path of the current image
 
 	// Check index bounds again after potential random selection or if not random
@@ -351,6 +343,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
 			a.updateInfoText(imgInfo)
+			a.refreshThumbnailStrip() // Update the thumbnail strip
 
 			// History Update (only if not navigating history)
 			if a.historyManager != nil && !historyNav {
@@ -495,12 +488,13 @@ func (a *App) applyFilter(tag string) {
 	a.filteredImages = newFilteredImages
 	a.isFiltered = true
 	a.currentFilterTag = tag
-	a.index = 0     // Reset index to the start of the filtered list
-	a.direction = 1 // Default direction
+	a.index = 0 // Reset index to the start of the filtered list
+	a.navigationQueue.ResetAndFill(a.index)
 	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tag '%s'.", len(a.filteredImages), tag))
 
 	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
 	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
+	a.refreshThumbnailStrip()      // Update the thumbnail strip
 	//a.updateInfoText(nil)          // Update info panel immediately
 	//a.updateStatusBar()
 }
@@ -515,10 +509,11 @@ func (a *App) clearFilter() {
 	a.currentFilterTag = ""
 	a.filteredImages = nil // Clear the filtered list
 	a.index = 0            // Reset index to the start of the full list
-	a.direction = 1
+	a.navigationQueue.ResetAndFill(a.index)
 
 	a.isNavigatingHistory = false  // Clearing a filter is a new view state
 	a.loadAndDisplayCurrentImage() // Display the first image in the full set
+	a.refreshThumbnailStrip()      // Update the thumbnail strip
 	//a.updateInfoText()             // Update info panel immediately
 	//a.updateStatusBar()
 }
@@ -529,8 +524,8 @@ func (a *App) firstImage() {
 		return
 	} // Add check
 	a.index = 0
+	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
-	a.direction = 1
 }
 
 func (a *App) lastImage() {
@@ -540,8 +535,8 @@ func (a *App) lastImage() {
 		return
 	} // Add check
 	a.index = count - 1
+	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
-	a.direction = -1
 }
 
 func (a *App) nextImage() {
@@ -561,12 +556,11 @@ func (a *App) nextImage() {
 	}
 	// --- Standard Next Image Logic ---
 	a.isNavigatingHistory = false // Ensure this is false for standard navigation
-
-	// Calculate next index based on direction (original logic)
-	a.index += a.direction              // This might go out of bounds
-	a.index = (a.index + count) % count // Wrap around using modulo
-
-	a.loadAndDisplayCurrentImage() // Display the image at the calculated index
+	newIndex := a.navigationQueue.PopAndAdvance()
+	if newIndex != -1 {
+		a.index = newIndex
+		a.loadAndDisplayCurrentImage()
+	}
 
 }
 
@@ -585,6 +579,7 @@ func (a *App) skipImages(offset int) {
 	} else if a.index >= count {
 		a.index = count - 1
 	}
+	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -644,6 +639,7 @@ func (a *App) ShowNextImageFromHistory() bool {
 	}
 
 	a.index = foundIndexInActiveList
+	a.navigationQueue.ResetAndFill(a.index)
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
 	// Error handling is now internal to loadAndDisplayCurrentImage
@@ -712,6 +708,7 @@ func (a *App) ShowPreviousImage() {
 	}
 
 	a.index = foundIndexInActiveList
+	a.navigationQueue.ResetAndFill(a.index)
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
 	// Error handling is now internal to loadAndDisplayCurrentImage
@@ -797,10 +794,13 @@ func (a *App) deleteFile() {
 			a.index = 0
 		}
 	}
+	// After the image lists are updated and the new index is calculated,
+	// reset the navigation queue to reflect the new state. This ensures
+	// the thumbnail strip will be correct.
+	a.navigationQueue.ResetAndFill(a.index)
 	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
-	// a.updateInfoText()
-	// a.updateStatusBar()
+	a.refreshThumbnailStrip() // Update the thumbnail strip
 }
 
 // func pathToURI(path string) (fyne.URI, error) {
@@ -829,6 +829,7 @@ func (a *App) loadImages(root string) {
 	msg := fmt.Sprintf("Loaded %d images from %s", len(a.images), root)
 	fyne.Do(func() {
 		a.addLogMessage(msg)
+		a.refreshThumbnailStrip() // Update the thumbnail strip
 	})
 }
 
@@ -864,8 +865,8 @@ func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 
 // Handle toggles
 func (a *App) togglePlay() {
-	a.slideshowManager.TogglePlayPause() // Toggle state using the manager
-	if a.slideshowManager.IsPaused() {
+	a.slideshowManager.TogglePlayPause()
+	if a.slideshowManager.IsPaused() { // Toggle state using the manager
 		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
 			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
 		}
@@ -883,6 +884,7 @@ func (a *App) togglePlay() {
 
 func (a *App) toggleRandom() {
 	a.random = !a.random // Toggle state first
+	a.navigationQueue.SetMode(a.random)
 	if a.random {
 		// Random is ON, show active dice
 		if a.UI.randomAction != nil {
@@ -901,7 +903,7 @@ func (a *App) toggleRandom() {
 
 // Command-line flags
 var historySizeFlag = flag.Int("history-size", 10, "Number of last viewed images to remember (0 to disable). Min: 0.")
-var slideshowIntervalFlag = flag.Float64("slideshow-interval", 2.0, "Slideshow image display interval in seconds. Min: 0.1.")
+var slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
 var skipCountFlag = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
 
 // CreateApplication is the GUI entrypoint
@@ -933,9 +935,9 @@ func CreateApplication() {
 	a.SetIcon(resourceIconPng)
 
 	currentTheme := a.Settings().Theme()
-	a.Settings().SetTheme(NewSmallTabsTheme(currentTheme))
+	a.Settings().SetTheme(NewSmallTabsTheme(currentTheme)) //nolint:staticcheck
 
-	ui := &App{app: a, direction: 1}
+	ui := &App{app: a}
 
 	// Define the logger function that TagDB will use.
 	// This closure captures the 'ui' variable (*App instance).
@@ -956,6 +958,7 @@ func CreateApplication() {
 	// --- Service Layer Integration ---
 	fileScanner := scan.FileScannerImpl{} // You may need to implement this as shown earlier
 	ui.Service = service.NewService(ui.tagDB, &fileScanner, appLoggerFunc)
+	ui.thumbnailManager = NewThumbnailManager(ui)
 	ui.ImageService = service.NewImageService()
 	// Initialize UI components that need the app instance
 	ui.UI.MainWin = a.NewWindow("FySlide")
@@ -970,6 +973,8 @@ func CreateApplication() {
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init(*historySizeFlag, *slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
 	ui.random = true
+	ui.navigationQueue = NewNavigationQueue(ui)
+	ui.navigationQueue.SetMode(ui.random) // Synchronize the queue's mode with the app's state at startup
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
@@ -995,6 +1000,7 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
+		ui.navigationQueue.ResetAndFill(0) // Initialize the queue
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do

@@ -20,7 +20,6 @@ func (a *App) buildKeyboardShortcuts() {
 		switch key.Name {
 		// move forward/back within the current folder of images
 		case fyne.KeyRight:
-			a.direction = 1
 			a.nextImage()
 		case fyne.KeyLeft:
 			a.ShowPreviousImage()

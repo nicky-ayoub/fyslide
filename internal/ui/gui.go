@@ -2,8 +2,11 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"runtime"
 	"strings"
+
+	"fyne.io/fyne/v2/canvas"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -45,6 +48,11 @@ type UI struct {
 	statusLogLabel   *widget.Label   // For log messages
 	statusLogUpBtn   *widget.Button
 	statusLogDownBtn *widget.Button
+
+	// --- Thumbnail Browser Elements ---
+	thumbnailBrowser *fyne.Container // Container holding the strip and collapse button
+	thumbnailStrip   *fyne.Container // The HBox holding the actual thumbnail images
+	collapseButton   *widget.Button
 }
 
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
@@ -100,7 +108,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
 		widget.NewToolbarAction(theme.MediaSkipPreviousIcon(), a.ShowPreviousImage),
 		a.UI.pauseAction,
-		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.direction = 1; a.nextImage() }), // Changed icon
+		widget.NewToolbarAction(theme.MediaSkipNextIcon(), a.nextImage),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
@@ -348,6 +356,143 @@ FySlide is an image viewer with tagging capabilities.
 	dialog.ShowCustom("FySlide Help", "Close", widget.NewRichTextFromMarkdown(helpText), a.UI.MainWin)
 }
 
+// --- Tappable Image Custom Widget ---
+
+// tappableImage is a custom widget that displays an image and handles tap events.
+type tappableImage struct {
+	widget.BaseWidget
+	image    *canvas.Image
+	onTapped func()
+}
+
+// newTappableImage creates a new tappableImage widget.
+func newTappableImage(res fyne.Resource, onTapped func()) *tappableImage {
+	ti := &tappableImage{
+		image:    canvas.NewImageFromResource(res),
+		onTapped: onTapped,
+	}
+	ti.image.FillMode = canvas.ImageFillContain
+	ti.ExtendBaseWidget(ti) // Important: call this to register the widget
+	return ti
+}
+
+// CreateRenderer is a mandatory method for a Fyne widget.
+func (t *tappableImage) CreateRenderer() fyne.WidgetRenderer {
+	// We just need to render the image, so it has no background of its own.
+	return widget.NewSimpleRenderer(t.image)
+}
+
+// Tapped is called when the widget is tapped.
+func (t *tappableImage) Tapped(_ *fyne.PointEvent) {
+	if t.onTapped != nil {
+		t.onTapped()
+	}
+}
+
+// SetResource updates the image resource and refreshes.
+func (t *tappableImage) SetResource(res fyne.Resource) {
+	t.image.Resource = res
+	canvas.Refresh(t.image)
+}
+
+// SetMinSize sets the minimum size of the tappable image.
+func (t *tappableImage) SetMinSize(size fyne.Size) {
+	t.image.SetMinSize(size)
+}
+
+// MaxVisibleThumbnails defines the maximum number of thumbnails to display in the strip.
+const MaxVisibleThumbnails = 10
+
+// refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
+// It calculates a window of thumbnails around the current image and displays them.
+// This function replaces updateThumbnailData and updateThumbnailSelection.
+func (a *App) refreshThumbnailStrip() {
+	if a.UI.thumbnailStrip == nil || a.navigationQueue == nil {
+		return
+	}
+
+	a.UI.thumbnailStrip.RemoveAll()
+
+	// Get the upcoming indices from the navigation queue to make the bar consistent
+	indicesToDisplay := a.navigationQueue.GetUpcoming(MaxVisibleThumbnails)
+	currentList := a.getCurrentList()
+
+	if len(indicesToDisplay) == 0 || len(currentList) == 0 {
+		a.UI.thumbnailStrip.Refresh()
+		return
+	}
+	for _, idx := range indicesToDisplay {
+		// 'i' is the position in the strip (0-9), idx is the *actual image index* in the list.
+		if idx < 0 || idx >= len(currentList) {
+			continue // Skip if index out of range
+		}
+		item := currentList[idx] // The actual image data
+
+		// Create a tappable thumbnail widget
+		tappableThumb := newTappableImage(theme.FileImageIcon(), func() { // Closure to handle click
+			if idx == a.index { // Clicked the *current* image in the strip (now handled by strip logic)
+				return
+			}
+			a.isNavigatingHistory = false // Clicking a thumb is not history
+			// Find the clicked image's actual index in the image list
+			newIndex := a.navigationQueue.RotateTo(idx)
+			if newIndex != -1 {
+				a.index = newIndex // Update the main index to match what's now at the front
+				a.loadAndDisplayCurrentImage()
+			}
+		})
+		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
+
+		// Get thumbnail - cached or placeholder, with async load if needed
+		// Pass the widget to update in the callback
+		// Returns cached or placeholder image immediately, *and* calls onComplete only if async load is needed
+
+		// Create the stack for the thumbnail and its border *before* the GetThumbnail call
+		// so it can be captured by the callback.
+		thumbWidget := container.NewStack(tappableThumb)
+
+		initialResource := a.thumbnailManager.GetThumbnail(item.Path, func(resource fyne.Resource) { // Pass thumbWidget to callback
+			// 'idx' and 'item' are also correctly captured here.
+			// Check if the image path for this thumbnail is still the same
+			// (list might have changed while thumbnail was loading)
+			if currentListCheck := a.getCurrentList(); idx < len(currentListCheck) && currentListCheck[idx].Path == item.Path { // Check against original item path
+				tappableThumb.SetResource(resource)
+				// The callback is already on the main UI thread, so just refresh.
+				thumbWidget.Refresh()
+			}
+		})
+		// Immediately set the resource. This will be the cached image or the placeholder.
+		// If it was a placeholder, the callback above will update it later.
+		tappableThumb.SetResource(initialResource)
+		// Refresh the widget immediately to ensure cached images are displayed correctly.
+		// This is safe as we are on the main UI thread here.
+		thumbWidget.Refresh()
+		// Add a border for the selected image
+		if idx == a.index {
+			border := canvas.NewRectangle(color.Transparent)
+			border.StrokeColor = theme.PrimaryColor()
+			border.StrokeWidth = 3
+			thumbWidget.Add(border) // Add border on top of the tappable image
+		}
+		a.UI.thumbnailStrip.Add(thumbWidget)
+	}
+	a.UI.thumbnailStrip.Refresh()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
@@ -369,7 +514,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
-			fyne.NewMenuItem("Next Image", func() { a.direction = 1; a.nextImage() }),
+			fyne.NewMenuItem("Next Image", a.nextImage),
 			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),                              // NEW Separator
 			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option
@@ -445,6 +590,27 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 
 	logScrollButtons := container.NewHBox(a.UI.statusLogUpBtn, a.UI.statusLogDownBtn)
 
+	// --- Build Thumbnail Browser ---
+	a.UI.thumbnailStrip = container.NewHBox()
+
+	// Create a container for the strip that has a minimum height.
+	// We use a stack with a transparent rectangle that has the desired MinSize.
+	stripSizer := canvas.NewRectangle(color.Transparent)
+	stripSizer.SetMinSize(fyne.NewSize(0, ThumbnailHeight+10))
+	sizedStrip := container.NewStack(stripSizer, a.UI.thumbnailStrip)
+
+	a.UI.collapseButton = widget.NewButtonWithIcon("", theme.MoveDownIcon(), nil)
+	a.UI.collapseButton.OnTapped = func() {
+		// Toggle visibility of the sized container for the thumbnail strip
+		if sizedStrip.Visible() {
+			sizedStrip.Hide()
+			a.UI.collapseButton.SetIcon(theme.MoveUpIcon())
+		} else {
+			sizedStrip.Show()
+			a.UI.collapseButton.SetIcon(theme.MoveDownIcon())
+		}
+	}
+
 	a.UI.statusBar = container.NewBorder(
 		nil, nil, // top, bottom
 		a.UI.statusPathLabel, // left
@@ -452,16 +618,23 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.UI.statusLogLabel,  // center (main space for log message)
 	)
 
+	a.UI.thumbnailBrowser = container.NewBorder(
+		nil, nil, // top, bottom
+		nil, a.UI.collapseButton, // left, right
+		sizedStrip, // center - use the sized container
+	)
+
 	// Instantiate LogUIManager now that its UI elements are created.
 	// a.maxLogMessages is set in App.init() using DefaultMaxLogMessages from app.go
 	a.logUIManager = NewLogUIManager(a.UI.statusLogLabel, a.UI.statusLogUpBtn, a.UI.statusLogDownBtn, a.maxLogMessages)
 	a.logUIManager.UpdateLogDisplay() // Call once to set initial button states based on (empty) log
 
+	mainContentAndThumbs := container.NewBorder(nil, a.UI.thumbnailBrowser, nil, nil, a.UI.contentStack)
+
 	return container.NewBorder(
 		a.UI.toolBar,   // top
 		a.UI.statusBar, // bottom
-		nil,            // a.UI.explorer, // explorer left
-		nil,            // right
-		a.UI.contentStack,
+		nil, nil,       // left, right
+		mainContentAndThumbs,
 	)
 }
