@@ -413,14 +413,40 @@ func (a *App) refreshThumbnailStrip() {
 
 	a.UI.thumbnailStrip.RemoveAll()
 
-	// Get the upcoming indices from the navigation queue to make the bar consistent
-	indicesToDisplay := a.navigationQueue.GetUpcoming(MaxVisibleThumbnails)
 	currentList := a.getCurrentList()
+	count := len(currentList)
 
-	if len(indicesToDisplay) == 0 || len(currentList) == 0 {
+	if count == 0 {
 		a.UI.thumbnailStrip.Refresh()
 		return
 	}
+
+	// --- Calculate the window of thumbnails to display ---
+	// The goal is to center the current image (a.index) in the strip.
+	var indicesToDisplay []int
+	centerPosInStrip := MaxVisibleThumbnails / 2
+	startIndex := a.index - centerPosInStrip
+
+	// Adjust window if it goes before the start of the list
+	if startIndex < 0 {
+		startIndex = 0
+	}
+
+	// Adjust window if it goes past the end of the list
+	endIndex := startIndex + MaxVisibleThumbnails - 1
+	if endIndex >= count {
+		endIndex = count - 1
+		// Shift the start back to maintain the window size, if possible
+		startIndex = endIndex - (MaxVisibleThumbnails - 1)
+		if startIndex < 0 {
+			startIndex = 0
+		}
+	}
+
+	for i := startIndex; i <= endIndex; i++ {
+		indicesToDisplay = append(indicesToDisplay, i)
+	}
+
 	for _, idx := range indicesToDisplay {
 		// 'i' is the position in the strip (0-9), idx is the *actual image index* in the list.
 		if idx < 0 || idx >= len(currentList) {

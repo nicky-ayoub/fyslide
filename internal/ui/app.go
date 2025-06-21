@@ -11,6 +11,7 @@ import (
 	"fyslide/internal/tagging"
 	"image"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1000,7 +1001,11 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
-		ui.navigationQueue.ResetAndFill(0) // Initialize the queue
+		// If in random mode, pick a random starting image. Otherwise, start at 0.
+		if ui.random {
+			ui.index = rand.Intn(ui.imageCount())
+		}
+		ui.navigationQueue.ResetAndFill(ui.index) // Initialize the queue from the chosen start index
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do
