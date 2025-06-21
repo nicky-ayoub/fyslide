@@ -18,7 +18,7 @@ func (a *App) buildKeyboardShortcuts() {
 
 	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
 		switch key.Name {
-		// move forward/back within the current folder of images
+		// --- Image Navigation ---
 		case fyne.KeyRight:
 			a.navigate(1)
 		case fyne.KeyLeft:

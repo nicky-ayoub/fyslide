@@ -86,8 +86,8 @@ func (nq *NavigationQueue) GetUpcoming(count int) []int {
 }
 
 // RotateTo makes the item at the given index in the queue the new "current" item (index 0).
-// It rotates the queue so that this item is at the front, preserving the relative order
-// of other elements.  If the index is out of bounds, it resets the queue.
+// It rotates the queue so that the target image is at the front. If the target image is not
+// found in the current queue (e.g., a "history" thumbnail in random mode), it resets the queue.
 func (nq *NavigationQueue) RotateTo(targetIndex int) int {
 	nq.mu.Lock()
 	defer nq.mu.Unlock()

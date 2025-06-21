@@ -134,8 +134,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-// tagListItem is a helper struct for buildTagsTab to hold tag name and count.
-// Count = -1 indicates a placeholder message not to be treated as a real tag.
+// tagListItem is a helper struct for buildTagsTab to hold a tag name and its usage count.
 type tagListItem struct {
 	Name  string
 	Count int
@@ -470,7 +469,7 @@ func (a *App) refreshThumbnailStrip() {
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
 	for _, idx := range indicesToDisplay {
-		// 'i' is the position in the strip (0-9), idx is the *actual image index* in the list.
+		// 'idx' is the actual index of the image in the current image list (a.getCurrentList()).
 		if idx < 0 || idx >= len(currentList) {
 			continue // Skip if index out of range
 		}
@@ -492,10 +491,7 @@ func (a *App) refreshThumbnailStrip() {
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
 		// Get thumbnail - cached or placeholder, with async load if needed
-		// Pass the widget to update in the callback
-		// Returns cached or placeholder image immediately, *and* calls onComplete only if async load is needed
-
-		// Create the stack for the thumbnail and its border *before* the GetThumbnail call
+		// Create the stack for the thumbnail and its border before the GetThumbnail call
 		// so it can be captured by the callback.
 		thumbWidget := container.NewStack(tappableThumb)
 

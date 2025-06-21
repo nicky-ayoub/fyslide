@@ -93,8 +93,7 @@ func (a *App) getCurrentImageCount() int {
 	return len(a.getCurrentList())
 }
 
-// ternaryString is a helper, assuming it's defined elsewhere or should be local.
-// If it's the one from app.go, ensure it's accessible or duplicate if needed.
+// ternaryString is a helper function that returns one of two strings based on a boolean condition.
 func ternaryString(condition bool, trueVal, falseVal string) string {
 	if condition {
 		return trueVal
@@ -184,6 +183,8 @@ func (a *App) addLogMessage(message string) {
 	}
 }
 
+// updateInfoText generates and displays the markdown-formatted metadata for the
+// current image in the info panel, including stats, tags, and EXIF data.
 func (a *App) updateInfoText(info *service.ImageInfo) {
 	if a.img.Path == "" {
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
@@ -779,7 +780,7 @@ func (a *App) deleteFile() {
 	}
 	a.images = newImages
 
-	// 3.5. Remove from historyStack
+	// Remove the deleted path from the navigation and thumbnail histories.
 	a.removeFromThumbnailHistory(deletedPath)
 	if a.historyManager != nil {
 		a.historyManager.RemovePath(deletedPath)
@@ -845,6 +846,8 @@ func (a *App) removeFromThumbnailHistory(path string) {
 // 	return fileURI, nil
 // }
 
+// loadImages scans the given root directory for image files in a background goroutine
+// and populates the main image list.
 func (a *App) loadImages(root string) {
 	a.images = nil // Clear previous images or a.images = a.images[:0]
 
@@ -873,6 +876,8 @@ func (a *App) imageCount() int {
 	return len(a.images)
 }
 
+// init initializes the application's core components, including the history manager,
+// slideshow manager, and other configuration settings based on provided flags.
 func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
 	a.historyManager = history.NewHistoryManager(historyCap)
@@ -1065,7 +1070,6 @@ func CreateApplication() {
 
 func (a *App) updateTimer() {
 	for range time.Tick(time.Second) {
-		// ???
 		if a.UI.MainWin == nil || a.UI.clockLabel == nil { // Check if UI elements are still valid
 			return // Exit goroutine if window is closed
 		}
@@ -1091,6 +1095,8 @@ func (a *App) pauser(ticker *time.Ticker) {
 	}
 }
 
+// removeTagGlobally initiates the process of removing a specific tag from all
+// images in the database.
 func (a *App) removeTagGlobally(tag string) error {
 	if tag == "" {
 		return nil
