@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"container/list"
 	"flag"
 	"fmt"
 	"fyslide/internal/history"
@@ -59,6 +60,7 @@ type App struct {
 	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
+	thumbnailHistory *list.List                  // Cache for random mode thumbnail paths
 	navigationQueue  *NavigationQueue
 
 	random bool
@@ -341,6 +343,21 @@ func (a *App) loadAndDisplayCurrentImage() {
 			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
 
 			// Update Title, Status Bar, and Info Text
+			if a.random && !historyNav {
+				// When navigating forward in random mode, add to history.
+				// If we went back and then forward again, the path might already exist. Remove it first to move it to the back.
+				for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
+					if e.Value.(string) == path {
+						a.thumbnailHistory.Remove(e)
+						break
+					}
+				}
+				a.thumbnailHistory.PushBack(path)
+				// Trim history to keep it from growing indefinitely
+				if a.thumbnailHistory.Len() > MaxVisibleThumbnails*2 { // Keep a bit more than visible
+					a.thumbnailHistory.Remove(a.thumbnailHistory.Front())
+				}
+			}
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
 			a.updateInfoText(imgInfo)
@@ -490,6 +507,7 @@ func (a *App) applyFilter(tag string) {
 	a.isFiltered = true
 	a.currentFilterTag = tag
 	a.index = 0 // Reset index to the start of the filtered list
+	a.thumbnailHistory.Init()
 	a.navigationQueue.ResetAndFill(a.index)
 	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tag '%s'.", len(a.filteredImages), tag))
 
@@ -510,6 +528,7 @@ func (a *App) clearFilter() {
 	a.currentFilterTag = ""
 	a.filteredImages = nil // Clear the filtered list
 	a.index = 0            // Reset index to the start of the full list
+	a.thumbnailHistory.Init()
 	a.navigationQueue.ResetAndFill(a.index)
 
 	a.isNavigatingHistory = false  // Clearing a filter is a new view state
@@ -759,6 +778,7 @@ func (a *App) deleteFile() {
 	a.images = newImages
 
 	// 3.5. Remove from historyStack
+	a.removeFromThumbnailHistory(deletedPath)
 	if a.historyManager != nil {
 		a.historyManager.RemovePath(deletedPath)
 	}
@@ -802,6 +822,19 @@ func (a *App) deleteFile() {
 	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
 	a.refreshThumbnailStrip() // Update the thumbnail strip
+}
+
+// removeFromThumbnailHistory removes a given path from the random-mode thumbnail cache.
+func (a *App) removeFromThumbnailHistory(path string) {
+	if a.thumbnailHistory == nil {
+		return
+	}
+	for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
+		if e.Value.(string) == path {
+			a.thumbnailHistory.Remove(e)
+			break // Assume path is unique
+		}
+	}
 }
 
 // func pathToURI(path string) (fyne.URI, error) {
@@ -889,6 +922,9 @@ func (a *App) toggleRandom() {
 	if a.random {
 		// Random is ON, show active dice
 		if a.UI.randomAction != nil {
+			if a.thumbnailHistory.Len() == 0 && a.img.Path != "" {
+				a.thumbnailHistory.PushBack(a.img.Path)
+			}
 			a.UI.randomAction.SetIcon(resourceDice24Png)
 		}
 	} else {
@@ -896,6 +932,7 @@ func (a *App) toggleRandom() {
 		if a.UI.randomAction != nil {
 			a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
 		}
+		a.thumbnailHistory.Init() // Clear the history when leaving random mode
 	}
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
@@ -974,6 +1011,7 @@ func CreateApplication() {
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init(*historySizeFlag, *slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
 	ui.random = true
+	ui.thumbnailHistory = list.New()
 	ui.navigationQueue = NewNavigationQueue(ui)
 	ui.navigationQueue.SetMode(ui.random) // Synchronize the queue's mode with the app's state at startup
 
@@ -1004,6 +1042,9 @@ func CreateApplication() {
 		// If in random mode, pick a random starting image. Otherwise, start at 0.
 		if ui.random {
 			ui.index = rand.Intn(ui.imageCount())
+			if ui.imageCount() > 0 {
+				ui.thumbnailHistory.PushBack(ui.images[ui.index].Path)
+			}
 		}
 		ui.navigationQueue.ResetAndFill(ui.index) // Initialize the queue from the chosen start index
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
@@ -1354,4 +1395,68 @@ func (a *App) removeTag() {
 	}
 
 	a.handleTagOperation("Remove Tag", "Remove", formItems, nil, preCheck, execute)
+}
+
+// getThumbnailWindowPaths assembles the list of image paths for the thumbnail strip.
+// In random mode, it constructs a "sliding window" based on navigation history.
+// It returns nil if it should fall back to sequential logic.
+func (a *App) getThumbnailWindowPaths() []string {
+	if !a.random || a.thumbnailHistory.Len() == 0 || a.img.Path == "" {
+		return nil // Use sequential logic
+	}
+
+	// 1. Find current image in our history cache
+	var currentElement *list.Element
+	for e := a.thumbnailHistory.Back(); e != nil; e = e.Prev() {
+		if e.Value.(string) == a.img.Path {
+			currentElement = e
+			break
+		}
+	}
+
+	if currentElement == nil {
+		return nil // Not found, fallback to sequential
+	}
+
+	displayPaths := make([]string, 0, MaxVisibleThumbnails)
+
+	// 2. Add previous images by walking backwards from currentElement
+	numPrev := MaxVisibleThumbnails / 2
+	e := currentElement
+	for i := 0; i < numPrev; i++ {
+		e = e.Prev()
+		if e == nil {
+			break
+		}
+		displayPaths = append([]string{e.Value.(string)}, displayPaths...) // Prepend
+	}
+
+	// 3. Add current image
+	displayPaths = append(displayPaths, currentElement.Value.(string))
+
+	// 4. Add next images from history cache first
+	e = currentElement
+	for len(displayPaths) < MaxVisibleThumbnails {
+		e = e.Next()
+		if e == nil {
+			break
+		}
+		displayPaths = append(displayPaths, e.Value.(string))
+	}
+
+	// 5. Fill remaining slots from the navigationQueue
+	if len(displayPaths) < MaxVisibleThumbnails {
+		needed := MaxVisibleThumbnails - len(displayPaths)
+		upcomingIndices := a.navigationQueue.GetUpcoming(needed + 1) // +1 for current
+		if len(upcomingIndices) > 1 {
+			currentList := a.getCurrentList()
+			for _, idx := range upcomingIndices[1:] {
+				if idx >= 0 && idx < len(currentList) {
+					displayPaths = append(displayPaths, currentList[idx].Path)
+				}
+			}
+		}
+	}
+
+	return displayPaths
 }

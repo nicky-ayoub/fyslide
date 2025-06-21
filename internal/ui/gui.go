@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 
+	"fyne.io/fyne/v2/layout"
+
 	"fyne.io/fyne/v2/canvas"
 
 	"fyne.io/fyne/v2"
@@ -421,31 +423,51 @@ func (a *App) refreshThumbnailStrip() {
 		return
 	}
 
-	// --- Calculate the window of thumbnails to display ---
-	// The goal is to center the current image (a.index) in the strip.
 	var indicesToDisplay []int
-	centerPosInStrip := MaxVisibleThumbnails / 2
-	startIndex := a.index - centerPosInStrip
 
-	// Adjust window if it goes before the start of the list
-	if startIndex < 0 {
-		startIndex = 0
-	}
+	// Try to get random-mode specific paths first
+	randomPaths := a.getThumbnailWindowPaths()
 
-	// Adjust window if it goes past the end of the list
-	endIndex := startIndex + MaxVisibleThumbnails - 1
-	if endIndex >= count {
-		endIndex = count - 1
-		// Shift the start back to maintain the window size, if possible
-		startIndex = endIndex - (MaxVisibleThumbnails - 1)
+	if randomPaths != nil {
+		// --- RANDOM MODE LOGIC ---
+		// Convert paths to indices for the rendering loop
+		pathToIdx := make(map[string]int, len(currentList))
+		for i, item := range currentList {
+			pathToIdx[item.Path] = i
+		}
+		for _, p := range randomPaths {
+			if idx, ok := pathToIdx[p]; ok {
+				indicesToDisplay = append(indicesToDisplay, idx)
+			}
+		}
+	} else {
+		// --- SEQUENTIAL MODE LOGIC (or fallback for random mode) ---
+		centerPosInStrip := MaxVisibleThumbnails / 2
+		startIndex := a.index - centerPosInStrip
+
+		// Adjust window if it goes before the start of the list
 		if startIndex < 0 {
 			startIndex = 0
 		}
+
+		// Adjust window if it goes past the end of the list
+		endIndex := startIndex + MaxVisibleThumbnails - 1
+		if endIndex >= count {
+			endIndex = count - 1
+			// Shift the start back to maintain the window size, if possible
+			startIndex = endIndex - (MaxVisibleThumbnails - 1)
+			if startIndex < 0 {
+				startIndex = 0
+			}
+		}
+
+		for i := startIndex; i <= endIndex; i++ {
+			indicesToDisplay = append(indicesToDisplay, i)
+		}
 	}
 
-	for i := startIndex; i <= endIndex; i++ {
-		indicesToDisplay = append(indicesToDisplay, i)
-	}
+	// Add a spacer before the thumbnails to push them to the center.
+	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
 	for _, idx := range indicesToDisplay {
 		// 'i' is the position in the strip (0-9), idx is the *actual image index* in the list.
@@ -502,6 +524,9 @@ func (a *App) refreshThumbnailStrip() {
 		}
 		a.UI.thumbnailStrip.Add(thumbWidget)
 	}
+	// Add a spacer after the thumbnails to complete the centering.
+	a.UI.thumbnailStrip.Add(layout.NewSpacer())
+
 	a.UI.thumbnailStrip.Refresh()
 }
 
