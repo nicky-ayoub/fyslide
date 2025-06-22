@@ -70,6 +70,8 @@ type App struct {
 	isFiltered       bool   // NEW: Flag to indicate if filtering is active
 	currentFilterTag string // NEW: The tag currently being filtered by
 
+	isDarkTheme bool // NEW: track current theme
+
 	// refreshTagsFunc holds the function returned by buildTagsTab, allowing other parts
 	// of the app to trigger a refresh of the tag list view.
 	refreshTagsFunc func()
@@ -894,12 +896,12 @@ func (a *App) togglePlay() {
 	a.slideshowManager.TogglePlayPause()
 	if a.slideshowManager.IsPaused() { // Toggle state using the manager
 		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
-			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
+			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon()) // Play icon for paused state
 		}
 	} else {
 		// Now playing (not paused), so button should offer to pause
 		if a.UI.pauseAction != nil { // Check if pauseAction is initialized
-			a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+			a.UI.pauseAction.SetIcon(theme.MediaPauseIcon()) // Pause icon for playing state
 		}
 	}
 	if a.UI.toolBar != nil {
@@ -908,28 +910,55 @@ func (a *App) togglePlay() {
 	a.updateStatusBar()
 }
 
+// getDiceIcon returns the appropriate dice icon resource based on random mode and current theme.
+func (a *App) getDiceIcon() fyne.Resource {
+	if a.random {
+		if a.isDarkTheme {
+			return resourceDiceDark24Png
+		}
+		return resourceDice24Png
+	} else {
+		if a.isDarkTheme {
+			return resourceDiceDisabledDark24Png
+		}
+		return resourceDiceDisabled24Png
+	}
+}
+
 func (a *App) toggleRandom() {
 	a.random = !a.random // Toggle state first
 	a.navigationQueue.SetMode(a.random)
-	if a.random {
-		// Random is ON, show active dice
-		if a.UI.randomAction != nil {
-			if a.thumbnailHistory.Len() == 0 && a.img.Path != "" {
-				a.thumbnailHistory.PushBack(a.img.Path)
-			}
-			a.UI.randomAction.SetIcon(resourceDice24Png)
-		}
-	} else {
-		// Random is OFF, show disabled dice
-		if a.UI.randomAction != nil {
-			a.UI.randomAction.SetIcon(resourceDiceDisabled24Png)
-		}
+	// Update the icon based on the new random state and current theme
+	if a.UI.randomAction != nil {
+		a.UI.randomAction.SetIcon(a.getDiceIcon())
+	}
+	// If entering random mode, ensure current image is in history for thumbnail strip
+	if a.random && a.thumbnailHistory.Len() == 0 && a.img.Path != "" {
+		a.thumbnailHistory.PushBack(a.img.Path)
+	} else if !a.random {
 		a.thumbnailHistory.Init() // Clear the history when leaving random mode
 	}
+
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
 	a.refreshThumbnailStrip() // Re-evaluate and display thumbnails based on the new random state
+}
+
+// toggleTheme switches between the light and dark application themes.
+func (a *App) toggleTheme() {
+	a.isDarkTheme = !a.isDarkTheme
+	if a.isDarkTheme {
+		a.app.Settings().SetTheme(NewSmallTabsTheme(theme.DarkTheme())) // Apply dark theme
+	} else {
+		a.app.Settings().SetTheme(NewSmallTabsTheme(theme.LightTheme())) // Apply light theme
+	}
+
+	// Update theme-dependent icons
+	if a.UI.randomAction != nil {
+		a.UI.randomAction.SetIcon(a.getDiceIcon())
+	}
+	// No need to refresh toolbar here, SetTheme usually triggers a full UI refresh.
 }
 
 // Command-line flags
@@ -965,10 +994,15 @@ func CreateApplication() {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
-	currentTheme := a.Settings().Theme()
-	a.Settings().SetTheme(NewSmallTabsTheme(currentTheme)) //nolint:staticcheck
-
 	ui := &App{app: a}
+
+	// Set initial theme
+	ui.isDarkTheme = false // Default to light theme
+	a.Settings().SetTheme(NewSmallTabsTheme(theme.LightTheme()))
+	// Ensure initial random icon matches initial theme
+	if ui.UI.randomAction != nil { // This might be nil if called too early, but buildToolbar will set it.
+		ui.UI.randomAction.SetIcon(ui.getDiceIcon())
+	}
 
 	// Define the logger function that TagDB will use.
 	// This closure captures the 'ui' variable (*App instance).

@@ -25,6 +25,9 @@ build-gui:
 build-cli:
 	$(GO_CMD) build -ldflags="$(LDFLAGS)" -o $(CLI_OUTPUT) $(CLI_MAIN_DIR)
 
+gen:
+	$(GO_CMD) generate
+
 fmt:
 	$(GO_CMD) fmt ./...
 

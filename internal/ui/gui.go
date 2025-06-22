@@ -96,7 +96,7 @@ func (a *App) selectStackView(index int) {
 }
 
 func (a *App) buildToolbar() *widget.Toolbar {
-	a.UI.randomAction = widget.NewToolbarAction(resourceDice24Png, a.toggleRandom)
+	a.UI.randomAction = widget.NewToolbarAction(a.getDiceIcon(), a.toggleRandom) // Use theme-aware icon
 
 	initialPauseIcon := theme.MediaPlayIcon() // Default for paused state
 	if a.slideshowManager != nil && !a.slideshowManager.IsPaused() {
@@ -127,6 +127,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.ListIcon(), func() { // Button for Tags View
 			a.selectStackView(tagsViewIndex) // Switch to tags view
 		}),
+		widget.NewToolbarAction(theme.ColorPaletteIcon(), a.toggleTheme),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
 			a.showHelpDialog()
 		}),
