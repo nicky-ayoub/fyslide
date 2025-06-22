@@ -610,19 +610,27 @@ func (a *App) navigate(offset int) {
 		return
 	} // Add check
 
+	// Handle single step backward navigation by delegating to ShowPreviousImage.
+	// This leverages the existing robust history navigation logic.
+	if offset == -1 {
+		a.ShowPreviousImage() // This function handles its own history, random mode, and load/display.
+		return
+	}
+
 	// Special case: If we were navigating history, "next" (offset=1) should try to move forward in history.
+	// This is still a specific history-related forward action.
 	if offset == 1 && a.isNavigatingHistory {
 		if a.ShowNextImageFromHistory() {
 			return // Successfully moved forward in history
 		}
-		// If not, fall through to normal navigation.
+		// If not, fall through to normal navigation (which will be handled below for offset == 1).
 	}
 
-	a.isNavigatingHistory = false // Any other navigation is a new action.
+	// For all other navigations (forward, or backward skips), it's not a history-driven action.
+	a.isNavigatingHistory = false
 
-	if offset > 0 { // Forward navigation
+	if offset > 0 { // Forward navigation (including offset == 1 if not handled by history forward).
 		newIndex := a.index
-		// For a single step, just pop once. For a skip, loop.
 		for i := 0; i < offset; i++ {
 			popped := a.navigationQueue.PopAndAdvance()
 			if popped == -1 {
@@ -631,8 +639,8 @@ func (a *App) navigate(offset int) {
 			newIndex = popped
 		}
 		a.index = newIndex
-	} else { // Backward navigation (offset is negative or zero)
-		// Backward navigation is always sequential. If in random mode, turn it off.
+	} else { // Backward navigation (offset < -1, as offset == -1 is handled above).
+		// Backward navigation (skips) is always sequential. If in random mode, turn it off.
 		if a.random {
 			a.toggleRandom()
 		}
