@@ -442,7 +442,7 @@ func (a *App) refreshThumbnailStrip() {
 		}
 	} else {
 		// --- SEQUENTIAL MODE LOGIC (or fallback for random mode) ---
-		centerPosInStrip := MaxVisibleThumbnails / 2
+		centerPosInStrip := (MaxVisibleThumbnails / 2) - 1
 		startIndex := a.index - centerPosInStrip
 
 		// Adjust window if it goes before the start of the list

@@ -1444,7 +1444,7 @@ func (a *App) getThumbnailWindowPaths() []string {
 	displayPaths := make([]string, 0, MaxVisibleThumbnails)
 
 	// 2. Add previous images by walking backwards from currentElement
-	numPrev := MaxVisibleThumbnails / 2
+	numPrev := (MaxVisibleThumbnails / 2) - 1
 	e := currentElement
 	for i := 0; i < numPrev; i++ {
 		e = e.Prev()
