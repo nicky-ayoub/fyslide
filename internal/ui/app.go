@@ -990,8 +990,11 @@ func CreateApplication() {
 	// Define the logger function that TagDB will use.
 	// This closure captures the 'ui' variable (*App instance).
 	appLoggerFunc := func(message string) {
-		if ui.logUIManager != nil { // Check if logUIManager has been initialized
-			ui.logUIManager.AddLogMessage(message)
+		if ui.logUIManager != nil {
+			// Ensure UI updates are on the main Fyne thread.
+			fyne.Do(func() {
+				ui.logUIManager.AddLogMessage(message)
+			})
 		} else {
 			// Fallback to console log if logUIManager is not yet ready
 			// This might happen for logs from NewTagDB before buildMainUI completes.
@@ -1444,7 +1447,7 @@ func (a *App) getThumbnailWindowPaths() []string {
 	displayPaths := make([]string, 0, MaxVisibleThumbnails)
 
 	// 2. Add previous images by walking backwards from currentElement
-	numPrev := (MaxVisibleThumbnails / 2) - 1
+	numPrev := MaxVisibleThumbnails / 2
 	e := currentElement
 	for i := 0; i < numPrev; i++ {
 		e = e.Prev()

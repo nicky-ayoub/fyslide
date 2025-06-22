@@ -403,7 +403,7 @@ func (t *tappableImage) SetMinSize(size fyne.Size) {
 }
 
 // MaxVisibleThumbnails defines the maximum number of thumbnails to display in the strip.
-const MaxVisibleThumbnails = 10
+const MaxVisibleThumbnails = 11
 
 // refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
 // It calculates a window of thumbnails around the current image and displays them.
@@ -442,7 +442,7 @@ func (a *App) refreshThumbnailStrip() {
 		}
 	} else {
 		// --- SEQUENTIAL MODE LOGIC (or fallback for random mode) ---
-		centerPosInStrip := (MaxVisibleThumbnails / 2) - 1
+		centerPosInStrip := MaxVisibleThumbnails / 2
 		startIndex := a.index - centerPosInStrip
 
 		// Adjust window if it goes before the start of the list
@@ -476,17 +476,41 @@ func (a *App) refreshThumbnailStrip() {
 		}
 		item := currentList[idx] // The actual image data
 
+		// Capture the loop variable for the closure.
+		localIdx := idx
+
 		// Create a tappable thumbnail widget
-		tappableThumb := newTappableImage(theme.FileImageIcon(), func() { // Closure to handle click
-			if idx == a.index { // Clicked the *current* image in the strip (now handled by strip logic)
+		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
+			if localIdx == a.index {
 				return
 			}
-			a.isNavigatingHistory = false // Clicking a thumb is not history
-			// Find the clicked image's actual index in the image list
-			newIndex := a.navigationQueue.RotateTo(idx)
-			if newIndex != -1 {
-				a.index = newIndex // Update the main index to match what's now at the front
-				a.loadAndDisplayCurrentImage()
+			a.isNavigatingHistory = false // Clicking a thumb is not a history action
+
+			// Find the position of the current and clicked thumbnails in the displayed strip
+			var currentIndexInStrip, clickedIndexInStrip = -1, -1
+			for i, displayedIdx := range indicesToDisplay {
+				if displayedIdx == a.index {
+					currentIndexInStrip = i
+				}
+				if displayedIdx == localIdx {
+					clickedIndexInStrip = i
+				}
+			}
+
+			// If both are found, calculate the offset and navigate like using the buttons
+			if currentIndexInStrip != -1 && clickedIndexInStrip != -1 {
+				offset := clickedIndexInStrip - currentIndexInStrip
+				if offset != 0 {
+					a.navigate(offset)
+				}
+			} else {
+				// Fallback to old behavior (direct jump) if something goes wrong,
+				// e.g., the strip was refreshed between render and click.
+				newIndex := a.navigationQueue.RotateTo(localIdx)
+				if newIndex != -1 {
+					a.index = newIndex
+					a.loadAndDisplayCurrentImage()
+				}
 			}
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
