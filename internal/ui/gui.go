@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"container/list"
 	"fmt"
 	"image/color"
 	"runtime"
@@ -141,41 +142,69 @@ type tagListItem struct {
 	Count int
 }
 
-// buildTagsTab constructs the UI for the "Tags" management view.
-func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
-	var tagList *widget.List
-	var allTags []tagListItem             // Holds all tags (name and count) fetched from DB
-	var filteredDisplayData []tagListItem // Holds the tags currently displayed in the list
-	var messageLabel *widget.Label        // For placeholder/status messages
-	var listContentArea *fyne.Container   // A stack to hold either the list or the message
-	var selectedTagForAction string       // Holds the string of the currently selected tag for actions
-
-	searchEntry := widget.NewEntry()
+// _createTagListWidgets creates the core UI components for the tags management view.
+func (a *App) _createTagListWidgets() (
+	searchEntry *widget.Entry,
+	refreshButton *widget.Button,
+	removeButton *widget.Button,
+	tagList *widget.List,
+	messageLabel *widget.Label,
+) {
+	searchEntry = widget.NewEntry()
 	searchEntry.SetPlaceHolder("Search Tags...")
 
-	// Function to filter and update the list display
+	refreshButton = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), nil)
+	removeButton = widget.NewButtonWithIcon("Remove Tag Globally", theme.DeleteIcon(), nil)
+	removeButton.Disable() // Start disabled
+
+	tagList = widget.NewList(
+		func() int { return 0 }, // Length will be set by the controller logic
+		func() fyne.CanvasObject {
+			return widget.NewLabel("tag template")
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {}, // Update logic will be set by controller
+	)
+
+	messageLabel = widget.NewLabel(noTagsFoundMsg)
+	messageLabel.Alignment = fyne.TextAlignCenter
+	messageLabel.Wrapping = fyne.TextWrapWord
+
+	return
+}
+
+// _setupTagListCallbacks wires up the event handlers and data logic for the tags view widgets.
+func (a *App) _setupTagListCallbacks(
+	searchEntry *widget.Entry,
+	refreshButton *widget.Button,
+	removeButton *widget.Button,
+	tagList *widget.List,
+	allTags *[]tagListItem,
+	filteredDisplayData *[]tagListItem,
+	selectedTagForAction *string,
+	messageLabel *widget.Label,
+) func() {
+
+	var loadAndFilterTagData func() // Declare for mutual recursion with filterAndRefreshList
+
+	// filterAndRefreshList updates the list display based on the current search term.
 	filterAndRefreshList := func(searchTerm string) {
 		searchTerm = strings.ToLower(strings.TrimSpace(searchTerm))
-		filteredDisplayData = []tagListItem{} // Clear previous filter results
+		*filteredDisplayData = []tagListItem{} // Clear previous filter results
 
 		if searchTerm == "" {
-			// If search is empty, show all tags
-			filteredDisplayData = allTags
+			*filteredDisplayData = *allTags
 		} else {
-			// Filter allTags based on searchTerm
-			for _, tag := range allTags {
+			for _, tag := range *allTags {
 				if strings.Contains(strings.ToLower(tag.Name), searchTerm) {
-					filteredDisplayData = append(filteredDisplayData, tag)
+					*filteredDisplayData = append(*filteredDisplayData, tag)
 				}
 			}
 		}
 
-		if len(filteredDisplayData) == 0 {
+		if len(*filteredDisplayData) == 0 {
 			currentMsg := noTagsFoundMsg
-			if searchTerm != "" { // If search was active and found nothing
+			if searchTerm != "" {
 				currentMsg = noTagsMatchSearchMsg
-			} else if len(allTags) > 0 && searchTerm == "" { // Search empty, but allTags had items (should not happen if filteredDisplayData is empty)
-				// This case implies allTags itself was empty, so noTagsFoundMsg is correct.
 			}
 			messageLabel.SetText(currentMsg)
 			messageLabel.Show()
@@ -188,129 +217,101 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 		}
 	}
 
-	// Function to load/reload tag data from DB and apply current filter
-	loadAndFilterTagData := func() {
-		var err error
-		fetchedTagsWithCounts, err := a.Service.ListAllTags()
+	// loadAndFilterTagData reloads all tag data from the service.
+	loadAndFilterTagData = func() {
+		fetchedTags, err := a.Service.ListAllTags()
 		if err != nil {
 			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
-			allTags = []tagListItem{}
+			*allTags = []tagListItem{}
 			messageLabel.SetText(errorLoadingTagsMsg)
-			messageLabel.Show()
-			tagList.Hide()
-		} else if len(fetchedTagsWithCounts) == 0 { // Check length of fetched data
-			allTags = []tagListItem{}
-			// messageLabel will be set by filterAndRefreshList if allTags is empty
-			filterAndRefreshList(searchEntry.Text) // Show "No tags found"
 		} else {
-			// Convert []tagging.TagWithCount to []tagListItem for the UI
-			tempAllTags := make([]tagListItem, len(fetchedTagsWithCounts))
-			for i, tagInfo := range fetchedTagsWithCounts {
-				tempAllTags[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
+			*allTags = make([]tagListItem, len(fetchedTags))
+			for i, tagInfo := range fetchedTags {
+				(*allTags)[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
 			}
-			allTags = tempAllTags
-
-			// Apply the current search filter after loading
-			filterAndRefreshList(searchEntry.Text)
-			// Disable button and clear selection after refresh
-			if tagList != nil && tagList.Visible() {
-				tagList.UnselectAll() // This will trigger OnUnselected
-			}
-			return // filterAndRefreshList already refreshes the list
 		}
-
-		if tagList != nil { // Ensure button is disabled if list is not shown or empty
-			tagList.UnselectAll() // Ensure button is disabled
-		}
+		filterAndRefreshList(searchEntry.Text)
+		tagList.UnselectAll() // This will trigger OnUnselected and disable the button
 	}
 
-	searchEntry.OnChanged = func(searchTerm string) {
-		filterAndRefreshList(searchTerm)
-	}
+	searchEntry.OnChanged = filterAndRefreshList
+	refreshButton.OnTapped = loadAndFilterTagData
 
-	refreshButton := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
-		loadAndFilterTagData()
-	})
-	removeButton := widget.NewButtonWithIcon("Remove Tag Globally", theme.DeleteIcon(), func() {
-		if selectedTagForAction == "" {
-			return // Should not happen if button is enabled correctly, but safety check
+	removeButton.OnTapped = func() {
+		if *selectedTagForAction == "" {
+			return
 		}
-
-		confirmMessage := fmt.Sprintf("Are you sure you want to remove the tag '%s' from ALL images in the database?\nThis action cannot be undone.", selectedTagForAction)
-
+		confirmMessage := fmt.Sprintf("Are you sure you want to remove the tag '%s' from ALL images in the database?\nThis action cannot be undone.", *selectedTagForAction)
 		dialog.ShowConfirm("Confirm Global Tag Removal", confirmMessage, func(confirm bool) {
 			if !confirm {
 				return
 			}
-
-			a.addLogMessage(fmt.Sprintf("User confirmed global removal of tag: %s", selectedTagForAction))
-			err := a.removeTagGlobally(selectedTagForAction) // Call the new global removal function
-
+			a.addLogMessage(fmt.Sprintf("User confirmed global removal of tag: %s", *selectedTagForAction))
+			err := a.removeTagGlobally(*selectedTagForAction)
 			if err != nil {
-				// Error is already logged by removeTagGlobally (via addLogMessage) and shown in dialog
-				dialog.ShowError(fmt.Errorf("failed to globally remove tag '%s': %w", selectedTagForAction, err), a.UI.MainWin)
+				dialog.ShowError(fmt.Errorf("failed to globally remove tag '%s': %w", *selectedTagForAction, err), a.UI.MainWin)
 			} else {
-				// Success message is logged by removeTagGlobally (via addLogMessage)
-				dialog.ShowInformation("Success", fmt.Sprintf("Tag '%s' removed globally.", selectedTagForAction), a.UI.MainWin)
-				// Refresh the list after successful removal
-				loadAndFilterTagData()
-				// Deselect and disable button after action
-				tagList.UnselectAll()
+				dialog.ShowInformation("Success", fmt.Sprintf("Tag '%s' removed globally.", *selectedTagForAction), a.UI.MainWin)
+				loadAndFilterTagData() // Refresh list on success
 			}
 		}, a.UI.MainWin)
-	})
-	removeButton.Disable() // Start disabled
-	// Combine search and refresh into a top bar
-	topBar := container.NewBorder(nil, nil, nil, refreshButton, searchEntry)
-
-	tagList = widget.NewList(
-		func() int {
-			return len(filteredDisplayData) // List length is based on filteredDisplayData
-		},
-		func() fyne.CanvasObject {
-			return widget.NewLabel("tag template") // Use label, simpler
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			// Placeholders are handled by showing messageLabel, so item here is always a real tag.
-			item := filteredDisplayData[id]
-			label := obj.(*widget.Label)
-			label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
-		},
-	)
+	}
 
 	tagList.OnSelected = func(id widget.ListItemID) {
-		if id < 0 || id >= len(filteredDisplayData) { // Bounds check on filteredDisplayData
-			// log.Println("DEBUG: Tag selection out of bounds or filteredData empty.")
-			selectedTagForAction = ""
+		if id < 0 || id >= len(*filteredDisplayData) {
+			*selectedTagForAction = ""
 			removeButton.Disable()
 			return
 		}
-		// No need to check for placeholder (Count == -1) as list only contains real tags now.
-		selectedItem := filteredDisplayData[id]
-		selectedTagForAction = selectedItem.Name // Store only the name for actions
+		selectedItem := (*filteredDisplayData)[id]
+		*selectedTagForAction = selectedItem.Name
 		removeButton.Enable()
-		// log.Printf("Tag selected from list: %s (Count: %d)", selectedItem.Name, selectedItem.Count)
-		a.applyFilter(selectedItem.Name) // Apply filter using only the tag name
+		a.applyFilter(selectedItem.Name)
 		if a.UI.contentStack != nil {
 			a.selectStackView(imageViewIndex)
 		}
 	}
 
-	// --- Handle Unselection ---
 	tagList.OnUnselected = func(_ widget.ListItemID) {
-		selectedTagForAction = ""
+		*selectedTagForAction = ""
 		removeButton.Disable()
-		//a.clearFilter()
 	}
 
-	messageLabel = widget.NewLabel(noTagsFoundMsg) // Default message
-	messageLabel.Alignment = fyne.TextAlignCenter
-	messageLabel.Wrapping = fyne.TextWrapWord
+	return loadAndFilterTagData
+}
 
-	listContentArea = container.NewStack(messageLabel, tagList)
-	tagList.Hide() // Initially hide list, loadAndFilterTagData will show it if tags exist
+// buildTagsTab constructs the UI for the "Tags" management view.
+func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
+	// --- State Management ---
+	var allTags, filteredDisplayData []tagListItem
+	var selectedTagForAction string
 
+	// --- UI Widget Creation ---
+	searchEntry, refreshButton, removeButton, tagList, messageLabel := a._createTagListWidgets()
+
+	// --- Data Binding and Callbacks ---
+	tagList.Length = func() int {
+		return len(filteredDisplayData)
+	}
+	tagList.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
+		item := filteredDisplayData[id]
+		label := obj.(*widget.Label)
+		label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
+	}
+
+	// Setup all other callbacks and get the data loading function
+	loadAndFilterTagData := a._setupTagListCallbacks(
+		searchEntry, refreshButton, removeButton, tagList,
+		&allTags, &filteredDisplayData, &selectedTagForAction, messageLabel,
+	)
+
+	// --- Initial Data Load ---
 	loadAndFilterTagData()
+
+	// --- Assemble Layout ---
+	topBar := container.NewBorder(nil, nil, nil, refreshButton, searchEntry)
+	listContentArea := container.NewStack(messageLabel, tagList)
+	tagList.Hide() // Initially hide list, loadAndFilterTagData will show it if tags exist
 	content := container.NewBorder(topBar, removeButton, nil, nil, listContentArea)
 
 	return content, loadAndFilterTagData
@@ -405,6 +406,72 @@ func (t *tappableImage) SetMinSize(size fyne.Size) {
 // MaxVisibleThumbnails defines the maximum number of thumbnails to display in the strip.
 const MaxVisibleThumbnails = 11
 
+// ThumbnailsOnEachSide is the number of thumbnails to display on each side of the current one.
+const ThumbnailsOnEachSide = MaxVisibleThumbnails / 2
+
+// _getRandomThumbnailPaths assembles the list of image paths for the thumbnail strip in random mode.
+// It constructs a "sliding window" based on navigation history and the forward queue.
+// It returns nil if it should fall back to sequential logic.
+func _getRandomThumbnailPaths(a *App) []string {
+	if !a.random || a.thumbnailHistory.Len() == 0 || a.img.Path == "" {
+		return nil // Use sequential logic
+	}
+
+	// 1. Find current image in our history cache
+	var currentElement *list.Element
+	for e := a.thumbnailHistory.Back(); e != nil; e = e.Prev() {
+		if e.Value.(string) == a.img.Path {
+			currentElement = e
+			break
+		}
+	}
+
+	if currentElement == nil {
+		return nil // Not found, fallback to sequential
+	}
+
+	displayPaths := make([]string, 0, MaxVisibleThumbnails)
+
+	// 2. Add previous images by walking backwards from currentElement
+	e := currentElement
+	for i := 0; i < ThumbnailsOnEachSide; i++ {
+		e = e.Prev()
+		if e == nil {
+			break
+		}
+		displayPaths = append([]string{e.Value.(string)}, displayPaths...) // Prepend
+	}
+
+	// 3. Add current image
+	displayPaths = append(displayPaths, currentElement.Value.(string))
+
+	// 4. Add next images from history cache first
+	e = currentElement
+	for len(displayPaths) < MaxVisibleThumbnails {
+		e = e.Next()
+		if e == nil {
+			break
+		}
+		displayPaths = append(displayPaths, e.Value.(string))
+	}
+
+	// 5. Fill remaining slots from the navigationQueue
+	if len(displayPaths) < MaxVisibleThumbnails {
+		needed := MaxVisibleThumbnails - len(displayPaths)
+		upcomingIndices := a.navigationQueue.GetUpcoming(needed + 1) // +1 for current
+		if len(upcomingIndices) > 1 {
+			currentList := a.getCurrentList()
+			for _, idx := range upcomingIndices[1:] {
+				if idx >= 0 && idx < len(currentList) {
+					displayPaths = append(displayPaths, currentList[idx].Path)
+				}
+			}
+		}
+	}
+
+	return displayPaths
+}
+
 // refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
 // It calculates a window of thumbnails around the current image and displays them.
 // This function replaces updateThumbnailData and updateThumbnailSelection.
@@ -426,7 +493,7 @@ func (a *App) refreshThumbnailStrip() {
 	var indicesToDisplay []int
 
 	// Try to get random-mode specific paths first
-	randomPaths := a.getThumbnailWindowPaths()
+	randomPaths := _getRandomThumbnailPaths(a)
 
 	if randomPaths != nil {
 		// --- RANDOM MODE LOGIC ---
@@ -442,26 +509,16 @@ func (a *App) refreshThumbnailStrip() {
 		}
 	} else {
 		// --- SEQUENTIAL MODE LOGIC (or fallback for random mode) ---
-		centerPosInStrip := MaxVisibleThumbnails / 2
-		startIndex := a.index - centerPosInStrip
+		// Calculate the ideal start index, centered on the current image.
+		startIndex := a.index - ThumbnailsOnEachSide
+		// Adjust the window to ensure it doesn't extend past the end of the list.
+		startIndex = min(startIndex, count-MaxVisibleThumbnails)
+		// Adjust the window to ensure it doesn't start before the beginning of the list.
+		startIndex = max(startIndex, 0)
+		// Determine the final end index, ensuring it doesn't exceed the list count.
+		endIndex := min(startIndex+MaxVisibleThumbnails, count)
 
-		// Adjust window if it goes before the start of the list
-		if startIndex < 0 {
-			startIndex = 0
-		}
-
-		// Adjust window if it goes past the end of the list
-		endIndex := startIndex + MaxVisibleThumbnails - 1
-		if endIndex >= count {
-			endIndex = count - 1
-			// Shift the start back to maintain the window size, if possible
-			startIndex = endIndex - (MaxVisibleThumbnails - 1)
-			if startIndex < 0 {
-				startIndex = 0
-			}
-		}
-
-		for i := startIndex; i <= endIndex; i++ {
+		for i := startIndex; i < endIndex; i++ {
 			indicesToDisplay = append(indicesToDisplay, i)
 		}
 	}
