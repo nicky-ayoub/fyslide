@@ -375,6 +375,45 @@ func (a *App) loadAndDisplayCurrentImage() {
 	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
 }
 
+// ensurePathVisibleForHistory checks if a given image path is in the current active list.
+// If a filter is active and the path is not in the filtered list, the filter is cleared.
+// It returns the index of the path in the (potentially updated) active list,
+// and a boolean indicating if the filter was cleared.
+// If the path is not found in any list, it returns -1.
+func (a *App) ensurePathVisibleForHistory(path string) (int, bool) {
+	filterCleared := false
+
+	// First, check if the path is in the current active list (filtered or not)
+	currentList := a.getCurrentList()
+	for i, item := range currentList {
+		if item.Path == path {
+			return i, false // Found, no filter change needed
+		}
+	}
+
+	// If not found in current list, and a filter is active, try clearing the filter.
+	if a.isFiltered {
+		a.addLogMessage(fmt.Sprintf("Image %s from history not in current filter. Clearing filter state for navigation.", filepath.Base(path)))
+		// Directly modify filter state without calling a.clearFilter() to avoid its DisplayImage call
+		a.isFiltered = false
+		a.currentFilterTag = ""
+		a.filteredImages = nil
+		filterCleared = true
+
+		// Now check the full list (which getCurrentList will now return)
+		fullList := a.getCurrentList()
+		for i, item := range fullList {
+			if item.Path == path {
+				return i, filterCleared // Found in full list after clearing filter
+			}
+		}
+	}
+
+	// Path not found at all, or not found even after clearing filter.
+	// This could happen if the image file was deleted after being added to history.
+	return -1, filterCleared
+}
+
 // showFilterDialog displays a dialog to select a tag for filtering.
 func (a *App) showFilterDialog() {
 	//allTagsWithCounts, err := a.tagDB.GetAllTags() // This now returns []tagging.TagWithCount
@@ -618,44 +657,10 @@ func (a *App) ShowNextImageFromHistory() bool {
 
 	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
 
-	// Check if the historical image is in the current filtered list if filtering is active.
-	// Unlike 'back', for 'forward' it might be better to just skip if it's not in the filter,
-	// or clear the filter. Clearing the filter seems more consistent with the 'back' behavior.
-	mustClearFilter := false
-	if a.isFiltered {
-		foundInFilter := false
-		for _, item := range a.filteredImages {
-			if item.Path == imagePathFromHistory {
-				foundInFilter = true
-				break
-			}
-		}
-		if !foundInFilter {
-			mustClearFilter = true
-		}
-	}
+	foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
 
-	if mustClearFilter {
-		a.addLogMessage(fmt.Sprintf("Image %s from history not in current filter. Clearing filter state for forward navigation.", filepath.Base(imagePathFromHistory)))
-		// Directly modify filter state without calling a.clearFilter() to avoid its DisplayImage call
-		a.isFiltered = false
-		a.currentFilterTag = ""
-		a.filteredImages = nil
-		// The info text will be updated by the DisplayImage call later.
-	}
-
-	// Find the index of the historical image in the *current* active list (full or filtered)
-	activeList := a.getCurrentList()
-	foundIndexInActiveList := -1
-	for i, item := range activeList {
-		if item.Path == imagePathFromHistory {
-			foundIndexInActiveList = i
-			break
-		}
-	}
-
-	if foundIndexInActiveList == -1 {
-		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in current active list during forward navigation. Removing from history.", filepath.Base(imagePathFromHistory)))
+	if foundIndex == -1 {
+		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in any active list during forward navigation. Removing from history.", filepath.Base(imagePathFromHistory)))
 		// Image might have been deleted or is otherwise inaccessible.
 		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
 		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
@@ -663,7 +668,7 @@ func (a *App) ShowNextImageFromHistory() bool {
 		return false                  // Failed to show the historical image
 	}
 
-	a.index = foundIndexInActiveList
+	a.index = foundIndex
 	a.navigationQueue.ResetAndFill(a.index)
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
@@ -692,47 +697,17 @@ func (a *App) ShowPreviousImage() {
 	}
 	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
 
-	mustClearFilter := false
-	if a.isFiltered {
-		foundInFilter := false
-		for _, item := range a.filteredImages {
-			if item.Path == imagePathFromHistory {
-				foundInFilter = true
-				break
-			}
-		}
-		if !foundInFilter {
-			mustClearFilter = true
-		}
-	}
+	foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
 
-	if mustClearFilter {
-		a.addLogMessage(fmt.Sprintf("Image %s from history not in current filter. Clearing filter state.", filepath.Base(imagePathFromHistory)))
-		// Directly modify filter state without calling a.clearFilter() to avoid its DisplayImage call
-		a.isFiltered = false
-		a.currentFilterTag = ""
-		a.filteredImages = nil
-		// The info text will be updated by the DisplayImage call later.
-	}
-
-	activeList := a.getCurrentList() // Get the list that's now active (could be a.images if filter was cleared)
-	foundIndexInActiveList := -1
-	for i, item := range activeList {
-		if item.Path == imagePathFromHistory {
-			foundIndexInActiveList = i
-			break
-		}
-	}
-
-	if foundIndexInActiveList == -1 {
-		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in current active list. Removing from history.", filepath.Base(imagePathFromHistory)))
+	if foundIndex == -1 {
+		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in any active list. Removing from history.", filepath.Base(imagePathFromHistory)))
 		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
 		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
 		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
 		return
 	}
 
-	a.index = foundIndexInActiveList
+	a.index = foundIndex
 	a.navigationQueue.ResetAndFill(a.index)
 
 	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
