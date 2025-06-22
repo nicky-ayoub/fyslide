@@ -409,119 +409,111 @@ const MaxVisibleThumbnails = 11
 // ThumbnailsOnEachSide is the number of thumbnails to display on each side of the current one.
 const ThumbnailsOnEachSide = MaxVisibleThumbnails / 2
 
-// _getRandomThumbnailPaths assembles the list of image paths for the thumbnail strip in random mode.
-// It constructs a "sliding window" based on navigation history and the forward queue.
-// It returns nil if it should fall back to sequential logic.
-func _getRandomThumbnailPaths(a *App) []string {
-	if !a.random || a.thumbnailHistory.Len() == 0 || a.img.Path == "" {
-		return nil // Use sequential logic
+// _getThumbnailIndicesToDisplay determines the list of image indices to show in the thumbnail strip.
+// It handles both random and sequential modes, consolidating the logic for which thumbnails to show.
+func _getThumbnailIndicesToDisplay(a *App) []int {
+	currentList := a.getCurrentList()
+	count := len(currentList)
+	if count == 0 {
+		return []int{}
 	}
 
-	// 1. Find current image in our history cache
-	var currentElement *list.Element
-	for e := a.thumbnailHistory.Back(); e != nil; e = e.Prev() {
-		if e.Value.(string) == a.img.Path {
-			currentElement = e
-			break
-		}
-	}
-
-	if currentElement == nil {
-		return nil // Not found, fallback to sequential
-	}
-
-	displayPaths := make([]string, 0, MaxVisibleThumbnails)
-
-	// 2. Add previous images by walking backwards from currentElement
-	e := currentElement
-	for i := 0; i < ThumbnailsOnEachSide; i++ {
-		e = e.Prev()
-		if e == nil {
-			break
-		}
-		displayPaths = append([]string{e.Value.(string)}, displayPaths...) // Prepend
-	}
-
-	// 3. Add current image
-	displayPaths = append(displayPaths, currentElement.Value.(string))
-
-	// 4. Add next images from history cache first
-	e = currentElement
-	for len(displayPaths) < MaxVisibleThumbnails {
-		e = e.Next()
-		if e == nil {
-			break
-		}
-		displayPaths = append(displayPaths, e.Value.(string))
-	}
-
-	// 5. Fill remaining slots from the navigationQueue
-	if len(displayPaths) < MaxVisibleThumbnails {
-		needed := MaxVisibleThumbnails - len(displayPaths)
-		upcomingIndices := a.navigationQueue.GetUpcoming(needed + 1) // +1 for current
-		if len(upcomingIndices) > 1 {
-			currentList := a.getCurrentList()
-			for _, idx := range upcomingIndices[1:] {
-				if idx >= 0 && idx < len(currentList) {
-					displayPaths = append(displayPaths, currentList[idx].Path)
-				}
+	// --- RANDOM MODE ---
+	// In random mode, we build the list from history and the forward-queue.
+	// This logic is complex, so we try it first and fall back to sequential if it fails.
+	if a.random && a.thumbnailHistory.Len() > 0 && a.img.Path != "" {
+		var currentElement *list.Element
+		for e := a.thumbnailHistory.Back(); e != nil; e = e.Prev() {
+			if e.Value.(string) == a.img.Path {
+				currentElement = e
+				break
 			}
 		}
+
+		if currentElement != nil {
+			// Found the current image in history, now build the list of paths around it.
+			displayPaths := make([]string, 0, MaxVisibleThumbnails)
+
+			// Add previous images by walking backwards from currentElement
+			e := currentElement
+			for i := 0; i < ThumbnailsOnEachSide; i++ {
+				e = e.Prev()
+				if e == nil {
+					break
+				}
+				displayPaths = append([]string{e.Value.(string)}, displayPaths...) // Prepend
+			}
+
+			displayPaths = append(displayPaths, currentElement.Value.(string)) // Add current image
+
+			// Add next images from history cache first
+			e = currentElement
+			for len(displayPaths) < MaxVisibleThumbnails {
+				e = e.Next()
+				if e == nil {
+					break
+				}
+				displayPaths = append(displayPaths, e.Value.(string))
+			}
+
+			// Fill remaining slots from the navigationQueue
+			if len(displayPaths) < MaxVisibleThumbnails {
+				needed := MaxVisibleThumbnails - len(displayPaths)
+				upcomingIndices := a.navigationQueue.GetUpcoming(needed + 1) // +1 for current
+				if len(upcomingIndices) > 1 {
+					for _, idx := range upcomingIndices[1:] {
+						if idx >= 0 && idx < len(currentList) {
+							displayPaths = append(displayPaths, currentList[idx].Path)
+						}
+					}
+				}
+			}
+
+			// Convert the collected paths back to indices for the renderer.
+			pathToIdx := make(map[string]int, len(currentList))
+			for i, item := range currentList {
+				pathToIdx[item.Path] = i
+			}
+			indices := make([]int, 0, len(displayPaths))
+			for _, p := range displayPaths {
+				if idx, ok := pathToIdx[p]; ok {
+					indices = append(indices, idx)
+				}
+			}
+			return indices
+		}
 	}
 
-	return displayPaths
+	// --- SEQUENTIAL MODE (or fallback for random mode) ---
+	indicesToDisplay := make([]int, 0, MaxVisibleThumbnails)
+	startIndex := a.index - ThumbnailsOnEachSide
+	startIndex = min(startIndex, count-MaxVisibleThumbnails)
+	startIndex = max(startIndex, 0)
+	endIndex := min(startIndex+MaxVisibleThumbnails, count)
+
+	for i := startIndex; i < endIndex; i++ {
+		indicesToDisplay = append(indicesToDisplay, i)
+	}
+	return indicesToDisplay
 }
 
 // refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
 // It calculates a window of thumbnails around the current image and displays them.
 // This function replaces updateThumbnailData and updateThumbnailSelection.
 func (a *App) refreshThumbnailStrip() {
-	if a.UI.thumbnailStrip == nil || a.navigationQueue == nil {
+	if a.UI.thumbnailStrip == nil {
 		return
 	}
 
 	a.UI.thumbnailStrip.RemoveAll()
 
 	currentList := a.getCurrentList()
-	count := len(currentList)
-
-	if count == 0 {
+	if len(currentList) == 0 {
 		a.UI.thumbnailStrip.Refresh()
 		return
 	}
 
-	var indicesToDisplay []int
-
-	// Try to get random-mode specific paths first
-	randomPaths := _getRandomThumbnailPaths(a)
-
-	if randomPaths != nil {
-		// --- RANDOM MODE LOGIC ---
-		// Convert paths to indices for the rendering loop
-		pathToIdx := make(map[string]int, len(currentList))
-		for i, item := range currentList {
-			pathToIdx[item.Path] = i
-		}
-		for _, p := range randomPaths {
-			if idx, ok := pathToIdx[p]; ok {
-				indicesToDisplay = append(indicesToDisplay, idx)
-			}
-		}
-	} else {
-		// --- SEQUENTIAL MODE LOGIC (or fallback for random mode) ---
-		// Calculate the ideal start index, centered on the current image.
-		startIndex := a.index - ThumbnailsOnEachSide
-		// Adjust the window to ensure it doesn't extend past the end of the list.
-		startIndex = min(startIndex, count-MaxVisibleThumbnails)
-		// Adjust the window to ensure it doesn't start before the beginning of the list.
-		startIndex = max(startIndex, 0)
-		// Determine the final end index, ensuring it doesn't exceed the list count.
-		endIndex := min(startIndex+MaxVisibleThumbnails, count)
-
-		for i := startIndex; i < endIndex; i++ {
-			indicesToDisplay = append(indicesToDisplay, i)
-		}
-	}
+	indicesToDisplay := _getThumbnailIndicesToDisplay(a)
 
 	// Add a spacer before the thumbnails to push them to the center.
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
@@ -539,36 +531,14 @@ func (a *App) refreshThumbnailStrip() {
 		// Create a tappable thumbnail widget
 		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
 			if localIdx == a.index {
-				return
+				return // Do nothing if the current image's thumbnail is clicked
 			}
 			a.isNavigatingHistory = false // Clicking a thumb is not a history action
 
-			// Find the position of the current and clicked thumbnails in the displayed strip
-			var currentIndexInStrip, clickedIndexInStrip = -1, -1
-			for i, displayedIdx := range indicesToDisplay {
-				if displayedIdx == a.index {
-					currentIndexInStrip = i
-				}
-				if displayedIdx == localIdx {
-					clickedIndexInStrip = i
-				}
-			}
-
-			// If both are found, calculate the offset and navigate like using the buttons
-			if currentIndexInStrip != -1 && clickedIndexInStrip != -1 {
-				offset := clickedIndexInStrip - currentIndexInStrip
-				if offset != 0 {
-					a.navigate(offset)
-				}
-			} else {
-				// Fallback to old behavior (direct jump) if something goes wrong,
-				// e.g., the strip was refreshed between render and click.
-				newIndex := a.navigationQueue.RotateTo(localIdx)
-				if newIndex != -1 {
-					a.index = newIndex
-					a.loadAndDisplayCurrentImage()
-				}
-			}
+			// Directly jump to the selected index.
+			a.index = localIdx
+			a.navigationQueue.RotateTo(localIdx)
+			a.loadAndDisplayCurrentImage()
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
