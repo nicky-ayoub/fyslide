@@ -946,6 +946,7 @@ func (a *App) toggleRandom() {
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
+	a.refreshThumbnailStrip() // Re-evaluate and display thumbnails based on the new random state
 }
 
 // Command-line flags
