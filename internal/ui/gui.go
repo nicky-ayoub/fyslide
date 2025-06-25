@@ -534,6 +534,11 @@ func (a *App) refreshThumbnailStrip() {
 			if localIdx == a.index {
 				return // Do nothing if the current image's thumbnail is clicked
 			}
+			// If the user clicks a thumbnail, they are taking manual control, so pause the slideshow if it's running.
+			if !a.slideshowManager.IsPaused() {
+				a.togglePlay()
+			}
+
 			a.isNavigatingHistory = false // Clicking a thumb is not a history action
 
 			// Directly jump to the selected index.

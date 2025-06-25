@@ -462,7 +462,7 @@ func (a *App) showFilterDialog() {
 		if selectedOption == options[0] { // "(Show All / Clear Filter)"
 			a.clearFilter()
 		} else {
-			a.applyFilter(options)
+			a.applyFilter([]string{selectedOption})
 		}
 	}, a.UI.MainWin)
 }
