@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"fmt"
 	"image/color"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -506,6 +507,17 @@ func (a *App) refreshThumbnailStrip() {
 		return
 	}
 
+	indicesToDisplay := _getThumbnailIndicesToDisplay(a)
+
+	// Find the index of the current image within the displayed thumbnails.
+	currentStripIndex := -1
+	for i, idx := range indicesToDisplay {
+		if idx == a.index {
+			currentStripIndex = i
+			break
+		}
+	}
+
 	a.UI.thumbnailStrip.RemoveAll()
 
 	currentList := a.getCurrentList()
@@ -514,20 +526,18 @@ func (a *App) refreshThumbnailStrip() {
 		return
 	}
 
-	indicesToDisplay := _getThumbnailIndicesToDisplay(a)
-
 	// Add a spacer before the thumbnails to push them to the center.
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
-	for _, idx := range indicesToDisplay {
+	for i, idx := range indicesToDisplay {
 		// 'idx' is the actual index of the image in the current image list (a.getCurrentList()).
 		if idx < 0 || idx >= len(currentList) {
 			continue // Skip if index out of range
 		}
-		item := currentList[idx] // The actual image data
 
 		// Capture the loop variable for the closure.
 		localIdx := idx
+		stripIndex := i
 
 		// Create a tappable thumbnail widget
 		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
@@ -539,18 +549,71 @@ func (a *App) refreshThumbnailStrip() {
 				a.togglePlay()
 			}
 
-			a.isNavigatingHistory = false // Clicking a thumb is not a history action
+			// Check if the clicked thumbnail is "before" the current one in the strip.
+			if currentStripIndex != -1 && stripIndex < currentStripIndex {
+				// --- This is a history navigation action ---
 
-			// Directly jump to the selected index.
-			a.index = localIdx
-			a.navigationQueue.RotateTo(localIdx)
-			a.loadAndDisplayCurrentImage()
+				// Turn off random mode if active, as history navigation is sequential.
+				if a.random {
+					a.toggleRandom()
+				}
+
+				// Calculate how many steps to go back in history.
+				stepsBack := currentStripIndex - stripIndex
+				var imagePathFromHistory string
+				var ok bool
+
+				// Rewind the history manager by the required number of steps.
+				for i := 0; i < stepsBack; i++ {
+					path, success := a.historyManager.NavigateBack()
+					if !success {
+						a.addLogMessage("History mismatch during thumbnail navigation. Falling back to direct jump.")
+						// Fallback to direct jump if history is inconsistent.
+						a.isNavigatingHistory = false
+						a.index = localIdx
+						a.navigationQueue.RotateTo(localIdx)
+						a.loadAndDisplayCurrentImage()
+						return
+					}
+					// The last path returned is our target.
+					imagePathFromHistory = path
+					ok = success
+				}
+
+				if !ok {
+					return
+				} // Should not be reached if loop ran.
+
+				// Now display the image from history, similar to ShowPreviousImage.
+				a.isNavigatingHistory = true
+				foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
+				if foundIndex == -1 {
+					a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found. Removing from history.", filepath.Base(imagePathFromHistory)))
+					a.historyManager.RemovePath(imagePathFromHistory)
+					dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
+					a.isNavigatingHistory = false
+					return
+				}
+
+				a.index = foundIndex
+				a.navigationQueue.ResetAndFill(a.index)
+				a.loadAndDisplayCurrentImage()
+				a.isNavigatingHistory = false // Reset flag after operation.
+
+			} else {
+				// --- This is a direct jump (forward or non-history) ---
+				a.isNavigatingHistory = false // Clicking a thumb is not a history action
+				a.index = localIdx
+				a.navigationQueue.RotateTo(localIdx)
+				a.loadAndDisplayCurrentImage()
+			}
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
 		// The thumbWidget is a stack that will hold the tappable image and a border if selected.
 		thumbWidget := container.NewStack(tappableThumb)
 
+		item := currentList[idx]                                                                     // The actual image data
 		initialResource := a.thumbnailManager.GetThumbnail(item.Path, func(resource fyne.Resource) { // Pass thumbWidget to callback
 			// 'idx' and 'item' are also correctly captured here.
 			// Check if the image path for this thumbnail is still the same
