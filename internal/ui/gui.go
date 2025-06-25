@@ -267,7 +267,7 @@ func (a *App) _setupTagListCallbacks(
 		selectedItem := (*filteredDisplayData)[id]
 		*selectedTagForAction = selectedItem.Name
 		removeButton.Enable()
-		a.applyFilter(selectedItem.Name)
+		a.applyFilter([]string{selectedItem.Name}) // Wrap single tag in a slice
 		if a.UI.contentStack != nil {
 			a.selectStackView(imageViewIndex)
 		}

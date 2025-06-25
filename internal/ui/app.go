@@ -462,7 +462,7 @@ func (a *App) showFilterDialog() {
 		if selectedOption == options[0] { // "(Show All / Clear Filter)"
 			a.clearFilter()
 		} else {
-			a.applyFilter(selectedOption)
+			a.applyFilter(options)
 		}
 	}, a.UI.MainWin)
 }
@@ -506,54 +506,90 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 }
 
 // applyFilter filters the image list based on the selected tag.
-func (a *App) applyFilter(tag string) {
-	a.addLogMessage(fmt.Sprintf("Applying filter for tag: %s", tag))
-	//tagImagesPaths, err := a.tagDB.GetImages(tag)
-	tagImagesPaths, err := a.Service.ListImagesForTag(tag)
+func (a *App) applyFilter(tags []string) { // Changed signature to accept multiple tags
+	if len(tags) == 0 { // If no tags are provided, clear the filter
+		a.clearFilter()
+		return
+	}
+	a.addLogMessage(fmt.Sprintf("Applying filter for tags: %s", strings.Join(tags, ", ")))
+
+	// Start with a map of image paths that have the first tag
+	// map[imagePath]FileItem
+	currentFilteredPaths := make(map[string]scan.FileItem)
+
+	// Get images for the first tag
+	firstTagImages, err := a.Service.ListImagesForTag(tags[0])
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tag, err), a.UI.MainWin)
+		dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tags[0], err), a.UI.MainWin)
 		a.clearFilter() // Revert if error occurs
 		return
 	}
-
-	if len(tagImagesPaths) == 0 {
-		dialog.ShowInformation("Filter Results", fmt.Sprintf("No images found with the tag '%s'.", tag), a.UI.MainWin)
-		a.addLogMessage(fmt.Sprintf("No images found with tag '%s'.", tag))
-		// Decide whether to clear filter or keep showing nothing - clearing is probably better UX
+	if len(firstTagImages) == 0 {
+		a.addLogMessage(fmt.Sprintf("No images found with tag '%s'. Clearing filter.", tags[0]))
 		a.clearFilter()
 		return
 	}
 
-	// Build the filtered list
-	var newFilteredImages scan.FileItems
-	// Create a map for quick path lookup
-	pathMap := make(map[string]bool)
-	for _, path := range tagImagesPaths {
-		pathMap[path] = true
+	// Populate initial set with FileItems from a.images
+	// This requires iterating through a.images to get the full FileItem objects
+	// for the paths returned by the service.
+	for _, item := range a.images {
+		for _, path := range firstTagImages {
+			if item.Path == path {
+				currentFilteredPaths[item.Path] = item
+				break
+			}
+		}
 	}
 
-	// Iterate through the original full list to maintain FileItem structure
+	// Intersect with subsequent tags
+	for i := 1; i < len(tags); i++ {
+		tag := tags[i]
+		nextTagImages, err := a.Service.ListImagesForTag(tag)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tag, err), a.UI.MainWin)
+			a.clearFilter()
+			return
+		}
+
+		// Create a new map for the intersection
+		intersectedPaths := make(map[string]scan.FileItem)
+		for _, path := range nextTagImages {
+			if item, ok := currentFilteredPaths[path]; ok {
+				intersectedPaths[path] = item
+			}
+		}
+		currentFilteredPaths = intersectedPaths // Update for next iteration
+		if len(currentFilteredPaths) == 0 {
+			a.addLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter.", strings.Join(tags, ", ")))
+			a.clearFilter()
+			return
+		}
+	}
+
+	// Convert the map of FileItems back to a slice (scan.FileItems)
+	var newFilteredImages scan.FileItems
+	// To maintain original order as much as possible, iterate through a.images
+	// and pick only those present in currentFilteredPaths.
 	for _, item := range a.images {
-		if _, found := pathMap[item.Path]; found {
+		if _, ok := currentFilteredPaths[item.Path]; ok {
 			newFilteredImages = append(newFilteredImages, item)
 		}
 	}
 
 	if len(newFilteredImages) == 0 {
-		// This might happen if tagged images were deleted/moved from the original scan
-		dialog.ShowInformation("Filter Results", fmt.Sprintf("No currently loaded images match the tag '%s'.", tag), a.UI.MainWin)
-		a.addLogMessage(fmt.Sprintf("No loaded images match tag '%s'.", tag))
+		a.addLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter.", strings.Join(tags, ", ")))
 		a.clearFilter()
 		return
 	}
 
 	a.filteredImages = newFilteredImages
 	a.isFiltered = true
-	a.currentFilterTag = tag
-	a.index = 0 // Reset index to the start of the filtered list
+	a.currentFilterTag = strings.Join(tags, ", ") // Store all tags for display
+	a.index = 0                                   // Reset index to the start of the filtered list
 	a.thumbnailHistory.Init()
 	a.navigationQueue.ResetAndFill(a.index)
-	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tag '%s'.", len(a.filteredImages), tag))
+	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(a.filteredImages), a.currentFilterTag))
 
 	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
 	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
@@ -1058,13 +1094,13 @@ func CreateApplication() {
 
 	// Wait for initial scan
 	startTime := time.Now()
-	for ui.imageCount() < 1 {
+	for ui.imageCount() < 1000 {
 		if time.Since(startTime) > 10*time.Second { // Timeout
 			ui.addLogMessage("Timeout waiting for images to load. Please check the directory.")
 			// No images loaded, so the UI will reflect this.
 			break
 		}
-		time.Sleep(100 * time.Millisecond) // Slightly longer sleep
+		time.Sleep(time.Second) // Slightly longer sleep
 	}
 
 	// Check if images were actually loaded
