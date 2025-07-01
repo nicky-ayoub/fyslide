@@ -349,19 +349,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 
 			// Update Title, Status Bar, and Info Text
 			if a.random && !historyNav {
-				// When navigating forward in random mode, add to history.
-				// If we went back and then forward again, the path might already exist. Remove it first to move it to the back.
-				for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
-					if e.Value.(string) == path {
-						a.thumbnailHistory.Remove(e)
-						break
-					}
-				}
-				a.thumbnailHistory.PushBack(path)
-				// Trim history to keep it from growing indefinitely
-				if a.thumbnailHistory.Len() > MaxVisibleThumbnails*2 { // Keep a bit more than visible
-					a.thumbnailHistory.Remove(a.thumbnailHistory.Front())
-				}
+				a.addToThumbnailHistory(path)
 			}
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
@@ -375,6 +363,26 @@ func (a *App) loadAndDisplayCurrentImage() {
 			// a.updateShowFullSizeButtonVisibility() // This is now handled by the onZoomPanChange callback
 		})
 	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
+}
+
+// addToThumbnailHistory manages the visual history for the thumbnail strip in random mode.
+// It ensures a path is at the end of the list and trims the list to a max size.
+func (a *App) addToThumbnailHistory(path string) {
+	if !a.random || path == "" {
+		return
+	}
+	// If the path already exists, remove it first to move it to the back.
+	for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
+		if e.Value.(string) == path {
+			a.thumbnailHistory.Remove(e)
+			break
+		}
+	}
+	a.thumbnailHistory.PushBack(path)
+	// Trim history to keep it from growing indefinitely
+	if a.thumbnailHistory.Len() > MaxVisibleThumbnails*2 { // Keep a bit more than visible
+		a.thumbnailHistory.Remove(a.thumbnailHistory.Front())
+	}
 }
 
 // ensurePathVisibleForHistory checks if a given image path is in the current active list.
@@ -598,6 +606,20 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	//a.updateStatusBar()
 }
 
+// navigateToIndex sets the current image to a specific index, resets the navigation
+// queue, and loads the image. It's a central helper for direct jumps.
+func (a *App) navigateToIndex(newIndex int) {
+	count := a.getCurrentImageCount()
+	if count == 0 || newIndex < 0 || newIndex >= count {
+		return // Do nothing if the list is empty or the index is out of bounds.
+	}
+
+	a.isNavigatingHistory = false // This is a direct jump, not a history action.
+	a.index = newIndex
+	a.navigationQueue.ResetAndFill(a.index)
+	a.loadAndDisplayCurrentImage()
+}
+
 // clearFilter removes any active tag filter.
 func (a *App) clearFilter() {
 	if !a.isFiltered {
@@ -607,15 +629,9 @@ func (a *App) clearFilter() {
 	a.isFiltered = false
 	a.currentFilterTag = ""
 	a.filteredImages = nil // Clear the filtered list
-	a.index = 0            // Reset index to the start of the full list
 	a.thumbnailHistory.Init()
-	a.navigationQueue.ResetAndFill(a.index)
-
-	a.isNavigatingHistory = false  // Clearing a filter is a new view state
-	a.loadAndDisplayCurrentImage() // Display the first image in the full set
-	a.refreshThumbnailStrip()      // Update the thumbnail strip
-	//a.updateInfoText()             // Update info panel immediately
-	//a.updateStatusBar()
+	a.navigateToIndex(0)
+	a.refreshThumbnailStrip() // Update the thumbnail strip
 }
 
 func (a *App) firstImage() {
@@ -629,14 +645,70 @@ func (a *App) firstImage() {
 }
 
 func (a *App) lastImage() {
-	a.isNavigatingHistory = false
-	count := a.getCurrentImageCount() // Use helper
-	if count == 0 {
+	a.navigateToIndex(a.getCurrentImageCount() - 1)
+}
+
+// navigateToForwardThumbnail handles clicking a forward thumbnail.
+// In random mode, it simulates "Next" clicks to preserve history.
+// In sequential mode, it performs a direct jump.
+func (a *App) navigateToForwardThumbnail(targetIndex int) {
+	// In sequential mode, or if the queue logic fails, just do a direct jump.
+	if !a.random {
+		a.isNavigatingHistory = false
+		a.index = targetIndex
+		a.navigationQueue.RotateTo(targetIndex)
+		a.loadAndDisplayCurrentImage()
 		return
-	} // Add check
-	a.index = count - 1
-	a.navigationQueue.ResetAndFill(a.index)
+	}
+
+	// In random mode, simulate "Next" clicks.
+	position := a.navigationQueue.PositionOf(targetIndex)
+	if position <= 0 { // Not found or is the current image
+		a.isNavigatingHistory = false
+		a.index = targetIndex
+		a.navigationQueue.RotateTo(targetIndex)
+		a.loadAndDisplayCurrentImage()
+		return
+	}
+
+	a.addLogMessage(fmt.Sprintf("Jumping forward %d steps in random mode.", position))
+
+	// Simulate 'position' number of "Next" clicks.
+	currentList := a.getCurrentList()
+	for i := 0; i < position; i++ {
+		skippedIndex := a.navigationQueue.PopAndAdvance()
+		if skippedIndex != -1 && skippedIndex < len(currentList) {
+			skippedPath := currentList[skippedIndex].Path
+			a.historyManager.RecordNavigation(skippedPath)
+			a.addToThumbnailHistory(skippedPath)
+		}
+	}
+	a.index = targetIndex
+	a.isNavigatingHistory = false // This is a new navigation path
 	a.loadAndDisplayCurrentImage()
+}
+
+// navigateToHistoryPath is a helper to handle the common logic of displaying an image from a history path.
+func (a *App) navigateToHistoryPath(path string) {
+	a.isNavigatingHistory = true // Signal that this is a history action
+
+	foundIndex, _ := a.ensurePathVisibleForHistory(path)
+	if foundIndex == -1 {
+		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found. Removing from history.", filepath.Base(path)))
+		a.historyManager.RemovePath(path)
+		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
+		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
+		return
+	}
+
+	a.index = foundIndex
+	a.navigationQueue.ResetAndFill(a.index)
+
+	// loadAndDisplayCurrentImage will respect a.isNavigatingHistory and not re-record to history.
+	// Error handling is now internal to loadAndDisplayCurrentImage.
+	a.loadAndDisplayCurrentImage()
+
+	a.isNavigatingHistory = false // Reset flag after the operation is complete
 }
 
 // navigate moves the current image by a given offset.
@@ -700,27 +772,8 @@ func (a *App) ShowNextImageFromHistory() bool {
 	if !ok {
 		return false
 	}
-
-	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
-
-	foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
-
-	if foundIndex == -1 {
-		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in any active list during forward navigation. Removing from history.", filepath.Base(imagePathFromHistory)))
-		// Image might have been deleted or is otherwise inaccessible.
-		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
-		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
-		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
-		return false                  // Failed to show the historical image
-	}
-
-	a.index = foundIndex
-	a.navigationQueue.ResetAndFill(a.index)
-
-	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
-	// Error handling is now internal to loadAndDisplayCurrentImage
-	a.isNavigatingHistory = false // Reset flag after the operation is complete
-	return true                   // Successfully displayed historical image
+	a.navigateToHistoryPath(imagePathFromHistory)
+	return true // Assume success, navigateToHistoryPath handles errors
 }
 
 // ShowPreviousImage handles the "back" button logic using history.
@@ -729,6 +782,7 @@ func (a *App) ShowPreviousImage() {
 	// --- Turn off random mode if active ---
 	if a.random {
 		a.toggleRandom() // This function handles icon update and state change
+		a.addLogMessage("Exited random mode for history navigation.")
 	}
 
 	// --- Pause slideshow if it's playing (user is navigating back) ---
@@ -741,24 +795,7 @@ func (a *App) ShowPreviousImage() {
 		a.addLogMessage("No previous image in history.")
 		return
 	}
-	a.isNavigatingHistory = true // Signal DisplayImage not to add to history stack for this action
-
-	foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
-
-	if foundIndex == -1 {
-		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found in any active list. Removing from history.", filepath.Base(imagePathFromHistory)))
-		a.historyManager.RemovePath(imagePathFromHistory) // Remove problematic path
-		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
-		a.isNavigatingHistory = false // Reset flag as this specific navigation failed
-		return
-	}
-
-	a.index = foundIndex
-	a.navigationQueue.ResetAndFill(a.index)
-
-	a.loadAndDisplayCurrentImage() // loadAndDisplayCurrentImage will respect a.isNavigatingHistory
-	// Error handling is now internal to loadAndDisplayCurrentImage
-	a.isNavigatingHistory = false // Reset flag after the operation is complete
+	a.navigateToHistoryPath(imagePathFromHistory)
 }
 
 // Delete file

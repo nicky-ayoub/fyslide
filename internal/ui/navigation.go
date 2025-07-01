@@ -85,6 +85,21 @@ func (nq *NavigationQueue) GetUpcoming(count int) []int {
 	return result
 }
 
+// PositionOf returns the position (0-based) of a targetIndex within the queue.
+// It returns -1 if the targetIndex is not found in the queue.
+func (nq *NavigationQueue) PositionOf(targetIndex int) int {
+	nq.mu.Lock()
+	defer nq.mu.Unlock()
+
+	for i, qi := range nq.queue {
+		if qi == targetIndex {
+			return i
+		}
+	}
+
+	return -1
+}
+
 // RotateTo makes the item at the given index in the queue the new "current" item (index 0).
 // It rotates the queue so that the target image is at the front. If the target image is not
 // found in the current queue (e.g., a "history" thumbnail in random mode), it resets the queue.

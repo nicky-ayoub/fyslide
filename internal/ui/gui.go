@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"fmt"
 	"image/color"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -361,50 +360,6 @@ FySlide is an image viewer with tagging capabilities.
 	dialog.ShowCustom("FySlide Help", "Close", widget.NewRichTextFromMarkdown(helpText), a.UI.MainWin)
 }
 
-// --- Tappable Image Custom Widget ---
-
-// tappableImage is a custom widget that displays an image and handles tap events.
-type tappableImage struct {
-	widget.BaseWidget
-	image    *canvas.Image
-	onTapped func()
-}
-
-// newTappableImage creates a new tappableImage widget.
-func newTappableImage(res fyne.Resource, onTapped func()) *tappableImage {
-	ti := &tappableImage{
-		image:    canvas.NewImageFromResource(res),
-		onTapped: onTapped,
-	}
-	ti.image.FillMode = canvas.ImageFillContain
-	ti.ExtendBaseWidget(ti) // Important: call this to register the widget
-	return ti
-}
-
-// CreateRenderer is a mandatory method for a Fyne widget.
-func (t *tappableImage) CreateRenderer() fyne.WidgetRenderer {
-	// We just need to render the image, so it has no background of its own.
-	return widget.NewSimpleRenderer(t.image)
-}
-
-// Tapped is called when the widget is tapped.
-func (t *tappableImage) Tapped(_ *fyne.PointEvent) {
-	if t.onTapped != nil {
-		t.onTapped()
-	}
-}
-
-// SetResource updates the image resource and refreshes.
-func (t *tappableImage) SetResource(res fyne.Resource) {
-	t.image.Resource = res
-	canvas.Refresh(t.image)
-}
-
-// SetMinSize sets the minimum size of the tappable image.
-func (t *tappableImage) SetMinSize(size fyne.Size) {
-	t.image.SetMinSize(size)
-}
-
 // MaxVisibleThumbnails defines the maximum number of thumbnails to display in the strip.
 const MaxVisibleThumbnails = 11
 
@@ -580,32 +535,12 @@ func (a *App) refreshThumbnailStrip() {
 					ok = success
 				}
 
-				if !ok {
-					return
-				} // Should not be reached if loop ran.
-
-				// Now display the image from history, similar to ShowPreviousImage.
-				a.isNavigatingHistory = true
-				foundIndex, _ := a.ensurePathVisibleForHistory(imagePathFromHistory)
-				if foundIndex == -1 {
-					a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found. Removing from history.", filepath.Base(imagePathFromHistory)))
-					a.historyManager.RemovePath(imagePathFromHistory)
-					dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
-					a.isNavigatingHistory = false
-					return
+				if ok {
+					a.navigateToHistoryPath(imagePathFromHistory)
 				}
-
-				a.index = foundIndex
-				a.navigationQueue.ResetAndFill(a.index)
-				a.loadAndDisplayCurrentImage()
-				a.isNavigatingHistory = false // Reset flag after operation.
-
 			} else {
 				// --- This is a direct jump (forward or non-history) ---
-				a.isNavigatingHistory = false // Clicking a thumb is not a history action
-				a.index = localIdx
-				a.navigationQueue.RotateTo(localIdx)
-				a.loadAndDisplayCurrentImage()
+				a.navigateToForwardThumbnail(localIdx)
 			}
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
