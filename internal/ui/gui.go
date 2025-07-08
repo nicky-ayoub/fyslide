@@ -393,7 +393,7 @@ func _getThumbnailIndicesToDisplay(a *App) []int {
 
 			// Add previous images by walking backwards from currentElement
 			e := currentElement
-			for i := 0; i < ThumbnailsOnEachSide; i++ {
+			for range ThumbnailsOnEachSide {
 				e = e.Prev()
 				if e == nil {
 					break
@@ -519,7 +519,7 @@ func (a *App) refreshThumbnailStrip() {
 				var ok bool
 
 				// Rewind the history manager by the required number of steps.
-				for i := 0; i < stepsBack; i++ {
+				for range stepsBack {
 					path, success := a.historyManager.NavigateBack()
 					if !success {
 						a.addLogMessage("History mismatch during thumbnail navigation. Falling back to direct jump.")
