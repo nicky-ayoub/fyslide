@@ -86,8 +86,6 @@ func (hm *HistoryManager) RemovePath(pathToRemove string) {
 	}
 
 	newStack := make([]string, 0, len(hm.stack))
-	newCurrentIndex := hm.currentIndex
-
 	itemsRemovedBeforeCurrent := 0
 	currentWasRemoved := false
 
@@ -103,27 +101,28 @@ func (hm *HistoryManager) RemovePath(pathToRemove string) {
 		}
 	}
 
-	if len(newStack) == len(hm.stack) { // No items were removed
+	if len(newStack) == len(hm.stack) {
 		return
 	}
 
 	hm.stack = newStack
-	// Adjust currentIndex
-	if currentWasRemoved {
-		// If the current item was removed, try to point to the item before it,
-		// or the new end if it was the last, or the beginning if it was the first.
-		newCurrentIndex = hm.currentIndex - itemsRemovedBeforeCurrent - 1
-	} else {
-		newCurrentIndex = hm.currentIndex - itemsRemovedBeforeCurrent
-	}
 
 	if len(hm.stack) == 0 {
 		hm.currentIndex = -1
-	} else if newCurrentIndex >= len(hm.stack) {
+		return
+	}
+
+	newIndex := hm.currentIndex - itemsRemovedBeforeCurrent
+	if currentWasRemoved {
+		newIndex--
+	}
+
+	// Clamp the new index to the valid range [0, len(hm.stack)-1]
+	if newIndex < 0 {
+		hm.currentIndex = 0
+	} else if newIndex >= len(hm.stack) {
 		hm.currentIndex = len(hm.stack) - 1
-	} else if newCurrentIndex < 0 && len(hm.stack) > 0 { // If it became negative, but stack is not empty
-		hm.currentIndex = 0 // Point to the first valid item
 	} else {
-		hm.currentIndex = newCurrentIndex
+		hm.currentIndex = newIndex
 	}
 }
