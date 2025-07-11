@@ -80,20 +80,27 @@ func (hm *HistoryManager) NavigateForward() (path string, ok bool) {
 
 // RemovePath removes all occurrences of a given path from the history stack
 // and adjusts the currentIndex accordingly.
+// The goal is to maintain a logical history position. For example, if the
+// currently viewed image is removed, the history should point to the previously
+// viewed image.
 func (hm *HistoryManager) RemovePath(pathToRemove string) {
 	if hm.capacity == 0 || len(hm.stack) == 0 {
 		return
 	}
 
+	originalLen := len(hm.stack)
+	originalCurrentIndex := hm.currentIndex
+
+	// Build the new stack by filtering out the path to remove, while also
+	// gathering information needed to calculate the new current index.
 	newStack := make([]string, 0, len(hm.stack))
 	itemsRemovedBeforeCurrent := 0
 	currentWasRemoved := false
-
 	for i, p := range hm.stack {
 		if p == pathToRemove {
-			if i < hm.currentIndex {
+			if i < originalCurrentIndex {
 				itemsRemovedBeforeCurrent++
-			} else if i == hm.currentIndex {
+			} else if i == originalCurrentIndex {
 				currentWasRemoved = true
 			}
 		} else {
@@ -101,28 +108,43 @@ func (hm *HistoryManager) RemovePath(pathToRemove string) {
 		}
 	}
 
-	if len(newStack) == len(hm.stack) {
+	// If no items were removed, there's nothing more to do.
+	if len(newStack) == originalLen {
 		return
 	}
 
 	hm.stack = newStack
 
-	if len(hm.stack) == 0 {
+	if len(hm.stack) == 0 { // If the stack is now empty, reset and exit.
 		hm.currentIndex = -1
 		return
 	}
 
-	newIndex := hm.currentIndex - itemsRemovedBeforeCurrent
+	// Calculate the new index. Start with the original and subtract items removed before it.
+	newIndex := originalCurrentIndex - itemsRemovedBeforeCurrent
 	if currentWasRemoved {
+		// If the current item was removed, step back one more to view the previous item.
 		newIndex--
 	}
 
-	// Clamp the new index to the valid range [0, len(hm.stack)-1]
+	// Clamp the new index to the valid range [0, len(hm.stack)-1].
+	lastIndex := len(hm.stack) - 1
 	if newIndex < 0 {
-		hm.currentIndex = 0
-	} else if newIndex >= len(hm.stack) {
-		hm.currentIndex = len(hm.stack) - 1
-	} else {
-		hm.currentIndex = newIndex
+		newIndex = 0
 	}
+	if newIndex > lastIndex {
+		newIndex = lastIndex
+	}
+	hm.currentIndex = newIndex
+}
+
+// Clear resets the history stack and current index.
+// It's used when the context of the history (e.g., switching from random to sequential mode)
+// becomes invalid.
+func (hm *HistoryManager) Clear() {
+	if hm.capacity == 0 {
+		return
+	}
+	hm.stack = make([]string, 0, hm.capacity)
+	hm.currentIndex = -1
 }

@@ -507,11 +507,7 @@ func (a *App) refreshThumbnailStrip() {
 			// Check if the clicked thumbnail is "before" the current one in the strip.
 			if currentStripIndex != -1 && stripIndex < currentStripIndex {
 				// --- This is a history navigation action ---
-
-				// Turn off random mode if active, as history navigation is sequential.
-				if a.random {
-					a.toggleRandom()
-				}
+				a.exitRandomModeForHistory()
 
 				// Calculate how many steps to go back in history.
 				stepsBack := currentStripIndex - stripIndex

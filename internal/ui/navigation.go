@@ -223,3 +223,63 @@ func (nq *NavigationQueue) resetAndFill(startingIndex int) {
 		}
 	}
 }
+
+// GetThumbnailWindow returns a slice of indices for the thumbnail bar, centered on the current image.
+// If there are not enough images before or after, it fills as much as possible.
+// In random mode, it uses the queue; in sequential mode, it uses the image list.
+func (nq *NavigationQueue) GetThumbnailWindow(windowSize int) []int {
+	nq.mu.Lock()
+	defer nq.mu.Unlock()
+
+	count := nq.app.getCurrentImageCount()
+	if count == 0 || windowSize < 1 {
+		return []int{}
+	}
+
+	half := windowSize / 2
+	var indices []int
+
+	if nq.modeIsRandom {
+		// Center on queue[0] (current image in queue)
+		center := 0
+		start := center - half
+		end := center + half
+
+		// Clamp to queue bounds
+		if start < 0 {
+			end += -start
+			start = 0
+		}
+		if end >= len(nq.queue) {
+			start -= (end - len(nq.queue) + 1)
+			end = len(nq.queue) - 1
+			if start < 0 {
+				start = 0
+			}
+		}
+		indices = make([]int, end-start+1)
+		copy(indices, nq.queue[start:end+1])
+	} else {
+		// Sequential mode: center on current index in image list
+		currentIdx := nq.queue[0]
+		start := currentIdx - half
+		end := currentIdx + half
+
+		if start < 0 {
+			end += -start
+			start = 0
+		}
+		if end >= count {
+			start -= (end - count + 1)
+			end = count - 1
+			if start < 0 {
+				start = 0
+			}
+		}
+		indices = make([]int, end-start+1)
+		for i := range indices {
+			indices[i] = start + i
+		}
+	}
+	return indices
+}
