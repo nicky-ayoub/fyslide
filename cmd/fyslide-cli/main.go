@@ -248,6 +248,7 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 				cmd.Printf("[DRY RUN] No files or tags were deleted. Use --force to actually delete.\n")
 				return nil
 			}
+
 			cmd.Printf("WARNING: This operation is IRREVERSIBLE. There is NO recovery from deletion.\n")
 			cmd.Printf("Type 'delete' to confirm and proceed: ")
 			var response string
@@ -256,6 +257,7 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 				cmd.Println("Aborted.")
 				return nil
 			}
+
 			// Actual deletion (no confirmation needed if --force is set)
 			for _, img := range images {
 				err := os.Remove(img)
