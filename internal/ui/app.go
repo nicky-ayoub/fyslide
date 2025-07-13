@@ -617,6 +617,27 @@ func (a *App) navigateToIndex(newIndex int) {
 	a.loadAndDisplayCurrentImage()
 }
 
+// navigateToImageIndex handles a direct jump to a specific image index,
+// for example, from a thumbnail click. It preserves the navigation queue
+// in random mode where possible by rotating it.
+func (a *App) navigateToImageIndex(targetIndex int) {
+	count := a.getCurrentImageCount()
+	if count == 0 || targetIndex < 0 || targetIndex >= count {
+		return // Invalid index
+	}
+
+	// Clicking a thumbnail is a new navigation action, not part of history traversal.
+	a.isNavigatingHistory = false
+	a.index = targetIndex
+
+	// Rotate the queue to make the target index the current one.
+	// This preserves the upcoming random sequence if the target is already in the queue.
+	// If not, it resets the queue starting from the target.
+	a.navigationQueue.RotateTo(targetIndex)
+
+	a.loadAndDisplayCurrentImage()
+}
+
 // _clearFilterState resets the application's filter state variables without triggering
 // a navigation. This is a helper for operations like history navigation that need
 // to make an image visible without changing the current view.
@@ -655,50 +676,10 @@ func (a *App) lastImage() {
 	a.navigateToIndex(a.getCurrentImageCount() - 1)
 }
 
-// navigateToForwardThumbnail handles clicking a forward thumbnail.
-// In random mode, it simulates "Next" clicks to preserve history.
-// In sequential mode, it performs a direct jump.
-func (a *App) navigateToForwardThumbnail(targetIndex int) {
-	// In sequential mode, or if the queue logic fails, just do a direct jump.
-	if !a.random {
-		a.isNavigatingHistory = false
-		a.index = targetIndex
-		a.navigationQueue.RotateTo(targetIndex)
-		a.loadAndDisplayCurrentImage()
-		return
-	}
-
-	// In random mode, simulate "Next" clicks.
-	position := a.navigationQueue.PositionOf(targetIndex)
-	if position <= 0 { // Not found or is the current image
-		a.isNavigatingHistory = false
-		a.index = targetIndex
-		a.navigationQueue.RotateTo(targetIndex)
-		a.loadAndDisplayCurrentImage()
-		return
-	}
-
-	a.addLogMessage(fmt.Sprintf("Jumping forward %d steps in random mode.", position))
-
-	// Simulate 'position' number of "Next" clicks.
-	currentList := a.getCurrentList()
-	for i := 0; i < position; i++ {
-		skippedIndex := a.navigationQueue.PopAndAdvance()
-		if skippedIndex != -1 && skippedIndex < len(currentList) {
-			skippedPath := currentList[skippedIndex].Path
-			a.historyManager.RecordNavigation(skippedPath)
-			a.addToThumbnailHistory(skippedPath)
-		}
-	}
-	a.index = targetIndex
-	a.isNavigatingHistory = false // This is a new navigation path
-	a.loadAndDisplayCurrentImage()
-}
-
 // navigateToHistoryPath is a helper to handle the common logic of displaying an image from a history path.
 func (a *App) navigateToHistoryPath(path string) {
 	a.isNavigatingHistory = true
-	foundIndex, _ := a.ensurePathVisibleForHistory(path)
+	foundIndex, filterCleared := a.ensurePathVisibleForHistory(path)
 	if foundIndex == -1 {
 		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found. Removing from history.", filepath.Base(path)))
 		a.historyManager.RemovePath(path)
@@ -707,7 +688,15 @@ func (a *App) navigateToHistoryPath(path string) {
 		return
 	}
 	a.index = foundIndex
-	a.navigationQueue.ResetAndFill(a.index)
+
+	// If we are in random mode and the filter was NOT just cleared (which would
+	// invalidate the old queue), we prepend to preserve the upcoming random sequence.
+	// Otherwise, we reset the queue to match the new state.
+	if a.random && !filterCleared {
+		a.navigationQueue.Prepend(foundIndex)
+	} else {
+		a.navigationQueue.ResetAndFill(a.index)
+	}
 	a.addToThumbnailHistory(path) // <-- Ensure thumbnail history is updated
 	a.loadAndDisplayCurrentImage()
 	a.isNavigatingHistory = false
@@ -786,28 +775,27 @@ func (a *App) ShowNextImageFromHistory() bool {
 	return true // Assume success, navigateToHistoryPath handles errors
 }
 
-// ShowPreviousImage handles the "back" button logic using history.
+// ShowPreviousImage handles the "back" button logic.
+// In random mode, it uses the viewing history.
+// In sequential mode, it navigates to the previous image in the list.
 func (a *App) ShowPreviousImage() {
-
-	// // --- Turn off random mode if active ---
-	// if a.random {
-	// 	a.toggleRandom() // This function handles icon update and state change
-	// 	a.addLogMessage("Exited random mode for history navigation.")
-	// }
-
 	// --- Pause slideshow if it's playing (user is navigating back) ---
 	if !a.slideshowManager.IsPaused() {
 		a.togglePlay() // This effectively pauses it via user action
 	}
 
-	//a.exitRandomModeForHistory()
-
-	imagePathFromHistory, ok := a.historyManager.NavigateBack()
-	if !ok {
-		a.addLogMessage("No previous image in history.")
-		return
+	if a.random {
+		// In random mode, "Previous" means going back in the chronological viewing history.
+		imagePathFromHistory, ok := a.historyManager.NavigateBack()
+		if !ok {
+			a.addLogMessage("No previous image in history.")
+			return
+		}
+		a.navigateToHistoryPath(imagePathFromHistory)
+	} else {
+		// In sequential mode, "Previous" simply means going to the prior image in the list.
+		a._navigateBackward(-1)
 	}
-	a.navigateToHistoryPath(imagePathFromHistory)
 }
 
 // Delete file
@@ -1111,8 +1099,8 @@ func CreateApplication() {
 	ui := &App{app: a}
 
 	// Set initial theme
-	ui.isDarkTheme = false // Default to light theme
-	a.Settings().SetTheme(NewSmallTabsTheme(theme.LightTheme()))
+	ui.isDarkTheme = true // Default to dark theme
+	a.Settings().SetTheme(NewSmallTabsTheme(theme.DarkTheme()))
 	// Ensure initial random icon matches initial theme
 	if ui.UI.randomAction != nil { // This might be nil if called too early, but buildToolbar will set it.
 		ui.UI.randomAction.SetIcon(ui.getDiceIcon())
