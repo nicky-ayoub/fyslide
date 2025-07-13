@@ -325,3 +325,17 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 	}
 	return added, nil
 }
+
+// RemoveImage deletes all tags for the image and removes its entry from the tag database.
+// If the file still exists on disk, it does NOT delete the file itself.
+func (s *Service) RemoveImage(imagePath string) error {
+	if imagePath == "" {
+		return errors.New("image path required")
+	}
+	// Remove all tags for this image
+	if err := s.TagDB.RemoveAllTagsForImage(imagePath); err != nil {
+		return fmt.Errorf("failed to remove tags for image %s: %w", imagePath, err)
+	}
+	// Optionally, you could also remove orphaned tag keys here if needed.
+	return nil
+}

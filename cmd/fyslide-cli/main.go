@@ -215,6 +215,66 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 	}
 	rootCmd.AddCommand(addToTaggedCmd)
 
+	// Delete files by tag
+	deleteCmd := &cobra.Command{
+		Use:   "delete [tag]",
+		Short: "Delete all files and their tag database entries that match the given tag.",
+		Long: `Delete all files from the file system that match the given tag, and remove their tag database entries.
+WARNING: This operation is irreversible. There is NO recovery from deletion. Use --dryrun to preview what will be deleted.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			tag := args[0]
+			images, err := svc.ListImagesForTag(tag)
+			if err != nil {
+				return fmt.Errorf("failed to list images for tag '%s': %w", tag, err)
+			}
+			if len(images) == 0 {
+				cmd.Printf("No images found for tag '%s'.\n", tag)
+				return nil
+			}
+
+			// Always show the summary before any destructive action
+			cmd.Printf("The following files will be deleted for tag '%s':\n", tag)
+			for _, img := range images {
+				cmd.Printf("  %s\n", img)
+				tags, err := svc.ListTagsForImage(img)
+				if err == nil && len(tags) > 0 {
+					cmd.Printf("    Tags: %s\n", strings.Join(tags, ", "))
+				}
+			}
+
+			// Default to dry run unless --force is specified
+			if !forceFlag {
+				cmd.Printf("[DRY RUN] No files or tags were deleted. Use --force to actually delete.\n")
+				return nil
+			}
+			cmd.Printf("WARNING: This operation is IRREVERSIBLE. There is NO recovery from deletion.\n")
+			cmd.Printf("Type 'delete' to confirm and proceed: ")
+			var response string
+			fmt.Scanln(&response)
+			if strings.ToLower(strings.TrimSpace(response)) != "delete" {
+				cmd.Println("Aborted.")
+				return nil
+			}
+			// Actual deletion (no confirmation needed if --force is set)
+			for _, img := range images {
+				err := os.Remove(img)
+				if err != nil {
+					cmd.Printf("Failed to delete %s: %v\n", img, err)
+				} else {
+					cmd.Printf("Deleted %s\n", img)
+					if err := svc.RemoveImage(img); err != nil {
+						cmd.Printf("Failed to remove %s from tag database: %v\n", img, err)
+					}
+				}
+			}
+			return nil
+		},
+	}
+	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Bypass confirmation prompt and delete files immediately")
+	deleteCmd.Flags().BoolVar(&dryRunFlag, "dryrun", false, "Show what would be deleted but do not delete anything")
+	rootCmd.AddCommand(deleteCmd)
+
 	// Define persistent flags on the rootCmd returned by NewRootCmd
 	// This ensures flags are available when NewRootCmd is called from main or tests.
 	rootCmd.PersistentFlags().StringVar(&dbPathFlag, "dbpath", "", "Path to tag database")
