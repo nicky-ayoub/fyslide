@@ -566,7 +566,7 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 		}
 		currentFilteredPaths = intersectedPaths // Update for next iteration
 		if len(currentFilteredPaths) == 0 {
-			a.addLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter.", strings.Join(tags, ", ")))
+			a.addLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter. : %s", strings.Join(tags, ", ")))
 			a.clearFilter()
 			return
 		}
@@ -583,7 +583,7 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	}
 
 	if len(newFilteredImages) == 0 {
-		a.addLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter.", strings.Join(tags, ", ")))
+		a.addLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
 		a.clearFilter()
 		return
 	}
