@@ -369,9 +369,23 @@ const ThumbnailsOnEachSide = MaxVisibleThumbnails / 2
 // It handles both random and sequential modes, consolidating the logic for which thumbnails to show.
 func _getThumbnailIndicesToDisplay(a *App) []int {
 	if a.random {
-		// In random mode, the thumbnails should reflect the upcoming random sequence
-		// from the navigation queue. The first item is the current image.
-		return a.navigationQueue.GetUpcoming(MaxVisibleThumbnails)
+		// In random mode, get the upcoming thumbnails from the navigation queue.
+		upcoming := a.navigationQueue.GetUpcoming(MaxVisibleThumbnails)
+		if len(upcoming) == 0 {
+			return []int{}
+		}
+
+		// Calculate the offset to center the current image (first element in upcoming).
+		// To move the element at index 0 to the center position (index 5 in a list of 11),
+		// we need to left-rotate the list by `len(list) - center_pos` elements.
+		// For a list of 11, the center is 5, so we rotate by 11-5 = 6 elements.
+		centerPos := len(upcoming) / 2
+		offset := len(upcoming) - centerPos
+		if len(upcoming) >= MaxVisibleThumbnails {
+			offset = len(upcoming) - ThumbnailsOnEachSide
+		}
+		// Rotate the upcoming slice to effectively center the current image.
+		return append(upcoming[offset:], upcoming[:offset]...)
 	}
 
 	currentList := a.getCurrentList()
