@@ -81,12 +81,3 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 
 	return theme.FileImageIcon()
 }
-
-// SetThumbnailWindow sets the navigation queue to match the given indices.
-// Used to synchronize the queue with the visible thumbnail window.
-func (nq *NavigationQueue) SetThumbnailWindow(indices []int) {
-	nq.mu.Lock()
-	defer nq.mu.Unlock()
-	nq.queue = make([]int, len(indices))
-	copy(nq.queue, indices)
-}

@@ -15,7 +15,7 @@ const (
 // NavigationQueue manages the upcoming sequence of images, supporting both random and sequential modes.
 type NavigationQueue struct {
 	app          *App
-	queue        []int // Stores the indices of upcoming images. queue[0] is the current image.
+	queue        []int
 	modeIsRandom bool
 	mu           sync.Mutex
 }
@@ -246,4 +246,13 @@ func (nq *NavigationQueue) resetAndFill(startingIndex int) {
 			nq.queue = append(nq.queue, current)
 		}
 	}
+}
+
+// SetThumbnailWindow sets the navigation queue to match the given indices.
+// Used to synchronize the queue with the visible thumbnail window.
+func (nq *NavigationQueue) SetThumbnailWindow(indices []int) {
+	nq.mu.Lock()
+	defer nq.mu.Unlock()
+	nq.queue = make([]int, len(indices))
+	copy(nq.queue, indices)
 }
