@@ -61,7 +61,6 @@ type App struct {
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
 	thumbnailHistory *list.List                  // Cache for random mode thumbnail paths
-	navigationQueue  *NavigationQueue
 
 	random bool
 
@@ -591,9 +590,7 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	a.filteredImages = newFilteredImages
 	a.isFiltered = true
 	a.currentFilterTag = strings.Join(tags, ", ") // Store all tags for display
-	a.index = 0                                   // Reset index to the start of the filtered list
-	a.thumbnailHistory.Init()
-	a.navigationQueue.ResetAndFill(a.index)
+	a.index = 0
 	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(a.filteredImages), a.currentFilterTag))
 
 	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
@@ -613,7 +610,6 @@ func (a *App) navigateToIndex(newIndex int) {
 
 	a.isNavigatingHistory = false // This is a direct jump, not a history action.
 	a.index = newIndex
-	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -629,11 +625,6 @@ func (a *App) navigateToImageIndex(targetIndex int) {
 	// Clicking a thumbnail is a new navigation action, not part of history traversal.
 	a.isNavigatingHistory = false
 	a.index = targetIndex
-
-	// Rotate the queue to make the target index the current one.
-	// This preserves the upcoming random sequence if the target is already in the queue.
-	// If not, it resets the queue starting from the target.
-	a.navigationQueue.RotateTo(targetIndex)
 
 	a.loadAndDisplayCurrentImage()
 }
@@ -668,7 +659,6 @@ func (a *App) firstImage() {
 		return
 	} // Add check
 	a.index = 0
-	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -688,14 +678,8 @@ func (a *App) navigateToHistoryPath(path string) {
 		return
 	}
 	a.index = foundIndex
-
-	// If we are in random mode and the filter was NOT just cleared (which would
-	// invalidate the old queue), we prepend to preserve the upcoming random sequence.
-	// Otherwise, we reset the queue to match the new state.
-	if a.random && !filterCleared {
-		a.navigationQueue.Prepend(foundIndex)
-	} else {
-		a.navigationQueue.ResetAndFill(a.index)
+	if filterCleared {
+		a._clearFilterState() // Clear filter state if it was necessary to make the path visible
 	}
 	a.addToThumbnailHistory(path) // <-- Ensure thumbnail history is updated
 	a.loadAndDisplayCurrentImage()
@@ -705,15 +689,7 @@ func (a *App) navigateToHistoryPath(path string) {
 // _navigateForward handles forward image navigation using the navigation queue.
 func (a *App) _navigateForward(offset int) {
 	a.isNavigatingHistory = false
-	newIndex := a.index
-	for i := 0; i < offset; i++ {
-		popped := a.navigationQueue.PopAndAdvance()
-		if popped == -1 {
-			break // Queue is exhausted
-		}
-		newIndex = popped
-	}
-	a.index = newIndex
+	a.index += offset
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -722,11 +698,10 @@ func (a *App) _navigateForward(offset int) {
 func (a *App) _navigateBackward(offset int) {
 	a.isNavigatingHistory = false
 	// Backward navigation should NOT exit random mode.
-	a.index += offset
+	a.index -= offset
 	if a.index < 0 {
 		a.index = 0
 	}
-	a.navigationQueue.ResetAndFill(a.index)
 	a.loadAndDisplayCurrentImage()
 }
 
@@ -878,10 +853,6 @@ func (a *App) deleteFile() {
 			a.index = 0
 		}
 	}
-	// After the image lists are updated and the new index is calculated,
-	// reset the navigation queue to reflect the new state. This ensures
-	// the thumbnail strip will be correct.
-	a.navigationQueue.ResetAndFill(a.index)
 	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
 	a.refreshThumbnailStrip() // Update the thumbnail strip
@@ -907,7 +878,6 @@ func (a *App) exitRandomModeForHistory() {
 		return
 	}
 	a.random = false
-	a.navigationQueue.SetMode(false) // Switch queue to sequential
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
 	}
@@ -1020,7 +990,6 @@ func (a *App) getDiceIcon() fyne.Resource {
 
 func (a *App) toggleRandom() {
 	a.random = !a.random // Toggle state first
-	a.navigationQueue.SetMode(a.random)
 	// Update the icon based on the new random state and current theme
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
@@ -1144,8 +1113,6 @@ func CreateApplication() {
 	ui.init(*historySizeFlag, *slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
 	ui.random = true
 	ui.thumbnailHistory = list.New()
-	ui.navigationQueue = NewNavigationQueue(ui)
-	ui.navigationQueue.SetMode(ui.random) // Synchronize the queue's mode with the app's state at startup
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
@@ -1178,7 +1145,6 @@ func CreateApplication() {
 				ui.thumbnailHistory.PushBack(ui.images[ui.index].Path)
 			}
 		}
-		ui.navigationQueue.ResetAndFill(ui.index) // Initialize the queue from the chosen start index
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do

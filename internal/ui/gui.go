@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"math/rand"
 	"runtime"
 	"strings"
 
@@ -369,35 +370,35 @@ const ThumbnailsOnEachSide = MaxVisibleThumbnails / 2
 // It handles both random and sequential modes, consolidating the logic for which thumbnails to show.
 func _getThumbnailIndicesToDisplay(a *App) []int {
 	if a.random {
-		// In random mode, get the upcoming thumbnails from the navigation queue.
-		upcoming := a.navigationQueue.GetUpcoming(MaxVisibleThumbnails)
-		if len(upcoming) == 0 {
-			return []int{}
-		}
-
-		// Calculate the offset to center the current image (first element in upcoming).
-		// To move the element at index 0 to the center position (index 5 in a list of 11),
-		// we need to left-rotate the list by `len(list) - center_pos` elements.
-		// For a list of 11, the center is 5, so we rotate by 11-5 = 6 elements.
-		centerPos := len(upcoming) / 2
-		offset := len(upcoming) - centerPos
-		if len(upcoming) >= MaxVisibleThumbnails {
-			offset = len(upcoming) - ThumbnailsOnEachSide
-		}
-		// Rotate the upcoming slice to effectively center the current image.
-		return append(upcoming[offset:], upcoming[:offset]...)
+		return _getRandomThumbnailIndicesToDisplay(a)
 	}
+	return _getSequentialThumbnailIndicesToDisplay(a)
+}
 
+func _getRandomThumbnailIndicesToDisplay(a *App) []int {
 	currentList := a.getCurrentList()
 	count := len(currentList)
+	numThumbs := min(MaxVisibleThumbnails, count) // Adjust numThumbs
+	indices := make([]int, numThumbs)
 	if count == 0 {
-		return []int{}
+		return []int{} // Handle empty list
 	}
 
-	indicesToDisplay := make([]int, 0, MaxVisibleThumbnails)
-	center := a.index
-	start := center - ThumbnailsOnEachSide
-	end := center + ThumbnailsOnEachSide
+	indices[0] = a.index // Start with the current index at the center
+	for i := 1; i < numThumbs; i++ {
+		nextIndex := rand.Intn(count) // Simplified random index selection
+		indices[i] = nextIndex
+	}
+	return indices
+}
+
+func _getSequentialThumbnailIndicesToDisplay(a *App) []int {
+	currentList := a.getCurrentList()
+	count := len(currentList)
+	center := a.index // current index
+	numThumbs := min(MaxVisibleThumbnails, count)
+	start := max(0, center-numThumbs/2)
+	end := min(count-1, center+numThumbs/2)
 
 	// Clamp to bounds
 	if start < 0 {
@@ -411,7 +412,7 @@ func _getThumbnailIndicesToDisplay(a *App) []int {
 			start = 0
 		}
 	}
-
+	indicesToDisplay := make([]int, 0, end-start+1)
 	for i := start; i <= end; i++ {
 		indicesToDisplay = append(indicesToDisplay, i)
 	}
