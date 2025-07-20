@@ -55,8 +55,6 @@ type App struct {
 	img                        Img
 	zoomPanArea                *ZoomPanArea
 
-	isNavigatingHistory bool // True if DisplayImage is called from a history action
-
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
 
 	random bool
@@ -78,6 +76,7 @@ type App struct {
 	Service          *service.Service
 	thumbnailManager *ThumbnailManager
 	ImageService     *service.ImageService
+	viewManager      *service.ViewManager // NEW: Service for view management
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -148,7 +147,7 @@ func (a *App) getCurrentItem() *scan.FileItem {
 // getItemByViewIndex retrieves a FileItem from the active view (sequential or random)
 // using a specific view index. This is the core data retrieval logic.
 func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
-	// 1. Determine the active data source based on the filter state.
+	// 1. Determine the active data sources based on the filter state.
 	activeList := &a.images
 	activeManager := a.permutationManager
 
@@ -157,17 +156,16 @@ func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
 		activeList = &a.filteredImages
 	}
 
-	// 2. Check for an empty or uninitialized list.
+	// 2. Check for an empty or uninitialized data source.
 	if activeList == nil || len(*activeList) == 0 {
 		return nil, fmt.Errorf("active list is empty or not initialized")
 	}
 
-	// 3. Retrieve the item based on the mode (random or sequential).
+	// 3. Retrieve the item based on the current mode (random or sequential).
 	if a.random {
 		if activeManager == nil {
 			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
 		}
-
 		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
 		if err != nil {
 			return nil, fmt.Errorf("error getting data for shuffled index %d: %w", viewIndex, err)
@@ -175,11 +173,56 @@ func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
 		return &item, nil
 	}
 
-	// Default to sequential mode.
+	// Default to sequential mode retrieval.
 	if viewIndex < 0 || viewIndex >= len(*activeList) {
 		return nil, fmt.Errorf("sequential index %d out of bounds", viewIndex)
 	}
 	return &(*activeList)[viewIndex], nil
+}
+
+// ViewportItem is a helper struct for the thumbnail strip, bundling an image
+// with its index in the current view (shuffled or sequential).
+type ViewportItem struct {
+	Item      scan.FileItem
+	ViewIndex int
+}
+
+// getViewportItems returns a slice of ViewportItems representing the current viewport
+// for the thumbnail strip, along with the index of the central item within that slice.
+func (a *App) getViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) {
+	count := a.getCurrentImageCount()
+	if count == 0 {
+		return []ViewportItem{}, -1
+	}
+
+	halfWindow := windowSize / 2
+	start := centerIndex - halfWindow
+	end := centerIndex + halfWindow
+
+	// Adjust viewport if it goes out of bounds.
+	if start < 0 {
+		end -= start // equivalent to end += abs(start)
+		start = 0
+	}
+	if end >= count {
+		start -= (end - (count - 1))
+		end = count - 1
+	}
+	// Final check in case the list is smaller than the window.
+	if start < 0 {
+		start = 0
+	}
+
+	items := make([]ViewportItem, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		item, err := a.getItemByViewIndex(i)
+		if err == nil && item != nil {
+			items = append(items, ViewportItem{Item: *item, ViewIndex: i})
+		}
+	}
+
+	newCenterIndex := centerIndex - start
+	return items, newCenterIndex
 }
 
 // updateStatusBar updates the text of the status bar.
@@ -561,7 +604,6 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	a.index = 0
 	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(a.filteredImages), a.currentFilterTag))
 
-	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
 	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
 	a.refreshThumbnailStrip()      // Update the thumbnail strip
 
@@ -575,7 +617,6 @@ func (a *App) navigateToIndex(newIndex int) {
 		return // Do nothing if the list is empty or the index is out of bounds.
 	}
 
-	a.isNavigatingHistory = false // This is a direct jump, not a history action.
 	a.index = newIndex
 	a.loadAndDisplayCurrentImage()
 }
@@ -589,8 +630,6 @@ func (a *App) navigateToImageIndex(targetIndex int) {
 		return // Invalid index
 	}
 
-	// Clicking a thumbnail is a new navigation action, not part of history traversal.
-	a.isNavigatingHistory = false
 	a.index = targetIndex
 
 	a.loadAndDisplayCurrentImage()
@@ -621,7 +660,6 @@ func (a *App) clearFilter() {
 }
 
 func (a *App) firstImage() {
-	a.isNavigatingHistory = false
 	if a.getCurrentImageCount() == 0 {
 		return
 	} // Add check
@@ -641,9 +679,6 @@ func (a *App) navigate(offset int) {
 	if count == 0 {
 		return
 	}
-
-	// This is a direct navigation, not a history action.
-	a.isNavigatingHistory = false
 
 	newIndex := a.index + offset
 
@@ -830,7 +865,6 @@ func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 
 	a.skipCount = skipNum
 	a.slideshowManager = slideshow.NewSlideshowManager(time.Duration(slideshowIntervalSec*1000)*time.Millisecond, slideshowLogger) //nolint:durationcheck
-	a.isNavigatingHistory = false
 	a.maxLogMessages = DefaultMaxLogMessages
 
 	// SlideshowManager's constructor handles default interval if slideshowIntervalSec is invalid
@@ -1059,13 +1093,12 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
-		// Initialize the main index manager for random mode.
+		// Initialize the permutation manager (for random mode)
 		ui.permutationManager = scan.NewPermutationManager(&ui.images)
 		// Start at the beginning of the current view (sequential or random).
 		ui.index = 0
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
-		ui.isNavigatingHistory = false // Initial display is not from history
-		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do
+		go ui.pauser(ticker) // pauser will call loadAndDisplayCurrentImage via fyne.Do
 		go ui.updateTimer()
 		ui.loadAndDisplayCurrentImage()
 	} else {
@@ -1073,8 +1106,19 @@ func CreateApplication() {
 		ui.updateStatusBar() // Will show "No images available" or similar.
 		ui.updateInfoText(nil)
 	}
+	ui.setImages(ui.images) // Set the initial image list
 
 	ui.UI.MainWin.ShowAndRun()
+}
+
+// setImages updates the main image list and initializes the permutation manager through ViewManager.
+func (a *App) setImages(images scan.FileItems) {
+	if a.viewManager == nil {
+		a.viewManager = service.NewViewManager(images, a.isFiltered, a.currentFilterTag)
+	} else {
+		a.viewManager.SetImages(images)
+	}
+
 }
 
 func (a *App) updateTimer() {
@@ -1097,7 +1141,6 @@ func (a *App) pauser(ticker *time.Ticker) {
 		}
 		if !a.slideshowManager.IsPaused() {
 			fyne.Do(func() {
-				a.isNavigatingHistory = false // Standard navigation is not history navigation
 				a.navigate(1)
 			})
 		}

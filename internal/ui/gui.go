@@ -373,47 +373,24 @@ func (a *App) refreshThumbnailStrip() {
 	}
 	a.UI.thumbnailStrip.RemoveAll()
 
-	count := a.getCurrentImageCount()
-	if count == 0 {
+	const windowSize = 11 // Should be an odd number for a perfect center
+	viewportItems, centerThumbIndex := a.getViewportItems(a.index, windowSize)
+
+	if len(viewportItems) == 0 {
 		a.UI.thumbnailStrip.Refresh()
 		return
 	}
 
-	// 1. Calculate the viewport of indices to display around the current index.
-	const windowSize = 11 // Should be an odd number for a perfect center
-	halfWindow := windowSize / 2
-	start := a.index - halfWindow
-	end := a.index + halfWindow
-
-	// Adjust viewport if it goes out of bounds.
-	if start < 0 {
-		end -= start // equivalent to end += abs(start)
-		start = 0
-	}
-	if end >= count {
-		start -= (end - (count - 1))
-		end = count - 1
-	}
-	// Final check in case the list is smaller than the window.
-	if start < 0 {
-		start = 0
-	}
-
-	// 2. Populate the thumbnail strip.
 	// Add a spacer before the thumbnails to push them to the center.
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
-	for i := start; i <= end; i++ {
-		// Capture the loop variable for the closure.
-		localIdx := i
-		item, err := a.getItemByViewIndex(localIdx)
-		if err != nil {
-			continue // Skip if index is invalid.
-		}
+	for i, viewportItem := range viewportItems {
+		item := viewportItem.Item
+		viewIndex := viewportItem.ViewIndex
 
 		// Create a tappable thumbnail widget.
 		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
-			if localIdx == a.index {
+			if viewIndex == a.index {
 				return // Do nothing if the current image's thumbnail is clicked
 			}
 			// Pause slideshow on manual interaction.
@@ -421,7 +398,7 @@ func (a *App) refreshThumbnailStrip() {
 				a.togglePlay()
 			}
 			// A thumbnail click is always a direct navigation action.
-			a.navigateToImageIndex(localIdx)
+			a.navigateToImageIndex(viewIndex)
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
@@ -438,7 +415,7 @@ func (a *App) refreshThumbnailStrip() {
 		thumbWidget.Refresh()
 
 		// Add a border for the selected image
-		if localIdx == a.index {
+		if i == centerThumbIndex {
 			border := canvas.NewRectangle(color.Transparent)
 			// border.StrokeColor = theme.PrimaryColor()
 			border.StrokeColor = theme.Color(theme.ColorNamePrimary) // Use theme-aware color
