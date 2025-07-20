@@ -136,39 +136,50 @@ func formatNumberWithCommas(n int64) string {
 
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
 func (a *App) getCurrentItem() *scan.FileItem {
-	var activeManager *scan.PermutationManager
-	var activeList *scan.FileItems
+	item, err := a.getItemByViewIndex(a.index)
+	if err != nil {
+		// This is a common case (e.g., empty list), so logging might be too noisy.
+		// The caller should handle the nil case gracefully.
+		return nil
+	}
+	return item
+}
+
+// getItemByViewIndex retrieves a FileItem from the active view (sequential or random)
+// using a specific view index. This is the core data retrieval logic.
+func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
+	// 1. Determine the active data source based on the filter state.
+	activeList := &a.images
+	activeManager := a.permutationManager
 
 	if a.isFiltered {
 		activeManager = a.filteredPermutationManager
 		activeList = &a.filteredImages
-	} else {
-		activeManager = a.permutationManager
-		activeList = &a.images
 	}
 
+	// 2. Check for an empty or uninitialized list.
 	if activeList == nil || len(*activeList) == 0 {
-		return nil
+		return nil, fmt.Errorf("active list is empty or not initialized")
 	}
 
+	// 3. Retrieve the item based on the mode (random or sequential).
 	if a.random {
 		if activeManager == nil {
-			a.addLogMessage("Error: Random mode is on but PermutationManager is not initialized.")
-			return nil
+			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
 		}
-		item, err := activeManager.GetDataByShuffledIndex(a.index)
+
+		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
 		if err != nil {
-			a.addLogMessage(fmt.Sprintf("Error getting data for shuffled index %d: %v", a.index, err))
-			return nil
+			return nil, fmt.Errorf("error getting data for shuffled index %d: %w", viewIndex, err)
 		}
-		return &item
+		return &item, nil
 	}
 
-	// Sequential mode
-	if a.index < 0 || a.index >= len(*activeList) {
-		return nil
+	// Default to sequential mode.
+	if viewIndex < 0 || viewIndex >= len(*activeList) {
+		return nil, fmt.Errorf("sequential index %d out of bounds", viewIndex)
 	}
-	return &(*activeList)[a.index]
+	return &(*activeList)[viewIndex], nil
 }
 
 // updateStatusBar updates the text of the status bar.
@@ -866,18 +877,64 @@ func (a *App) getDiceIcon() fyne.Resource {
 }
 
 func (a *App) toggleRandom() {
-	a.random = !a.random // Toggle state first
-	// Update the icon based on the new random state and current theme
+	// 1. Get the currently displayed item before changing mode.
+	currentItem := a.getCurrentItem()
+
+	// 2. Toggle the mode state.
+	a.random = !a.random
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
 	}
-	// Reset index to avoid out-of-bounds when switching views
-	a.index = 0
 
+	// 3. If there's no current item, just reset the index and exit.
+	if currentItem == nil {
+		a.index = 0
+	} else {
+		// 4. Preserve the current image by finding its index in the new view.
+		currentPath := currentItem.Path
+		newIndex := -1
+		activeList := a.getCurrentList() // This now reflects the list for the new mode.
+
+		// Find the item's sequential index in the active list.
+		sequentialIndexInList := -1
+		for i, item := range activeList {
+			if item.Path == currentPath {
+				sequentialIndexInList = i
+				break
+			}
+		}
+
+		if sequentialIndexInList == -1 {
+			// Fallback: if item not found (should be rare), reset to 0.
+			a.addLogMessage(fmt.Sprintf("Could not find item %s in new view. Resetting.", filepath.Base(currentPath)))
+			a.index = 0
+		} else {
+			if a.random { // Switched TO random mode
+				var activeManager *scan.PermutationManager
+				if a.isFiltered {
+					activeManager = a.filteredPermutationManager
+				} else {
+					activeManager = a.permutationManager
+				}
+
+				if activeManager != nil {
+					shuffledIndex, err := activeManager.GetShuffledIndex(sequentialIndexInList)
+					if err == nil {
+						newIndex = shuffledIndex
+					}
+				}
+			} else { // Switched TO sequential mode
+				newIndex = sequentialIndexInList
+			}
+			a.index = newIndex
+		}
+	}
+
+	// 5. Refresh UI with the updated state.
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
-	a.loadAndDisplayCurrentImage() // Reload to show the image at the new index 0
+	a.loadAndDisplayCurrentImage() // Reload to show the image at the new (or preserved) index.
 	a.refreshThumbnailStrip()      // Re-evaluate and display thumbnails based on the new random state
 }
 

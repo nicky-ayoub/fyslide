@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"fyslide/internal/scan"
 	"image/color"
 	"runtime"
 	"strings"
@@ -400,41 +399,14 @@ func (a *App) refreshThumbnailStrip() {
 		start = 0
 	}
 
-	// 2. Create a helper function to get any item from the current view.
-	// This avoids duplicating the logic from getCurrentItem and allows fetching by any view index.
-	getItemByViewIndex := func(viewIndex int) (*scan.FileItem, error) {
-		var activeManager *scan.PermutationManager
-		var activeList *scan.FileItems
-		if a.isFiltered {
-			activeManager = a.filteredPermutationManager
-			activeList = &a.filteredImages
-		} else {
-			activeManager = a.permutationManager
-			activeList = &a.images
-		}
-
-		if a.random {
-			if activeManager == nil {
-				return nil, fmt.Errorf("PermutationManager not initialized for random mode")
-			}
-			item, err := activeManager.GetDataByShuffledIndex(viewIndex)
-			return &item, err
-		}
-		// Sequential mode
-		if viewIndex < 0 || viewIndex >= len(*activeList) {
-			return nil, fmt.Errorf("sequential index out of bounds: %d", viewIndex)
-		}
-		return &(*activeList)[viewIndex], nil
-	}
-
-	// 3. Populate the thumbnail strip.
+	// 2. Populate the thumbnail strip.
 	// Add a spacer before the thumbnails to push them to the center.
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
 	for i := start; i <= end; i++ {
 		// Capture the loop variable for the closure.
 		localIdx := i
-		item, err := getItemByViewIndex(localIdx)
+		item, err := a.getItemByViewIndex(localIdx)
 		if err != nil {
 			continue // Skip if index is invalid.
 		}
