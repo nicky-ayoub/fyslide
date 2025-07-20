@@ -2,17 +2,14 @@
 package ui
 
 import (
-	"container/list"
 	"flag"
 	"fmt"
-	"fyslide/internal/history"
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
 	"fyslide/internal/slideshow"
 	"fyslide/internal/tagging"
 	"image"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,17 +47,17 @@ type App struct {
 
 	//fileTree binding.URITree
 
-	images         scan.FileItems // The original, full list of images
-	filteredImages scan.FileItems // The list when a filter is active
-	index          int
-	img            Img
-	zoomPanArea    *ZoomPanArea
+	images                     scan.FileItems           // The original, full list of images
+	permutationManager         *scan.PermutationManager // Manages the original images
+	filteredImages             scan.FileItems           // The list when a filter is active
+	filteredPermutationManager *scan.PermutationManager
+	index                      int
+	img                        Img
+	zoomPanArea                *ZoomPanArea
 
-	historyManager      *history.HistoryManager // Manages navigation history
-	isNavigatingHistory bool                    // True if DisplayImage is called from a history action
+	isNavigatingHistory bool // True if DisplayImage is called from a history action
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
-	thumbnailHistory *list.List                  // Cache for random mode thumbnail paths
 
 	random bool
 
@@ -139,12 +136,39 @@ func formatNumberWithCommas(n int64) string {
 
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
 func (a *App) getCurrentItem() *scan.FileItem {
-	currentList := a.getCurrentList()
-	count := len(currentList)
-	if a.index < 0 || a.index >= count {
+	var activeManager *scan.PermutationManager
+	var activeList *scan.FileItems
+
+	if a.isFiltered {
+		activeManager = a.filteredPermutationManager
+		activeList = &a.filteredImages
+	} else {
+		activeManager = a.permutationManager
+		activeList = &a.images
+	}
+
+	if activeList == nil || len(*activeList) == 0 {
 		return nil
 	}
-	return &currentList[a.index]
+
+	if a.random {
+		if activeManager == nil {
+			a.addLogMessage("Error: Random mode is on but PermutationManager is not initialized.")
+			return nil
+		}
+		item, err := activeManager.GetDataByShuffledIndex(a.index)
+		if err != nil {
+			a.addLogMessage(fmt.Sprintf("Error getting data for shuffled index %d: %v", a.index, err))
+			return nil
+		}
+		return &item
+	}
+
+	// Sequential mode
+	if a.index < 0 || a.index >= len(*activeList) {
+		return nil
+	}
+	return &(*activeList)[a.index]
 }
 
 // updateStatusBar updates the text of the status bar.
@@ -156,9 +180,6 @@ func (a *App) updateStatusBar() {
 	statusText := "Ready"
 
 	if currentItem != nil {
-		// If currentItem is not nil, a.index is valid and currentItem.Path can be used.
-		// Using currentItem.Path is safer than calling GetImageFullPath() here,
-		// as GetImageFullPath() might panic if a.index is somehow out of sync.
 		statusText = fmt.Sprintf("%s  |  Image %d / %d", currentItem.Path, a.index+1, a.getCurrentImageCount())
 		if a.isFiltered {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
@@ -279,8 +300,11 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 	}
 }
 func (a *App) GetImageFullPath() string {
-	currentList := a.getCurrentList() // Use helper
-	imagePath := currentList[a.index].Path
+	item := a.getCurrentItem()
+	if item == nil {
+		return ""
+	}
+	imagePath := item.Path
 	return imagePath
 }
 
@@ -324,10 +348,8 @@ func (a *App) loadAndDisplayCurrentImage() {
 		imagePath = a.GetImageFullPath()
 	}
 
-	isHistoryNav := a.isNavigatingHistory // Capture the flag state
-
 	// Launch goroutine for loading and decoding
-	go func(path string, historyNav bool) {
+	go func(path string) {
 		// Load all image info at once, including the decoded image
 		imgInfo, imgDecoded, err := a.ImageService.GetImageInfo(path)
 		if err != nil {
@@ -346,78 +368,12 @@ func (a *App) loadAndDisplayCurrentImage() {
 			}
 			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
 
-			// Update Title, Status Bar, and Info Text
-			if a.random && !historyNav {
-				a.addToThumbnailHistory(path)
-			}
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
 			a.updateInfoText(imgInfo)
 			a.refreshThumbnailStrip() // Update the thumbnail strip
-
-			// History Update (only if not navigating history)
-			if a.historyManager != nil && !historyNav {
-				a.historyManager.RecordNavigation(a.img.Path)
-			}
-			// a.updateShowFullSizeButtonVisibility() // This is now handled by the onZoomPanChange callback
 		})
-	}(imagePath, isHistoryNav) // Pass the path and flag to the goroutine
-}
-
-// addToThumbnailHistory manages the visual history for the thumbnail strip in random mode.
-// It ensures a path is at the end of the list and trims the list to a max size.
-func (a *App) addToThumbnailHistory(path string) {
-	if !a.random || path == "" {
-		return
-	}
-	// If the path already exists, remove it first to move it to the back.
-	for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
-		if e.Value.(string) == path {
-			a.thumbnailHistory.Remove(e)
-			break
-		}
-	}
-	a.thumbnailHistory.PushBack(path)
-	// Trim history to keep it from growing indefinitely
-	if a.thumbnailHistory.Len() > MaxVisibleThumbnails*2 { // Keep a bit more than visible
-		a.thumbnailHistory.Remove(a.thumbnailHistory.Front())
-	}
-}
-
-// ensurePathVisibleForHistory checks if a given image path is in the current active list.
-// If a filter is active and the path is not in the filtered list, the filter is cleared.
-// It returns the index of the path in the (potentially updated) active list,
-// and a boolean indicating if the filter was cleared.
-// If the path is not found in any list, it returns -1.
-func (a *App) ensurePathVisibleForHistory(path string) (int, bool) {
-	// First, check if the path is in the current active list (filtered or not)
-	currentList := a.getCurrentList()
-	for i, item := range currentList {
-		if item.Path == path {
-			return i, false // Found, no filter change needed
-		}
-	}
-
-	// If not found, and a filter is active, we must clear it to proceed.
-	if a.isFiltered {
-		a.addLogMessage("Image from history not in current filter. Clearing filter for navigation.")
-		a._clearFilterState() // Clear state without navigating
-
-		// Now check the full list (which getCurrentList will now return)
-		fullList := a.getCurrentList()
-		for i, item := range fullList {
-			if item.Path == path {
-				return i, true // Found in full list after clearing filter
-			}
-		}
-		// Path not found even after clearing filter.
-		// This could happen if the image file was deleted after being added to history.
-		return -1, true // Filter was cleared, but path still not found.
-	}
-
-	// Path not found at all, or not found even after clearing filter.
-	// This could happen if the image file was deleted after being added to history.
-	return -1, false
+	}(imagePath) // Pass the path and flag to the goroutine
 }
 
 // showFilterDialog displays a dialog to select a tag for filtering.
@@ -588,6 +544,7 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	}
 
 	a.filteredImages = newFilteredImages
+	a.filteredPermutationManager = scan.NewPermutationManager(&a.filteredImages)
 	a.isFiltered = true
 	a.currentFilterTag = strings.Join(tags, ", ") // Store all tags for display
 	a.index = 0
@@ -596,8 +553,7 @@ func (a *App) applyFilter(tags []string) { // Changed signature to accept multip
 	a.isNavigatingHistory = false  // Applying a filter is a new view, not history navigation
 	a.loadAndDisplayCurrentImage() // Display the first image in the filtered set
 	a.refreshThumbnailStrip()      // Update the thumbnail strip
-	//a.updateInfoText(nil)          // Update info panel immediately
-	//a.updateStatusBar()
+
 }
 
 // navigateToIndex sets the current image to a specific index, resets the navigation
@@ -639,7 +595,7 @@ func (a *App) _clearFilterState() {
 	a.isFiltered = false
 	a.currentFilterTag = ""
 	a.filteredImages = nil
-	a.thumbnailHistory.Init()
+	a.filteredPermutationManager = nil
 }
 
 // clearFilter removes any active tag filter and navigates to the first image.
@@ -666,45 +622,6 @@ func (a *App) lastImage() {
 	a.navigateToIndex(a.getCurrentImageCount() - 1)
 }
 
-// navigateToHistoryPath is a helper to handle the common logic of displaying an image from a history path.
-func (a *App) navigateToHistoryPath(path string) {
-	a.isNavigatingHistory = true
-	foundIndex, filterCleared := a.ensurePathVisibleForHistory(path)
-	if foundIndex == -1 {
-		a.addLogMessage(fmt.Sprintf("Error: Image from history (%s) not found. Removing from history.", filepath.Base(path)))
-		a.historyManager.RemovePath(path)
-		dialog.ShowInformation("History Navigation", "A previously viewed image is no longer available and was removed from history.", a.UI.MainWin)
-		a.isNavigatingHistory = false
-		return
-	}
-	a.index = foundIndex
-	if filterCleared {
-		a._clearFilterState() // Clear filter state if it was necessary to make the path visible
-	}
-	a.addToThumbnailHistory(path) // <-- Ensure thumbnail history is updated
-	a.loadAndDisplayCurrentImage()
-	a.isNavigatingHistory = false
-}
-
-// _navigateForward handles forward image navigation using the navigation queue.
-func (a *App) _navigateForward(offset int) {
-	a.isNavigatingHistory = false
-	a.index += offset
-	a.loadAndDisplayCurrentImage()
-}
-
-// _navigateBackward handles sequential backward skips.
-// It always exits random mode and resets the navigation queue.
-func (a *App) _navigateBackward(offset int) {
-	a.isNavigatingHistory = false
-	// Backward navigation should NOT exit random mode.
-	a.index -= offset
-	if a.index < 0 {
-		a.index = 0
-	}
-	a.loadAndDisplayCurrentImage()
-}
-
 // navigate moves the current image by a given offset.
 // A positive offset moves forward, a negative offset moves backward sequentially.
 // It dispatches to more specific handlers based on the offset.
@@ -714,40 +631,22 @@ func (a *App) navigate(offset int) {
 		return
 	}
 
-	// Delegate single-step back to the dedicated history function.
-	if offset == -1 {
-		a.ShowPreviousImage()
-		return
+	// This is a direct navigation, not a history action.
+	a.isNavigatingHistory = false
+
+	newIndex := a.index + offset
+
+	// Handle wrapping around the end of the list
+	if newIndex >= count {
+		newIndex = 0 // Wrap to the start
+	}
+	// Handle wrapping around the beginning of the list
+	if newIndex < 0 {
+		newIndex = count - 1 // Wrap to the end
 	}
 
-	// Handle single-step forward, which has special history logic.
-	if offset == 1 {
-		// If we are in history mode, try to move forward in history first.
-		if a.isNavigatingHistory && a.ShowNextImageFromHistory() {
-			return // Success
-		}
-		// If not in history mode or history forward fails, do a normal forward step.
-		a._navigateForward(1)
-		return
-	}
-
-	// Handle multi-step skips (forward or backward).
-	if offset > 1 {
-		a._navigateForward(offset)
-	} else if offset < -1 {
-		a._navigateBackward(offset)
-	}
-}
-
-// ShowNextImageFromHistory attempts to move forward in the history stack.
-// Returns true if successful, false otherwise (e.g., at end of history or history disabled).
-func (a *App) ShowNextImageFromHistory() bool {
-	imagePathFromHistory, ok := a.historyManager.NavigateForward()
-	if !ok {
-		return false
-	}
-	a.navigateToHistoryPath(imagePathFromHistory)
-	return true // Assume success, navigateToHistoryPath handles errors
+	a.index = newIndex
+	a.loadAndDisplayCurrentImage()
 }
 
 // ShowPreviousImage handles the "back" button logic.
@@ -759,18 +658,8 @@ func (a *App) ShowPreviousImage() {
 		a.togglePlay() // This effectively pauses it via user action
 	}
 
-	if a.random {
-		// In random mode, "Previous" means going back in the chronological viewing history.
-		imagePathFromHistory, ok := a.historyManager.NavigateBack()
-		if !ok {
-			a.addLogMessage("No previous image in history.")
-			return
-		}
-		a.navigateToHistoryPath(imagePathFromHistory)
-	} else {
-		// In sequential mode, "Previous" simply means going to the prior image in the list.
-		a._navigateBackward(-1)
-	}
+	// In sequential mode, "Previous" simply means going to the prior image in the list.
+	a.navigate(-1)
 }
 
 // Delete file
@@ -814,11 +703,9 @@ func (a *App) deleteFile() {
 		a.addLogMessage(fmt.Sprintf("Warning: Image %s not found in main list during deletion.", deletedPath))
 	}
 	a.images = newImages
-
-	// Remove the deleted path from the navigation and thumbnail histories.
-	a.removeFromThumbnailHistory(deletedPath)
-	if a.historyManager != nil {
-		a.historyManager.RemovePath(deletedPath)
+	// Rebuild the main index manager as the underlying data has changed.
+	if a.permutationManager != nil {
+		a.permutationManager = scan.NewPermutationManager(&a.images)
 	}
 
 	// 4. Remove from the filtered list (a.filteredImages) if filtering is active
@@ -828,6 +715,10 @@ func (a *App) deleteFile() {
 			if item.Path != deletedPath {
 				newFiltered = append(newFiltered, item)
 			}
+		}
+		// Rebuild the filtered index manager.
+		if a.filteredPermutationManager != nil {
+			a.filteredPermutationManager = scan.NewPermutationManager(&newFiltered)
 		}
 		a.filteredImages = newFiltered
 		// If the filtered list becomes empty, clear the filter
@@ -856,19 +747,6 @@ func (a *App) deleteFile() {
 	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
 	a.refreshThumbnailStrip() // Update the thumbnail strip
-}
-
-// removeFromThumbnailHistory removes a given path from the random-mode thumbnail cache.
-func (a *App) removeFromThumbnailHistory(path string) {
-	if a.thumbnailHistory == nil {
-		return
-	}
-	for e := a.thumbnailHistory.Front(); e != nil; e = e.Next() {
-		if e.Value.(string) == path {
-			a.thumbnailHistory.Remove(e)
-			break // Assume path is unique
-		}
-	}
 }
 
 // exitRandomModeForHistory handles the state changes for leaving random mode
@@ -928,9 +806,8 @@ func (a *App) imageCount() int {
 
 // init initializes the application's core components, including the history manager,
 // slideshow manager, and other configuration settings based on provided flags.
-func (a *App) init(historyCap int, slideshowIntervalSec float64, skipNum int) {
+func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
-	a.historyManager = history.NewHistoryManager(historyCap)
 
 	// Define a logger function for SlideshowManager
 	// This closure captures 'a' (the App instance).
@@ -994,26 +871,14 @@ func (a *App) toggleRandom() {
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
 	}
-	// If entering random mode, ensure current image is in history for thumbnail strip
-	if a.random && a.thumbnailHistory.Len() == 0 && a.img.Path != "" {
-		a.thumbnailHistory.PushBack(a.img.Path)
-	} else if !a.random {
-		// When switching from random to sequential, the random history is no longer valid.
-		// Clear both the visual thumbnail history and the main navigation history.
-		a.thumbnailHistory.Init()
-		if a.historyManager != nil {
-			a.historyManager.Clear()
-			// After clearing, record the current image as the new starting point of the sequential history.
-			if a.img.Path != "" {
-				a.historyManager.RecordNavigation(a.img.Path)
-			}
-		}
-	}
+	// Reset index to avoid out-of-bounds when switching views
+	a.index = 0
 
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
-	a.refreshThumbnailStrip() // Re-evaluate and display thumbnails based on the new random state
+	a.loadAndDisplayCurrentImage() // Reload to show the image at the new index 0
+	a.refreshThumbnailStrip()      // Re-evaluate and display thumbnails based on the new random state
 }
 
 // toggleTheme switches between the light and dark application themes.
@@ -1110,9 +975,8 @@ func CreateApplication() {
 	})
 
 	ui.UI.MainWin.SetIcon(resourceIconPng)
-	ui.init(*historySizeFlag, *slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
-	ui.random = true
-	ui.thumbnailHistory = list.New()
+	ui.init(*slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
+	ui.random = false
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
@@ -1138,13 +1002,10 @@ func CreateApplication() {
 
 	// Check if images were actually loaded
 	if ui.imageCount() > 0 {
-		// If in random mode, pick a random starting image. Otherwise, start at 0.
-		if ui.random {
-			ui.index = rand.Intn(ui.imageCount())
-			if ui.imageCount() > 0 {
-				ui.thumbnailHistory.PushBack(ui.images[ui.index].Path)
-			}
-		}
+		// Initialize the main index manager for random mode.
+		ui.permutationManager = scan.NewPermutationManager(&ui.images)
+		// Start at the beginning of the current view (sequential or random).
+		ui.index = 0
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		ui.isNavigatingHistory = false // Initial display is not from history
 		go ui.pauser(ticker)           // pauser will call loadAndDisplayCurrentImage via fyne.Do

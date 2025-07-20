@@ -2,8 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"fyslide/internal/scan"
 	"image/color"
-	"math/rand"
 	"runtime"
 	"strings"
 
@@ -364,60 +364,6 @@ FySlide is an image viewer with tagging capabilities.
 const MaxVisibleThumbnails = 11
 
 // ThumbnailsOnEachSide is the number of thumbnails to display on each side of the current one.
-const ThumbnailsOnEachSide = MaxVisibleThumbnails / 2
-
-// _getThumbnailIndicesToDisplay determines the list of image indices to show in the thumbnail strip.
-// It handles both random and sequential modes, consolidating the logic for which thumbnails to show.
-func _getThumbnailIndicesToDisplay(a *App) []int {
-	if a.random {
-		return _getRandomThumbnailIndicesToDisplay(a)
-	}
-	return _getSequentialThumbnailIndicesToDisplay(a)
-}
-
-func _getRandomThumbnailIndicesToDisplay(a *App) []int {
-	currentList := a.getCurrentList()
-	count := len(currentList)
-	numThumbs := min(MaxVisibleThumbnails, count) // Adjust numThumbs
-	indices := make([]int, numThumbs)
-	if count == 0 {
-		return []int{} // Handle empty list
-	}
-
-	indices[0] = a.index // Start with the current index at the center
-	for i := 1; i < numThumbs; i++ {
-		nextIndex := rand.Intn(count) // Simplified random index selection
-		indices[i] = nextIndex
-	}
-	return indices
-}
-
-func _getSequentialThumbnailIndicesToDisplay(a *App) []int {
-	currentList := a.getCurrentList()
-	count := len(currentList)
-	center := a.index // current index
-	numThumbs := min(MaxVisibleThumbnails, count)
-	start := max(0, center-numThumbs/2)
-	end := min(count-1, center+numThumbs/2)
-
-	// Clamp to bounds
-	if start < 0 {
-		end += -start
-		start = 0
-	}
-	if end >= count {
-		start -= (end - count + 1)
-		end = count - 1
-		if start < 0 {
-			start = 0
-		}
-	}
-	indicesToDisplay := make([]int, 0, end-start+1)
-	for i := start; i <= end; i++ {
-		indicesToDisplay = append(indicesToDisplay, i)
-	}
-	return indicesToDisplay
-}
 
 // refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
 // It calculates a window of thumbnails around the current image and displays them.
@@ -426,34 +372,72 @@ func (a *App) refreshThumbnailStrip() {
 	if a.UI.thumbnailStrip == nil {
 		return
 	}
-
-	const windowSize = 11 // Always show 11 thumbnails
-
-	var indicesToDisplay []int
-	indicesToDisplay = _getThumbnailIndicesToDisplay(a)
-	if len(indicesToDisplay) > windowSize {
-		indicesToDisplay = indicesToDisplay[:windowSize]
-	}
-
 	a.UI.thumbnailStrip.RemoveAll()
 
-	currentList := a.getCurrentList()
-	if len(currentList) == 0 {
+	count := a.getCurrentImageCount()
+	if count == 0 {
 		a.UI.thumbnailStrip.Refresh()
 		return
 	}
 
+	// 1. Calculate the viewport of indices to display around the current index.
+	const windowSize = 11 // Should be an odd number for a perfect center
+	halfWindow := windowSize / 2
+	start := a.index - halfWindow
+	end := a.index + halfWindow
+
+	// Adjust viewport if it goes out of bounds.
+	if start < 0 {
+		end -= start // equivalent to end += abs(start)
+		start = 0
+	}
+	if end >= count {
+		start -= (end - (count - 1))
+		end = count - 1
+	}
+	// Final check in case the list is smaller than the window.
+	if start < 0 {
+		start = 0
+	}
+
+	// 2. Create a helper function to get any item from the current view.
+	// This avoids duplicating the logic from getCurrentItem and allows fetching by any view index.
+	getItemByViewIndex := func(viewIndex int) (*scan.FileItem, error) {
+		var activeManager *scan.PermutationManager
+		var activeList *scan.FileItems
+		if a.isFiltered {
+			activeManager = a.filteredPermutationManager
+			activeList = &a.filteredImages
+		} else {
+			activeManager = a.permutationManager
+			activeList = &a.images
+		}
+
+		if a.random {
+			if activeManager == nil {
+				return nil, fmt.Errorf("PermutationManager not initialized for random mode")
+			}
+			item, err := activeManager.GetDataByShuffledIndex(viewIndex)
+			return &item, err
+		}
+		// Sequential mode
+		if viewIndex < 0 || viewIndex >= len(*activeList) {
+			return nil, fmt.Errorf("sequential index out of bounds: %d", viewIndex)
+		}
+		return &(*activeList)[viewIndex], nil
+	}
+
+	// 3. Populate the thumbnail strip.
 	// Add a spacer before the thumbnails to push them to the center.
 	a.UI.thumbnailStrip.Add(layout.NewSpacer())
 
-	for _, idx := range indicesToDisplay {
-		// 'idx' is the actual index of the image in the current image list (a.getCurrentList()).
-		if idx < 0 || idx >= len(currentList) {
-			continue // Skip if index out of range
-		}
-
+	for i := start; i <= end; i++ {
 		// Capture the loop variable for the closure.
-		localIdx := idx
+		localIdx := i
+		item, err := getItemByViewIndex(localIdx)
+		if err != nil {
+			continue // Skip if index is invalid.
+		}
 
 		// Create a tappable thumbnail widget.
 		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
@@ -472,25 +456,17 @@ func (a *App) refreshThumbnailStrip() {
 		// The thumbWidget is a stack that will hold the tappable image and a border if selected.
 		thumbWidget := container.NewStack(tappableThumb)
 
-		item := currentList[idx]                                                                     // The actual image data
-		initialResource := a.thumbnailManager.GetThumbnail(item.Path, func(resource fyne.Resource) { // Pass thumbWidget to callback
-			// 'idx' and 'item' are also correctly captured here.
-			// Check if the image path for this thumbnail is still the same
-			// (list might have changed while thumbnail was loading)
-			if currentListCheck := a.getCurrentList(); idx < len(currentListCheck) && currentListCheck[idx].Path == item.Path { // Check against original item path
-				tappableThumb.SetResource(resource)
-				// The callback is already on the main UI thread, so just refresh.
-				thumbWidget.Refresh()
-			}
-		})
-		// Immediately set the resource. This will be the cached image or the placeholder.
-		// If it was a placeholder, the callback above will update it later.
+		// Use a closure to update the thumbnail when it's loaded asynchronously.
+		updateThumb := func(resource fyne.Resource) {
+			tappableThumb.SetResource(resource)
+			thumbWidget.Refresh()
+		}
+		initialResource := a.thumbnailManager.GetThumbnail(item.Path, updateThumb)
 		tappableThumb.SetResource(initialResource)
-		// Refresh the widget immediately to ensure cached images are displayed correctly.
-		// This is safe as we are on the main UI thread here.
 		thumbWidget.Refresh()
+
 		// Add a border for the selected image
-		if idx == a.index {
+		if localIdx == a.index {
 			border := canvas.NewRectangle(color.Transparent)
 			// border.StrokeColor = theme.PrimaryColor()
 			border.StrokeColor = theme.Color(theme.ColorNamePrimary) // Use theme-aware color
