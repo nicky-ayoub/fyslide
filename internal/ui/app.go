@@ -45,24 +45,23 @@ type App struct {
 	app fyne.App
 	UI  UI
 
-	//fileTree binding.URITree
-
 	images                     scan.FileItems           // The original, full list of images
 	permutationManager         *scan.PermutationManager // Manages the original images
 	filteredImages             scan.FileItems           // The list when a filter is active
 	filteredPermutationManager *scan.PermutationManager
 	index                      int
-	img                        Img
-	zoomPanArea                *ZoomPanArea
+
+	isFiltered       bool   // NEW: Flag to indicate if filtering is active
+	currentFilterTag string // NEW: The tag currently being filtered by
+
+	img         Img
+	zoomPanArea *ZoomPanArea
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
 
 	random bool
 
 	tagDB *tagging.TagDB // Add the tag database instance
-
-	isFiltered       bool   // NEW: Flag to indicate if filtering is active
-	currentFilterTag string // NEW: The tag currently being filtered by
 
 	isDarkTheme bool // NEW: track current theme
 
@@ -76,7 +75,6 @@ type App struct {
 	Service          *service.Service
 	thumbnailManager *ThumbnailManager
 	ImageService     *service.ImageService
-	viewManager      *service.ViewManager // NEW: Service for view management
 }
 
 // getCurrentList returns the active image list (filtered or full)
@@ -795,25 +793,6 @@ func (a *App) deleteFile() {
 	a.refreshThumbnailStrip() // Update the thumbnail strip
 }
 
-// exitRandomModeForHistory handles the state changes for leaving random mode
-// when performing a history-based navigation, without clearing the history itself.
-func (a *App) exitRandomModeForHistory() {
-	if !a.random {
-		return
-	}
-	a.random = false
-	if a.UI.randomAction != nil {
-		a.UI.randomAction.SetIcon(a.getDiceIcon())
-	}
-	if a.UI.toolBar != nil {
-		a.UI.toolBar.Refresh()
-	}
-	// The visual thumbnail history (a.thumbnailHistory) does not need to be cleared here.
-	// The next call to refreshThumbnailStrip() will use the sequential logic
-	// because a.random is now false, correctly rebuilding the strip.
-	a.addLogMessage("Exited random mode for history navigation.")
-}
-
 // func pathToURI(path string) (fyne.URI, error) {
 // 	absPath, _ := filepath.Abs(path)
 // 	fileURI := storage.NewFileURI(absPath)
@@ -1106,19 +1085,8 @@ func CreateApplication() {
 		ui.updateStatusBar() // Will show "No images available" or similar.
 		ui.updateInfoText(nil)
 	}
-	ui.setImages(ui.images) // Set the initial image list
 
 	ui.UI.MainWin.ShowAndRun()
-}
-
-// setImages updates the main image list and initializes the permutation manager through ViewManager.
-func (a *App) setImages(images scan.FileItems) {
-	if a.viewManager == nil {
-		a.viewManager = service.NewViewManager(images, a.isFiltered, a.currentFilterTag)
-	} else {
-		a.viewManager.SetImages(images)
-	}
-
 }
 
 func (a *App) updateTimer() {
