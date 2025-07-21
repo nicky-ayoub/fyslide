@@ -4,7 +4,7 @@
 GO_CMD := go
 GUI_OUTPUT := fyslide
 CLI_OUTPUT := fyslide-cli
-GUI_MAIN_SRC := main.go
+GUI_MAIN_DIR := ./cmd/fyslide
 CLI_MAIN_DIR := ./cmd/fyslide-cli
 
 # Default LDFLAGS for release builds (strip debug symbols and DWARF table)
@@ -20,13 +20,13 @@ all: build
 build: deps  build-gui build-cli
 
 build-gui:
-	$(GO_CMD) build -ldflags="$(LDFLAGS)" -o $(GUI_OUTPUT) $(GUI_MAIN_SRC)
+	$(GO_CMD) build -ldflags="$(LDFLAGS)" -o $(GUI_OUTPUT) $(GUI_MAIN_DIR)
 
 build-cli:
 	$(GO_CMD) build -ldflags="$(LDFLAGS)" -o $(CLI_OUTPUT) $(CLI_MAIN_DIR)
 
 gen:
-	$(GO_CMD) generate
+	$(GO_CMD) generate ./...
 
 fmt:
 	$(GO_CMD) fmt ./...
