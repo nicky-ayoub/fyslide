@@ -286,20 +286,6 @@ func (s *Service) CleanDatabase() (filesCleaned, tagsCleaned int, err error) {
 	return filesCleaned, tagsCleaned, nil
 }
 
-// DeleteImageFile deletes an image file from disk and removes all its tags from the database.
-func (s *Service) DeleteImageFile(imagePath string) error {
-	if imagePath == "" {
-		return errors.New("image path required")
-	}
-	if err := os.Remove(imagePath); err != nil {
-		return fmt.Errorf("failed to delete file %s: %w", imagePath, err)
-	}
-	if err := s.TagDB.RemoveAllTagsForImage(imagePath); err != nil {
-		return fmt.Errorf("failed to remove tags for deleted file %s: %w", imagePath, err)
-	}
-	return nil
-}
-
 // AddTagsToTaggedImages finds all images with `existingTag` and adds `tagsToAdd` to them.
 // This is useful for creating tag hierarchies or groups.
 // AddTagsToTaggedImages adds new tags to all images that already have a specific tag.
@@ -326,16 +312,16 @@ func (s *Service) AddTagsToTaggedImages(existingTag string, tagsToAdd []string) 
 	return added, nil
 }
 
-// RemoveImage deletes all tags for the image and removes its entry from the tag database.
-// If the file still exists on disk, it does NOT delete the file itself.
-func (s *Service) RemoveImage(imagePath string) error {
+// DeleteImageFile deletes an image file from disk and removes all its tags from the database.
+func (s *Service) DeleteImageFile(imagePath string) error {
 	if imagePath == "" {
 		return errors.New("image path required")
 	}
-	// Remove all tags for this image
-	if err := s.TagDB.RemoveAllTagsForImage(imagePath); err != nil {
-		return fmt.Errorf("failed to remove tags for image %s: %w", imagePath, err)
+	if err := os.Remove(imagePath); err != nil {
+		return fmt.Errorf("failed to delete file %s: %w", imagePath, err)
 	}
-	// Optionally, you could also remove orphaned tag keys here if needed.
+	if err := s.TagDB.RemoveAllTagsForImage(imagePath); err != nil {
+		return fmt.Errorf("failed to remove tags for deleted file %s: %w", imagePath, err)
+	}
 	return nil
 }

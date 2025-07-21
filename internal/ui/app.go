@@ -90,14 +90,6 @@ func (a *App) getCurrentImageCount() int {
 	return len(a.getCurrentList())
 }
 
-// ternaryString is a helper function that returns one of two strings based on a boolean condition.
-func ternaryString(condition bool, trueVal, falseVal string) string {
-	if condition {
-		return trueVal
-	}
-	return falseVal
-}
-
 // formatNumberWithCommas takes an integer and returns a string representation
 // with commas as thousands separators.
 func formatNumberWithCommas(n int64) string {

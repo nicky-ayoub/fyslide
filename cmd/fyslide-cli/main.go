@@ -260,14 +260,11 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 
 			// Actual deletion (no confirmation needed if --force is set)
 			for _, img := range images {
-				err := os.Remove(img)
+				err := svc.DeleteImageFile(img)
 				if err != nil {
 					cmd.Printf("Failed to delete %s: %v\n", img, err)
 				} else {
-					cmd.Printf("Deleted %s\n", img)
-					if err := svc.RemoveImage(img); err != nil {
-						cmd.Printf("Failed to remove %s from tag database: %v\n", img, err)
-					}
+					cmd.Printf("Deleted %s and its tags.\n", img)
 				}
 			}
 			return nil

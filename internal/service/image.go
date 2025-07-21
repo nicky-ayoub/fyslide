@@ -31,20 +31,6 @@ func NewImageService() *ImageService {
 	return &ImageService{}
 }
 
-// LoadImage loads and decodes an image from disk.
-func (is *ImageService) LoadImage(path string) (image.Image, string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to open image: %w", err)
-	}
-	defer f.Close()
-	img, format, err := image.Decode(f)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to decode image: %w", err)
-	}
-	return img, format, nil
-}
-
 // GetEXIF extracts a few common EXIF fields from an image file.
 func (is *ImageService) GetEXIF(r io.Reader) (map[string]string, error) {
 	x, err := exif.Decode(r)

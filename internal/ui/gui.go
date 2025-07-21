@@ -430,20 +430,6 @@ func (a *App) refreshThumbnailStrip() {
 	a.UI.thumbnailStrip.Refresh()
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
