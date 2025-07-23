@@ -156,6 +156,12 @@ func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
 		if activeManager == nil {
 			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
 		}
+		// If we are not filtered, we are using the main permutation manager, which
+		// might be out of sync with the dynamically growing main image list.
+		// Sync it to discover any newly loaded images.
+		if !a.isFiltered {
+			activeManager.SyncNewData()
+		}
 		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
 		if err != nil {
 			return nil, fmt.Errorf("error getting data for shuffled index %d: %w", viewIndex, err)
@@ -923,6 +929,11 @@ func (a *App) toggleRandom() {
 				}
 
 				if activeManager != nil {
+					// Sync data before getting an index, as the list might have grown
+					// since the manager was last used.
+					if !a.isFiltered {
+						activeManager.SyncNewData()
+					}
 					shuffledIndex, err := activeManager.GetShuffledIndex(sequentialIndexInList)
 					if err == nil {
 						newIndex = shuffledIndex
@@ -1038,7 +1049,7 @@ func CreateApplication() {
 
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init(*slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
-	ui.random = false
+	ui.random = true
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
