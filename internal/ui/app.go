@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -475,6 +476,53 @@ func (a *App) showFilterDialog() {
 			a.applyFilter([]string{selectedOption})
 		}
 	}, a.UI.MainWin)
+}
+
+// showJumpToImageDialog displays a dialog to jump to a specific image number.
+func (a *App) showJumpToImageDialog() {
+	count := a.getCurrentImageCount()
+	if count == 0 {
+		dialog.ShowInformation("Jump to Image", "No images loaded.", a.UI.MainWin)
+		return
+	}
+
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder(fmt.Sprintf("Enter number (1-%d)", count))
+
+	formDialog := dialog.NewForm("Jump to Image", "Go", "Cancel", []*widget.FormItem{
+		widget.NewFormItem("Image Number", entry),
+	}, func(confirm bool) {
+		if !confirm {
+			return
+		}
+
+		numStr := entry.Text
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			dialog.ShowInformation("Invalid Input", "Please enter a valid number.", a.UI.MainWin)
+			return
+		}
+
+		if num < 1 || num > count {
+			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 1 and %d.", count), a.UI.MainWin)
+			return
+		}
+
+		// Pause slideshow on manual interaction.
+		if !a.slideshowManager.IsPaused() {
+			a.togglePlay()
+		}
+
+		a.navigateToIndex(num - 1) // User input is 1-based, index is 0-based
+	}, a.UI.MainWin)
+
+	// Set OnSubmitted for the entry to submit the form on Enter key.
+	entry.OnSubmitted = func(s string) {
+		formDialog.Submit()
+	}
+
+	formDialog.Show()
+	a.UI.MainWin.Canvas().Focus(entry)
 }
 
 // handleShowFullSizeBtn is called when the "Show Full Size" toolbar action is triggered.

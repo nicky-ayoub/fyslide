@@ -112,6 +112,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		a.UI.pauseAction,
 		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.navigate(1) }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
+		widget.NewToolbarAction(theme.ContentRedoIcon(), a.showJumpToImageDialog),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
