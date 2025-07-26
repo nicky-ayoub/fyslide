@@ -36,10 +36,11 @@ type UI struct {
 	clockLabel *widget.Label
 	infoText   *widget.RichText
 
-	toolBar            *widget.Toolbar
-	randomAction       *widget.ToolbarAction // Action for toggling random mode
-	pauseAction        *widget.ToolbarAction // Action for toggling play/pause
-	showFullSizeAction *widget.ToolbarAction // Action for showing image at full size
+	toolBar             *widget.Toolbar
+	randomAction        *widget.ToolbarAction // Action for toggling random mode
+	pauseAction         *widget.ToolbarAction // Action for toggling play/pause
+	showFullSizeAction  *widget.ToolbarAction // Action for showing image at full size
+	clearFilterMenuItem *fyne.MenuItem        // For the View > Clear Filter menu item
 
 	contentStack     *fyne.Container   // To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
@@ -440,6 +441,11 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.UI.mainModKey = fyne.KeyModifierControl
 	}
 	a.UI.toolBar = a.buildToolbar()
+
+	// --- Menu Item for Clearing Filter ---
+	a.UI.clearFilterMenuItem = fyne.NewMenuItem("Clear Filter", a.clearFilter)
+	a.UI.clearFilterMenuItem.Disabled = true // Start disabled, enabled when a filter is active
+
 	// --- Main Menu ---
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
@@ -455,7 +461,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),                              // NEW Separator
 			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option
-
+			a.UI.clearFilterMenuItem,
 		),
 		fyne.NewMenu("Help",
 			fyne.NewMenuItem("Help", a.showHelpDialog),
