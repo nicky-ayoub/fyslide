@@ -243,28 +243,31 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 				}
 			}
 
-			// Default to dry run unless --force is specified
+			if dryRunFlag {
+				cmd.Println("[DRY RUN] No files or tags were deleted.")
+				return nil
+			}
+
+			// If --force is not used, get confirmation.
 			if !forceFlag {
-				cmd.Printf("[DRY RUN] No files or tags were deleted. Use --force to actually delete.\n")
-				return nil
+				cmd.Printf("WARNING: This operation is IRREVERSIBLE. There is NO recovery from deletion.\n")
+				cmd.Printf("Type 'delete' to confirm and proceed: ")
+				var response string
+				fmt.Scanln(&response)
+				if strings.ToLower(strings.TrimSpace(response)) != "delete" {
+					cmd.Println("Aborted.")
+					return nil
+				}
+			} else {
+				cmd.Println("WARNING: --force specified. Deleting files immediately.")
 			}
 
-			cmd.Printf("WARNING: This operation is IRREVERSIBLE. There is NO recovery from deletion.\n")
-			cmd.Printf("Type 'delete' to confirm and proceed: ")
-			var response string
-			fmt.Scanln(&response)
-			if strings.ToLower(strings.TrimSpace(response)) != "delete" {
-				cmd.Println("Aborted.")
-				return nil
-			}
-
-			// Actual deletion (no confirmation needed if --force is set)
 			for _, img := range images {
 				err := svc.DeleteImageFile(img)
 				if err != nil {
-					cmd.Printf("Failed to delete %s: %v\n", img, err)
+					cmd.Printf("Error deleting %s: %v\n", img, err)
 				} else {
-					cmd.Printf("Deleted %s and its tags.\n", img)
+					cmd.Printf("Deleted: %s\n", img)
 				}
 			}
 			return nil
