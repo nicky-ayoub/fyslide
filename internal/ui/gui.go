@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image/color"
 	"runtime"
+	"sort"
+	"strings"
 
 	"fyne.io/fyne/v2/canvas"
 
@@ -66,6 +68,7 @@ type tagListController struct {
 	tagList       *widget.List
 	messageLabel  *widget.Label
 
+	sortMode string
 	// State
 	allTags              []tagListItem
 	filteredDisplayData  []tagListItem
@@ -158,6 +161,7 @@ func newTagListController(
 	refreshButton *widget.Button,
 	removeButton *widget.Button,
 	tagList *widget.List,
+	sortMode string,
 	messageLabel *widget.Label,
 ) *tagListController {
 	c := &tagListController{
@@ -166,17 +170,35 @@ func newTagListController(
 		refreshButton: refreshButton,
 		removeButton:  removeButton,
 		tagList:       tagList,
+		sortMode:      sortMode,
 		messageLabel:  messageLabel,
 	}
 
 	// Wire up the callbacks
 	c.searchEntry.OnChanged = c.filterAndRefreshList
 	c.refreshButton.OnTapped = c.loadAndFilterTagData
+
+	//	c.sortRadio.OnChanged = c.sortTagList
 	c.removeButton.OnTapped = c.onRemoveTapped
 	c.tagList.OnSelected = c.onTagSelected
 	c.tagList.OnUnselected = c.onTagUnselected
 
 	return c
+}
+func (c *tagListController) sortTagList() {
+	sort.Slice(c.allTags, func(i, j int) bool {
+		tagI := c.allTags[i]
+		tagJ := c.allTags[j]
+
+		if c.sortMode == "By Name" {
+			return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name)
+		}
+		// Default to "By Count"
+		if tagI.Count != tagJ.Count {
+			return tagI.Count > tagJ.Count // Descending
+		}
+		return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name) // Secondary sort by name ascending
+	})
 }
 
 // buildTagsTab constructs the UI for the "Tags" management view.
@@ -185,7 +207,18 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	searchEntry, refreshButton, removeButton, tagList, messageLabel := a._createTagListWidgets()
 
 	// --- Controller Creation and Wiring ---
-	controller := newTagListController(a, searchEntry, refreshButton, removeButton, tagList, messageLabel)
+	// The controller will manage the sort mode state, starting with "By Count".
+	controller := newTagListController(a, searchEntry, refreshButton, removeButton, tagList, "By Count", messageLabel)
+
+	// Create the sort radio buttons and wire them to the controller
+	sortRadio := widget.NewRadioGroup([]string{"By Count", "By Name"}, func(selected string) {
+		controller.sortMode = selected
+		// Re-sort and refresh the list.
+		// Assuming loadAndFilterTagData re-fetches, re-sorts, and re-filters.
+		// A more efficient approach might be a `resortAndRefresh` that doesn't re-fetch.
+		controller.loadAndFilterTagData()
+	})
+	sortRadio.SetSelected(controller.sortMode)
 
 	// --- Data Binding ---
 	tagList.Length = func() int {
@@ -201,10 +234,14 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	controller.loadAndFilterTagData()
 
 	// --- Assemble Layout ---
-	topBar := container.NewBorder(nil, nil, nil, refreshButton, searchEntry)
+	controls := container.NewVBox(
+		container.NewBorder(nil, nil, widget.NewLabel("Sort:"), nil, sortRadio),
+		container.NewBorder(nil, nil, nil, refreshButton, searchEntry),
+	)
+
 	listContentArea := container.NewStack(messageLabel, tagList)
 	tagList.Hide() // Initially hide list, controller will show it if tags exist
-	content := container.NewBorder(topBar, removeButton, nil, nil, listContentArea)
+	content := container.NewBorder(controls, removeButton, nil, nil, listContentArea)
 
 	// The refresh function is now the controller's data loading method.
 	return content, controller.loadAndFilterTagData
@@ -282,8 +319,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		fyne.NewMenu("View",
 			fyne.NewMenuItem("Next Image", func() { a.navigate(1) }),
 			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
-			fyne.NewMenuItemSeparator(),                              // NEW Separator
-			fyne.NewMenuItem("Filter by Tag...", a.showFilterDialog), // NEW Filter option
+			fyne.NewMenuItemSeparator(),
 			a.UI.clearFilterMenuItem,
 		),
 		fyne.NewMenu("Help",

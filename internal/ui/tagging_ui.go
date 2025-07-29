@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -13,102 +12,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
-
-// showFilterDialog displays a dialog to select a tag for filtering.
-func (a *App) showFilterDialog() {
-	allTagsWithCounts, err := a.Service.ListAllTags()
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to get tags for filtering: %w", err), a.UI.MainWin)
-		return
-	}
-
-	if len(allTagsWithCounts) == 0 {
-		dialog.ShowInformation("Filter by Tag", "No tags found in the database to filter by.", a.UI.MainWin)
-		return
-	}
-
-	sortMode := "By Count"
-	var selectedTagName string
-
-	filterSelector := widget.NewSelect([]string{}, nil)
-
-	updateTagList := func() {
-		sort.Slice(allTagsWithCounts, func(i, j int) bool {
-			tagI := allTagsWithCounts[i]
-			tagJ := allTagsWithCounts[j]
-
-			if sortMode == "By Name" {
-				return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name)
-			}
-			// Default to "By Count"
-			if tagI.Count != tagJ.Count {
-				return tagI.Count > tagJ.Count // Descending
-			}
-			return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name) // Secondary sort by name ascending
-		})
-
-		tagDisplayNames := make([]string, len(allTagsWithCounts))
-		for i, tagInfo := range allTagsWithCounts {
-			tagDisplayNames[i] = fmt.Sprintf("%s (%d)", tagInfo.Name, tagInfo.Count)
-		}
-
-		options := append([]string{"(Show All / Clear Filter)"}, tagDisplayNames...)
-		filterSelector.Options = options
-
-		currentSelection := filterSelector.Selected
-		found := false
-		for _, opt := range options {
-			if opt == currentSelection {
-				found = true
-				break
-			}
-		}
-		if !found && len(options) > 0 {
-			if a.isFiltered {
-				for _, displayName := range options {
-					if strings.HasPrefix(displayName, a.currentFilterTag+" (") {
-						filterSelector.SetSelected(displayName)
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				filterSelector.SetSelected(options[0])
-			}
-		}
-		filterSelector.Refresh()
-	}
-
-	sortRadio := widget.NewRadioGroup([]string{"By Count", "By Name"}, func(s string) {
-		sortMode = s
-		updateTagList()
-	})
-	sortRadio.SetSelected(sortMode)
-
-	updateTagList() // Initial population
-
-	dialog.ShowForm("Filter by Tag", "Apply", "Cancel", []*widget.FormItem{
-		widget.NewFormItem("Sort", sortRadio),
-		widget.NewFormItem("Select Tag", filterSelector),
-	}, func(confirm bool) {
-		if !confirm {
-			return
-		}
-
-		selectedOption := filterSelector.Selected
-		if selectedOption == "(Show All / Clear Filter)" {
-			a.clearFilter()
-		} else {
-			// Extract tag name from "tag (count)"
-			parts := strings.SplitN(selectedOption, " (", 2)
-			if len(parts) > 0 {
-				selectedTagName = parts[0]
-				a.applyFilter([]string{selectedTagName})
-			}
-		}
-	}, a.UI.MainWin)
-}
 
 // applyFilter filters the image list based on the selected tags.
 func (a *App) applyFilter(tags []string) {
