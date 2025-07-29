@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"runtime"
+	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2/layout"
@@ -231,6 +232,13 @@ func (a *App) _setupTagListCallbacks(
 			for i, tagInfo := range fetchedTags {
 				(*allTags)[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
 			}
+			// Sort by count (descending), then by name (ascending) for ties.
+			sort.Slice(*allTags, func(i, j int) bool {
+				if (*allTags)[i].Count != (*allTags)[j].Count {
+					return (*allTags)[i].Count > (*allTags)[j].Count
+				}
+				return (*allTags)[i].Name < (*allTags)[j].Name
+			})
 		}
 		filterAndRefreshList(searchEntry.Text)
 		tagList.UnselectAll() // This will trigger OnUnselected and disable the button

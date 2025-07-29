@@ -480,6 +480,12 @@ func (a *App) showFilterDialog() {
 
 // showJumpToImageDialog displays a dialog to jump to a specific image number.
 func (a *App) showJumpToImageDialog() {
+
+	// Pause slideshow on manual interaction.
+	if !a.slideshowManager.IsPaused() {
+		a.togglePlay()
+	}
+	// Get the current image count to validate user input.
 	count := a.getCurrentImageCount()
 	if count == 0 {
 		dialog.ShowInformation("Jump to Image", "No images loaded.", a.UI.MainWin)
@@ -503,17 +509,12 @@ func (a *App) showJumpToImageDialog() {
 			return
 		}
 
-		if num < 1 || num > count {
-			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 1 and %d.", count), a.UI.MainWin)
+		if num < 0 || num > count-1 {
+			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), a.UI.MainWin)
 			return
 		}
 
-		// Pause slideshow on manual interaction.
-		if !a.slideshowManager.IsPaused() {
-			a.togglePlay()
-		}
-
-		a.navigateToIndex(num - 1) // User input is 1-based, index is 0-based
+		a.navigateToIndex(num) // User input is 1-based, index is 0-based
 	}, a.UI.MainWin)
 
 	// Set OnSubmitted for the entry to submit the form on Enter key.
@@ -718,7 +719,7 @@ func (a *App) clearFilter() {
 func (a *App) firstImage() {
 	if a.getCurrentImageCount() == 0 {
 		return
-	} // Add check
+	}
 	a.index = 0
 	a.loadAndDisplayCurrentImage()
 }
@@ -1031,7 +1032,6 @@ func (a *App) toggleTheme() {
 }
 
 // Command-line flags
-var historySizeFlag = flag.Int("history-size", 10, "Number of last viewed images to remember (0 to disable). Min: 0.")
 var slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
 var skipCountFlag = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
 

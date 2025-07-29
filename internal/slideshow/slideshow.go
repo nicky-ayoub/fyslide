@@ -31,12 +31,12 @@ func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *SlideshowMa
 		interval = defaultSlideshowInterval // Default interval if invalid
 	}
 	sm := &SlideshowManager{
-		isPaused:           false, // Start unpaused (playing) by default
+		isPaused:           true, // Start paused by default
 		wasPlayingBeforeOp: false,
 		interval:           interval,
 		logger:             logger,
 	}
-	sm.logMsg("SlideshowManager initialized. Interval: %v, Initial state: Playing", sm.interval)
+	sm.logMsg("SlideshowManager initialized. Interval: %v, Initial state: Paused", sm.interval)
 	return sm
 }
 
