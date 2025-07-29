@@ -404,19 +404,15 @@ func (a *App) removeTag() {
 		return
 	}
 
-	preDialogCheck := func() bool {
-		if len(currentTags) == 0 {
-			dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", a.UI.MainWin)
-			return false
-		}
-		return true
+	if len(currentTags) == 0 {
+		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", a.UI.MainWin)
+		return
 	}
 
 	var selectedTag string
 	tagSelector := widget.NewSelect(currentTags, func(s string) { selectedTag = s })
 	tagSelector.SetSelected(currentTags[0])
 	selectedTag = currentTags[0]
-
 	removeFromAllCheck := widget.NewCheck("Remove tag(s) from all images in this directory", nil)
 
 	formItems := []*widget.FormItem{
@@ -458,5 +454,5 @@ func (a *App) removeTag() {
 		a.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[a.img.Path])
 	}
 
-	a.handleTagOperation("Remove Tag", "Remove", formItems, nil, preDialogCheck, execute)
+	a.handleTagOperation("Remove Tag", "Remove", formItems, nil, nil, execute)
 }
