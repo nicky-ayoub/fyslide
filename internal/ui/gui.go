@@ -5,8 +5,6 @@ import (
 	"image/color"
 	"runtime"
 
-	"fyne.io/fyne/v2/layout"
-
 	"fyne.io/fyne/v2/canvas"
 
 	"fyne.io/fyne/v2"
@@ -256,74 +254,6 @@ FySlide is an image viewer with tagging capabilities.
 
 // MaxVisibleThumbnails defines the maximum number of thumbnails to display in the strip.
 const MaxVisibleThumbnails = 11
-
-// ThumbnailsOnEachSide is the number of thumbnails to display on each side of the current one.
-
-// refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
-// It calculates a window of thumbnails around the current image and displays them.
-// This function replaces updateThumbnailData and updateThumbnailSelection.
-func (a *App) refreshThumbnailStrip() {
-	if a.UI.thumbnailStrip == nil {
-		return
-	}
-	a.UI.thumbnailStrip.RemoveAll()
-
-	const windowSize = 11 // Should be an odd number for a perfect center
-	viewportItems, centerThumbIndex := a.getViewportItems(a.index, windowSize)
-
-	if len(viewportItems) == 0 {
-		a.UI.thumbnailStrip.Refresh()
-		return
-	}
-
-	// Add a spacer before the thumbnails to push them to the center.
-	a.UI.thumbnailStrip.Add(layout.NewSpacer())
-
-	for i, viewportItem := range viewportItems {
-		item := viewportItem.Item
-		viewIndex := viewportItem.ViewIndex
-
-		// Create a tappable thumbnail widget.
-		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
-			if viewIndex == a.index {
-				return // Do nothing if the current image's thumbnail is clicked
-			}
-			// Pause slideshow on manual interaction.
-			if !a.slideshowManager.IsPaused() {
-				a.togglePlay()
-			}
-			// A thumbnail click is always a direct navigation action.
-			a.navigateToImageIndex(viewIndex)
-		})
-		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
-
-		// The thumbWidget is a stack that will hold the tappable image and a border if selected.
-		thumbWidget := container.NewStack(tappableThumb)
-
-		// Use a closure to update the thumbnail when it's loaded asynchronously.
-		updateThumb := func(resource fyne.Resource) {
-			tappableThumb.SetResource(resource)
-			thumbWidget.Refresh()
-		}
-		initialResource := a.thumbnailManager.GetThumbnail(item.Path, updateThumb)
-		tappableThumb.SetResource(initialResource)
-		thumbWidget.Refresh()
-
-		// Add a border for the selected image
-		if i == centerThumbIndex {
-			border := canvas.NewRectangle(color.Transparent)
-			// border.StrokeColor = theme.PrimaryColor()
-			border.StrokeColor = theme.Color(theme.ColorNamePrimary) // Use theme-aware color
-			border.StrokeWidth = 3
-			thumbWidget.Add(border) // Add border on top of the tappable image
-		}
-		a.UI.thumbnailStrip.Add(thumbWidget)
-	}
-	// Add a spacer after the thumbnails to complete the centering.
-	a.UI.thumbnailStrip.Add(layout.NewSpacer())
-
-	a.UI.thumbnailStrip.Refresh()
-}
 
 func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMaster()
