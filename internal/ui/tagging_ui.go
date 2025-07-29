@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -26,37 +27,85 @@ func (a *App) showFilterDialog() {
 		return
 	}
 
-	tagNames := make([]string, len(allTagsWithCounts))
-	for i, tagInfo := range allTagsWithCounts {
-		tagNames[i] = tagInfo.Name
+	sortMode := "By Count"
+	var selectedTagName string
+
+	filterSelector := widget.NewSelect([]string{}, nil)
+
+	updateTagList := func() {
+		sort.Slice(allTagsWithCounts, func(i, j int) bool {
+			tagI := allTagsWithCounts[i]
+			tagJ := allTagsWithCounts[j]
+
+			if sortMode == "By Name" {
+				return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name)
+			}
+			// Default to "By Count"
+			if tagI.Count != tagJ.Count {
+				return tagI.Count > tagJ.Count // Descending
+			}
+			return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name) // Secondary sort by name ascending
+		})
+
+		tagDisplayNames := make([]string, len(allTagsWithCounts))
+		for i, tagInfo := range allTagsWithCounts {
+			tagDisplayNames[i] = fmt.Sprintf("%s (%d)", tagInfo.Name, tagInfo.Count)
+		}
+
+		options := append([]string{"(Show All / Clear Filter)"}, tagDisplayNames...)
+		filterSelector.Options = options
+
+		currentSelection := filterSelector.Selected
+		found := false
+		for _, opt := range options {
+			if opt == currentSelection {
+				found = true
+				break
+			}
+		}
+		if !found && len(options) > 0 {
+			if a.isFiltered {
+				for _, displayName := range options {
+					if strings.HasPrefix(displayName, a.currentFilterTag+" (") {
+						filterSelector.SetSelected(displayName)
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				filterSelector.SetSelected(options[0])
+			}
+		}
+		filterSelector.Refresh()
 	}
 
-	options := append([]string{"(Show All / Clear Filter)"}, tagNames...)
-
-	var selectedOption string
-	filterSelector := widget.NewSelect(options, func(selected string) {
-		selectedOption = selected
+	sortRadio := widget.NewRadioGroup([]string{"By Count", "By Name"}, func(s string) {
+		sortMode = s
+		updateTagList()
 	})
+	sortRadio.SetSelected(sortMode)
 
-	if a.isFiltered {
-		filterSelector.SetSelected(a.currentFilterTag)
-		selectedOption = a.currentFilterTag
-	} else {
-		filterSelector.SetSelected(options[0])
-		selectedOption = options[0]
-	}
+	updateTagList() // Initial population
 
 	dialog.ShowForm("Filter by Tag", "Apply", "Cancel", []*widget.FormItem{
+		widget.NewFormItem("Sort", sortRadio),
 		widget.NewFormItem("Select Tag", filterSelector),
 	}, func(confirm bool) {
 		if !confirm {
 			return
 		}
 
-		if selectedOption == options[0] { // "(Show All / Clear Filter)"
+		selectedOption := filterSelector.Selected
+		if selectedOption == "(Show All / Clear Filter)" {
 			a.clearFilter()
 		} else {
-			a.applyFilter([]string{selectedOption})
+			// Extract tag name from "tag (count)"
+			parts := strings.SplitN(selectedOption, " (", 2)
+			if len(parts) > 0 {
+				selectedTagName = parts[0]
+				a.applyFilter([]string{selectedTagName})
+			}
 		}
 	}, a.UI.MainWin)
 }
@@ -253,17 +302,27 @@ func (a *App) handleTagOperation(
 // tagOperationFunc defines a function that performs a tag operation on a single image path with a set of tags.
 type tagOperationFunc func(imagePath string, tags []string) error
 
-// _processTagsForDirectory handles batch tag operations (add/remove) for all images in a directory.
-func (a *App) _processTagsForDirectory(
+// batchTagResult holds the aggregated results of a batch tag operation.
+type batchTagResult struct {
+	SuccessfulImages int
+	ErroredImages    int
+	ImagesProcessed  int
+	FirstError       error
+	FilesAffected    map[string]bool
+}
+
+// processTagsForDirectory handles batch tag operations (add/remove) for all images in a directory.
+func (a *App) processTagsForDirectory(
 	currentDir string,
 	tags []string,
 	operation tagOperationFunc,
 	operationVerb string,
-) (successfulImages, erroredImages, imagesProcessed int, firstError error, filesAffected map[string]bool) {
+) *batchTagResult {
 
 	a.addLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
 
 	type result struct {
+		// path is the file path of the image processed.
 		path string
 		err  error
 	}
@@ -276,7 +335,7 @@ func (a *App) _processTagsForDirectory(
 	}
 
 	if len(imagesToProcess) == 0 {
-		return 0, 0, 0, nil, make(map[string]bool)
+		return &batchTagResult{FilesAffected: make(map[string]bool)}
 	}
 
 	resultsChan := make(chan result, len(imagesToProcess))
@@ -294,23 +353,25 @@ func (a *App) _processTagsForDirectory(
 	wg.Wait()
 	close(resultsChan)
 
-	filesAffected = make(map[string]bool)
+	batchResult := &batchTagResult{
+		FilesAffected: make(map[string]bool),
+	}
 	for res := range resultsChan {
-		imagesProcessed++
+		batchResult.ImagesProcessed++
 		if res.err != nil {
-			erroredImages++
-			if firstError == nil {
-				firstError = fmt.Errorf("failed to %s %s: %w", operationVerb, filepath.Base(res.path), res.err)
+			batchResult.ErroredImages++
+			if batchResult.FirstError == nil {
+				batchResult.FirstError = fmt.Errorf("failed to %s %s: %w", operationVerb, filepath.Base(res.path), res.err)
 			}
 		} else {
-			successfulImages++
-			filesAffected[res.path] = true
+			batchResult.SuccessfulImages++
+			batchResult.FilesAffected[res.path] = true
 		}
 	}
 
 	a.addLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
-		operationVerb, strings.Join(tags, ", "), filepath.Base(currentDir), imagesProcessed, successfulImages, erroredImages))
-	return
+		operationVerb, strings.Join(tags, ", "), filepath.Base(currentDir), batchResult.ImagesProcessed, batchResult.SuccessfulImages, batchResult.ErroredImages))
+	return batchResult
 }
 
 // addTag shows a dialog to add a new tag to the current image.
@@ -365,10 +426,11 @@ func (a *App) addTag() {
 
 		if applyToAll {
 			currentDir := filepath.Dir(a.img.Path)
-			var successfulImages, erroredImages int
-			successfulImages, erroredImages, _, errAddOp, filesAffected = a._processTagsForDirectory(currentDir, tagsToAdd, a.Service.AddTagsToImage, "tagging")
-			successfulAdditions = successfulImages * len(tagsToAdd)
-			errorsEncountered = erroredImages * len(tagsToAdd)
+			result := a.processTagsForDirectory(currentDir, tagsToAdd, a.Service.AddTagsToImage, "tagging")
+			successfulAdditions = result.SuccessfulImages * len(tagsToAdd)
+			errorsEncountered = result.ErroredImages * len(tagsToAdd)
+			errAddOp = result.FirstError
+			filesAffected = result.FilesAffected
 
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
@@ -435,7 +497,11 @@ func (a *App) removeTag() {
 			op := func(path string, tags []string) error {
 				return a.Service.RemoveTagsFromImage(path, tags)
 			}
-			imagesUntaggedCount, errorsEncountered, _, errRemoveOp, filesAffected = a._processTagsForDirectory(currentDir, []string{selectedTag}, op, "untagging")
+			result := a.processTagsForDirectory(currentDir, []string{selectedTag}, op, "untagging")
+			imagesUntaggedCount = result.SuccessfulImages
+			errorsEncountered = result.ErroredImages
+			errRemoveOp = result.FirstError
+			filesAffected = result.FilesAffected
 
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
