@@ -59,6 +59,23 @@ type UI struct {
 	collapseButton   *widget.Button
 }
 
+// tagListController manages the state and logic for the tags view.
+type tagListController struct {
+	app *App // To access services and other app-level methods
+
+	// UI Widgets
+	searchEntry   *widget.Entry
+	refreshButton *widget.Button
+	removeButton  *widget.Button
+	tagList       *widget.List
+	messageLabel  *widget.Label
+
+	// State
+	allTags              []tagListItem
+	filteredDisplayData  []tagListItem
+	selectedTagForAction string
+}
+
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
 func (a *App) selectStackView(index int) {
 	if a.UI.contentStack == nil {
@@ -175,156 +192,161 @@ func (a *App) _createTagListWidgets() (
 	return
 }
 
-// _setupTagListCallbacks wires up the event handlers and data logic for the tags view widgets.
-func (a *App) _setupTagListCallbacks(
+// filterAndRefreshList updates the list display based on the current search term.
+func (c *tagListController) filterAndRefreshList(searchTerm string) {
+	searchTerm = strings.ToLower(strings.TrimSpace(searchTerm))
+	c.filteredDisplayData = []tagListItem{} // Clear previous filter results
+
+	if searchTerm == "" {
+		c.filteredDisplayData = c.allTags
+	} else {
+		for _, tag := range c.allTags {
+			if strings.Contains(strings.ToLower(tag.Name), searchTerm) {
+				c.filteredDisplayData = append(c.filteredDisplayData, tag)
+			}
+		}
+	}
+
+	if len(c.filteredDisplayData) == 0 {
+		currentMsg := noTagsFoundMsg
+		if searchTerm != "" {
+			currentMsg = noTagsMatchSearchMsg
+		}
+		c.messageLabel.SetText(currentMsg)
+		c.messageLabel.Show()
+		c.tagList.Hide()
+	} else {
+		c.messageLabel.Hide()
+		c.tagList.Show()
+		c.tagList.Refresh()
+		c.tagList.ScrollToTop()
+	}
+}
+
+// loadAndFilterTagData reloads all tag data from the service, sorts it, and refreshes the view.
+func (c *tagListController) loadAndFilterTagData() {
+	fetchedTags, err := c.app.Service.ListAllTags()
+	if err != nil {
+		c.app.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
+		c.allTags = []tagListItem{}
+		c.messageLabel.SetText(errorLoadingTagsMsg)
+	} else {
+		c.allTags = make([]tagListItem, len(fetchedTags))
+		for i, tagInfo := range fetchedTags {
+			c.allTags[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
+		}
+		// Sort by count (descending), then by name (ascending) for ties.
+		sort.Slice(c.allTags, func(i, j int) bool {
+			if c.allTags[i].Count != c.allTags[j].Count {
+				return c.allTags[i].Count > c.allTags[j].Count
+			}
+			return c.allTags[i].Name < c.allTags[j].Name
+		})
+	}
+	c.filterAndRefreshList(c.searchEntry.Text)
+	c.tagList.UnselectAll() // This will trigger OnUnselected and disable the button
+}
+
+// onRemoveTapped handles the logic for the "Remove Tag Globally" button.
+func (c *tagListController) onRemoveTapped() {
+	if c.selectedTagForAction == "" {
+		return
+	}
+	confirmMessage := fmt.Sprintf("Are you sure you want to remove the tag '%s' from ALL images in the database?\nThis action cannot be undone.", c.selectedTagForAction)
+	dialog.ShowConfirm("Confirm Global Tag Removal", confirmMessage, func(confirm bool) {
+		if !confirm {
+			return
+		}
+		c.app.addLogMessage(fmt.Sprintf("User confirmed global removal of tag: %s", c.selectedTagForAction))
+		err := c.app.removeTagGlobally(c.selectedTagForAction)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to globally remove tag '%s': %w", c.selectedTagForAction, err), c.app.UI.MainWin)
+		} else {
+			dialog.ShowInformation("Success", fmt.Sprintf("Tag '%s' removed globally.", c.selectedTagForAction), c.app.UI.MainWin)
+			c.loadAndFilterTagData() // Refresh list on success
+		}
+	}, c.app.UI.MainWin)
+}
+
+// onTagSelected handles when a user clicks a tag in the list.
+func (c *tagListController) onTagSelected(id widget.ListItemID) {
+	if id < 0 || id >= len(c.filteredDisplayData) {
+		c.selectedTagForAction = ""
+		c.removeButton.Disable()
+		return
+	}
+	selectedItem := c.filteredDisplayData[id]
+	c.selectedTagForAction = selectedItem.Name
+	c.removeButton.Enable()
+	c.app.applyFilter([]string{selectedItem.Name}) // Wrap single tag in a slice
+	if c.app.UI.contentStack != nil {
+		c.app.selectStackView(imageViewIndex)
+	}
+}
+
+// onTagUnselected handles when a user deselects a tag.
+func (c *tagListController) onTagUnselected(_ widget.ListItemID) {
+	c.selectedTagForAction = ""
+	c.removeButton.Disable()
+}
+
+// newTagListController creates and initializes a new controller for the tags view.
+func newTagListController(
+	app *App,
 	searchEntry *widget.Entry,
 	refreshButton *widget.Button,
 	removeButton *widget.Button,
 	tagList *widget.List,
-	allTags *[]tagListItem,
-	filteredDisplayData *[]tagListItem,
-	selectedTagForAction *string,
 	messageLabel *widget.Label,
-) func() {
-
-	var loadAndFilterTagData func() // Declare for mutual recursion with filterAndRefreshList
-
-	// filterAndRefreshList updates the list display based on the current search term.
-	filterAndRefreshList := func(searchTerm string) {
-		searchTerm = strings.ToLower(strings.TrimSpace(searchTerm))
-		*filteredDisplayData = []tagListItem{} // Clear previous filter results
-
-		if searchTerm == "" {
-			*filteredDisplayData = *allTags
-		} else {
-			for _, tag := range *allTags {
-				if strings.Contains(strings.ToLower(tag.Name), searchTerm) {
-					*filteredDisplayData = append(*filteredDisplayData, tag)
-				}
-			}
-		}
-
-		if len(*filteredDisplayData) == 0 {
-			currentMsg := noTagsFoundMsg
-			if searchTerm != "" {
-				currentMsg = noTagsMatchSearchMsg
-			}
-			messageLabel.SetText(currentMsg)
-			messageLabel.Show()
-			tagList.Hide()
-		} else {
-			messageLabel.Hide()
-			tagList.Show()
-			tagList.Refresh()
-			tagList.ScrollToTop()
-		}
+) *tagListController {
+	c := &tagListController{
+		app:           app,
+		searchEntry:   searchEntry,
+		refreshButton: refreshButton,
+		removeButton:  removeButton,
+		tagList:       tagList,
+		messageLabel:  messageLabel,
 	}
 
-	// loadAndFilterTagData reloads all tag data from the service.
-	loadAndFilterTagData = func() {
-		fetchedTags, err := a.Service.ListAllTags()
-		if err != nil {
-			a.addLogMessage(fmt.Sprintf("Error loading/refreshing tags: %v", err))
-			*allTags = []tagListItem{}
-			messageLabel.SetText(errorLoadingTagsMsg)
-		} else {
-			*allTags = make([]tagListItem, len(fetchedTags))
-			for i, tagInfo := range fetchedTags {
-				(*allTags)[i] = tagListItem{Name: tagInfo.Name, Count: tagInfo.Count}
-			}
-			// Sort by count (descending), then by name (ascending) for ties.
-			sort.Slice(*allTags, func(i, j int) bool {
-				if (*allTags)[i].Count != (*allTags)[j].Count {
-					return (*allTags)[i].Count > (*allTags)[j].Count
-				}
-				return (*allTags)[i].Name < (*allTags)[j].Name
-			})
-		}
-		filterAndRefreshList(searchEntry.Text)
-		tagList.UnselectAll() // This will trigger OnUnselected and disable the button
-	}
+	// Wire up the callbacks
+	c.searchEntry.OnChanged = c.filterAndRefreshList
+	c.refreshButton.OnTapped = c.loadAndFilterTagData
+	c.removeButton.OnTapped = c.onRemoveTapped
+	c.tagList.OnSelected = c.onTagSelected
+	c.tagList.OnUnselected = c.onTagUnselected
 
-	searchEntry.OnChanged = filterAndRefreshList
-	refreshButton.OnTapped = loadAndFilterTagData
-
-	removeButton.OnTapped = func() {
-		if *selectedTagForAction == "" {
-			return
-		}
-		confirmMessage := fmt.Sprintf("Are you sure you want to remove the tag '%s' from ALL images in the database?\nThis action cannot be undone.", *selectedTagForAction)
-		dialog.ShowConfirm("Confirm Global Tag Removal", confirmMessage, func(confirm bool) {
-			if !confirm {
-				return
-			}
-			a.addLogMessage(fmt.Sprintf("User confirmed global removal of tag: %s", *selectedTagForAction))
-			err := a.removeTagGlobally(*selectedTagForAction)
-			if err != nil {
-				dialog.ShowError(fmt.Errorf("failed to globally remove tag '%s': %w", *selectedTagForAction, err), a.UI.MainWin)
-			} else {
-				dialog.ShowInformation("Success", fmt.Sprintf("Tag '%s' removed globally.", *selectedTagForAction), a.UI.MainWin)
-				loadAndFilterTagData() // Refresh list on success
-			}
-		}, a.UI.MainWin)
-	}
-
-	tagList.OnSelected = func(id widget.ListItemID) {
-		if id < 0 || id >= len(*filteredDisplayData) {
-			*selectedTagForAction = ""
-			removeButton.Disable()
-			return
-		}
-		selectedItem := (*filteredDisplayData)[id]
-		*selectedTagForAction = selectedItem.Name
-		removeButton.Enable()
-		a.applyFilter([]string{selectedItem.Name}) // Wrap single tag in a slice
-		if a.UI.contentStack != nil {
-			a.selectStackView(imageViewIndex)
-		}
-	}
-
-	tagList.OnUnselected = func(_ widget.ListItemID) {
-		*selectedTagForAction = ""
-		removeButton.Disable()
-	}
-
-	return loadAndFilterTagData
+	return c
 }
 
 // buildTagsTab constructs the UI for the "Tags" management view.
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
-	// --- State Management ---
-	var allTags, filteredDisplayData []tagListItem
-	var selectedTagForAction string
-
 	// --- UI Widget Creation ---
 	searchEntry, refreshButton, removeButton, tagList, messageLabel := a._createTagListWidgets()
 
-	// --- Data Binding and Callbacks ---
+	// --- Controller Creation and Wiring ---
+	controller := newTagListController(a, searchEntry, refreshButton, removeButton, tagList, messageLabel)
+
+	// --- Data Binding ---
 	tagList.Length = func() int {
-		return len(filteredDisplayData)
+		return len(controller.filteredDisplayData)
 	}
 	tagList.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
-		item := filteredDisplayData[id]
+		item := controller.filteredDisplayData[id]
 		label := obj.(*widget.Label)
 		label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
 	}
 
-	// Setup all other callbacks and get the data loading function
-	loadAndFilterTagData := a._setupTagListCallbacks(
-		searchEntry, refreshButton, removeButton, tagList,
-		&allTags, &filteredDisplayData, &selectedTagForAction, messageLabel,
-	)
-
 	// --- Initial Data Load ---
-	loadAndFilterTagData()
+	controller.loadAndFilterTagData()
 
 	// --- Assemble Layout ---
 	topBar := container.NewBorder(nil, nil, nil, refreshButton, searchEntry)
 	listContentArea := container.NewStack(messageLabel, tagList)
-	tagList.Hide() // Initially hide list, loadAndFilterTagData will show it if tags exist
+	tagList.Hide() // Initially hide list, controller will show it if tags exist
 	content := container.NewBorder(topBar, removeButton, nil, nil, listContentArea)
 
-	return content, loadAndFilterTagData
+	// The refresh function is now the controller's data loading method.
+	return content, controller.loadAndFilterTagData
 }
 
 // showHelpDialog displays a simple help dialog with application features.
