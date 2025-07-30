@@ -2,12 +2,14 @@ package ui
 
 import (
 	"fmt"
+	custom_widgets "fyslide/internal/custom_widget"
 	"image/color"
 	"runtime"
 	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/layout"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -210,15 +212,22 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 	// The controller will manage the sort mode state, starting with "By Count".
 	controller := newTagListController(a, searchEntry, refreshButton, removeButton, tagList, "By Count", messageLabel)
 
-	// Create the sort radio buttons and wire them to the controller
-	sortRadio := widget.NewRadioGroup([]string{"By Count", "By Name"}, func(selected string) {
-		controller.sortMode = selected
-		// Re-sort and refresh the list.
-		// Assuming loadAndFilterTagData re-fetches, re-sorts, and re-filters.
-		// A more efficient approach might be a `resortAndRefresh` that doesn't re-fetch.
-		controller.loadAndFilterTagData()
+	sortLabel := widget.NewLabel("Sort: By Count")
+
+	// Create a toggle for sorting
+	sortToggle := custom_widgets.NewToggle(func(toggled bool) {
+		if toggled {
+			controller.sortMode = "By Name"
+			sortLabel.SetText("Sort: By Name")
+		} else {
+			controller.sortMode = "By Count"
+			sortLabel.SetText("Sort: By Count")
+		}
+		// Re-sort the existing tag data in memory based on the new mode.
+		controller.sortTagList()
+		// Now, re-apply the current search filter to the newly sorted list and refresh the UI.
+		controller.filterAndRefreshList(controller.searchEntry.Text)
 	})
-	sortRadio.SetSelected(controller.sortMode)
 
 	// --- Data Binding ---
 	tagList.Length = func() int {
@@ -232,10 +241,15 @@ func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
 
 	// --- Initial Data Load ---
 	controller.loadAndFilterTagData()
-
+	// --- Assemble Layout ---
+	sortControl := container.NewHBox(
+		sortLabel,
+		sortToggle,
+		layout.NewSpacer(),
+	)
 	// --- Assemble Layout ---
 	controls := container.NewVBox(
-		container.NewBorder(nil, nil, widget.NewLabel("Sort:"), nil, sortRadio),
+		sortControl,
 		container.NewBorder(nil, nil, nil, refreshButton, searchEntry),
 	)
 
