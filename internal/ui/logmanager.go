@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -71,7 +72,10 @@ func (lm *LogUIManager) UpdateLogDisplay() {
 		lm.currentLogIndex = len(lm.logMessages) - 1
 	}
 
-	lm.statusLogLabel.SetText(fmt.Sprintf("[%d/%d] %s", lm.currentLogIndex+1, len(lm.logMessages), lm.logMessages[lm.currentLogIndex]))
+	fyne.Do(func() {
+		lm.statusLogLabel.SetText(fmt.Sprintf("[%d/%d] %s", lm.currentLogIndex+1, len(lm.logMessages), lm.logMessages[lm.currentLogIndex]))
+	})
+
 	if lm.currentLogIndex <= 0 {
 		lm.statusLogUpBtn.Disable()
 	} else {
