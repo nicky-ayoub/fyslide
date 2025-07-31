@@ -9,7 +9,7 @@ import (
 )
 
 // DefaultMaxLogMessages is the maximum number of log messages to keep in memory.
-const DefaultMaxLogMessages = 100 // Or get from App constants
+const DefaultMaxLogMessages = 20 // Or get from App constants
 
 // LogUIManager is responsible for managing the log messages and their display in the UI
 type LogUIManager struct {

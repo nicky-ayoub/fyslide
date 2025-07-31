@@ -57,13 +57,12 @@ func (a *App) navigate(offset int) {
 
 	newIndex := a.index + offset
 
-	// Handle wrapping around the end of the list
 	if newIndex >= count {
-		newIndex = 0 // Wrap to the start
+		newIndex = count - 1
 	}
-	// Handle wrapping around the beginning of the list
+
 	if newIndex < 0 {
-		newIndex = count - 1 // Wrap to the end
+		newIndex = 0 // Wrap to the end
 	}
 
 	a.index = newIndex
@@ -71,15 +70,12 @@ func (a *App) navigate(offset int) {
 }
 
 // ShowPreviousImage handles the "back" button logic.
-// In random mode, it uses the viewing history.
-// In sequential mode, it navigates to the previous image in the list.
 func (a *App) ShowPreviousImage() {
 	// --- Pause slideshow if it's playing (user is navigating back) ---
 	if !a.slideshowManager.IsPaused() {
-		a.togglePlay() // This effectively pauses it via user action
+		a.togglePlay()
 	}
 
-	// In sequential mode, "Previous" simply means going to the prior image in the list.
 	a.navigate(-1)
 }
 
