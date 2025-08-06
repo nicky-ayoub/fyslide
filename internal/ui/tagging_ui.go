@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -305,7 +306,7 @@ func (a *App) addTag() {
 
 	execute := func(confirm bool) {
 		rawInput := tagEntry.Text
-		potentialTags := strings.Split(rawInput, ",")
+		potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
 		var tagsToAdd []string
 		uniqueTags := make(map[string]bool)
 		for _, pt := range potentialTags {

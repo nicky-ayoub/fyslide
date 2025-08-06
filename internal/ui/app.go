@@ -87,6 +87,14 @@ func (a *App) getCurrentImageCount() int {
 	return len(a.getCurrentList())
 }
 
+// getActivePermutationManager returns the permutation manager for the active list.
+func (a *App) getActivePermutationManager() *scan.PermutationManager {
+	if a.isFiltered {
+		return a.filteredPermutationManager
+	}
+	return a.permutationManager
+}
+
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
 func (a *App) getCurrentItem() *scan.FileItem {
 	item, err := a.getItemByViewIndex(a.index)
@@ -358,12 +366,6 @@ func (a *App) deleteFile() {
 	a.refreshThumbnailStrip() // Update the thumbnail strip
 }
 
-// func pathToURI(path string) (fyne.URI, error) {
-// 	absPath, _ := filepath.Abs(path)
-// 	fileURI := storage.NewFileURI(absPath)
-// 	return fileURI, nil
-// }
-
 // loadImages scans the given root directory for image files in a background goroutine
 // and populates the main image list.
 func (a *App) loadImages(root string) {
@@ -546,10 +548,8 @@ func (a *App) updateTimer() {
 		if a.UI.MainWin == nil || a.UI.clockLabel == nil { // Check if UI elements are still valid
 			return // Exit goroutine if window is closed
 		}
-		fyne.Do(func() {
-			formatted := time.Now().Format("Time: 03:04:05")
-			a.UI.clockLabel.SetText(formatted)
-		})
+		formatted := time.Now().Format("Time: 03:04:05")
+		fyne.Do(func() { a.UI.clockLabel.SetText(formatted) })
 	}
 }
 

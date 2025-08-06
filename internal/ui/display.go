@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"fyslide/internal/scan"
 	"fyslide/internal/service"
 
 	"fyne.io/fyne/v2"
@@ -341,13 +340,7 @@ func (a *App) toggleRandom() {
 			a.index = 0
 		} else {
 			if a.random { // Switched TO random mode
-				var activeManager *scan.PermutationManager
-				if a.isFiltered {
-					activeManager = a.filteredPermutationManager
-				} else {
-					activeManager = a.permutationManager
-				}
-
+				activeManager := a.getActivePermutationManager()
 				if activeManager != nil {
 					if !a.isFiltered {
 						activeManager.SyncNewData()
