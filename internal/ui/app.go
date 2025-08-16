@@ -515,8 +515,8 @@ func CreateApplication() {
 
 	// Wait for initial scan
 	startTime := time.Now()
-	for ui.imageCount() < 1000 {
-		if time.Since(startTime) > 10*time.Second { // Timeout
+	for ui.imageCount() < 100000 {
+		if time.Since(startTime) > 20*time.Second { // Timeout
 			ui.addLogMessage("Timeout waiting for images to load. Please check the directory.")
 			// No images loaded, so the UI will reflect this.
 			break
