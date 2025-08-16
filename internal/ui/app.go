@@ -43,22 +43,12 @@ type App struct {
 	UI  UI
 
 	Navigation *NavigationController
-
-	images                     scan.FileItems           // The original, full list of images
-	permutationManager         *scan.PermutationManager // Manages the original images
-	filteredImages             scan.FileItems           // The list when a filter is active
-	filteredPermutationManager *scan.PermutationManager
-	index                      int
-
-	isFiltered       bool   // NEW: Flag to indicate if filtering is active
-	currentFilterTag string // NEW: The tag currently being filtered by
+	imageState *ImageState
 
 	img         Img
 	zoomPanArea *ZoomPanArea
 
 	slideshowManager *slideshow.SlideshowManager // NEW: Use SlideshowManager
-
-	random bool
 
 	tagDB *tagging.TagDB // Add the tag database instance
 
@@ -76,91 +66,21 @@ type App struct {
 	ImageService     *service.ImageService
 }
 
-// getCurrentList returns the active image list (filtered or full)
-func (a *App) getCurrentList() scan.FileItems {
-	if a.isFiltered {
-		return a.filteredImages
-	}
-	return a.images
-}
-
-// getCurrentImageCount returns the count of the active image list
-func (a *App) getCurrentImageCount() int {
-	return len(a.getCurrentList())
-}
-
-// getActivePermutationManager returns the permutation manager for the active list.
-func (a *App) getActivePermutationManager() *scan.PermutationManager {
-	if a.isFiltered {
-		return a.filteredPermutationManager
-	}
-	return a.permutationManager
-}
-
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
 func (a *App) getCurrentItem() *scan.FileItem {
-	item, err := a.getItemByViewIndex(a.index)
-	if err != nil {
-		// This is a common case (e.g., empty list), so logging might be too noisy.
-		// The caller should handle the nil case gracefully.
-		return nil
-	}
-	return item
+	return a.imageState.GetCurrentItem()
 }
 
 // getItemByViewIndex retrieves a FileItem from the active view (sequential or random)
 // using a specific view index. This is the core data retrieval logic.
-func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
-	// 1. Determine the active data sources based on the filter state.
-	activeList := &a.images
-	activeManager := a.permutationManager
-
-	if a.isFiltered {
-		activeManager = a.filteredPermutationManager
-		activeList = &a.filteredImages
-	}
-
-	// 2. Check for an empty or uninitialized data source.
-	if activeList == nil || len(*activeList) == 0 {
-		return nil, fmt.Errorf("active list is empty or not initialized")
-	}
-
-	// 3. Retrieve the item based on the current mode (random or sequential).
-	if a.random {
-		if activeManager == nil {
-			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
-		}
-		// If we are not filtered, we are using the main permutation manager, which
-		// might be out of sync with the dynamically growing main image list.
-		// Sync it to discover any newly loaded images.
-		if !a.isFiltered {
-			activeManager.SyncNewData()
-		}
-		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
-		if err != nil {
-			return nil, fmt.Errorf("error getting data for shuffled index %d: %w", viewIndex, err)
-		}
-		return &item, nil
-	}
-
-	// Default to sequential mode retrieval.
-	if viewIndex < 0 || viewIndex >= len(*activeList) {
-		return nil, fmt.Errorf("sequential index %d out of bounds", viewIndex)
-	}
-	return &(*activeList)[viewIndex], nil
-}
-
-// ViewportItem is a helper struct for the thumbnail strip, bundling an image
-// with its index in the current view (shuffled or sequential).
-type ViewportItem struct {
-	Item      scan.FileItem
-	ViewIndex int
+func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) { //nolint:unused
+	return a.imageState.GetItemByViewIndex(viewIndex)
 }
 
 // getViewportItems returns a slice of ViewportItems representing the current viewport
 // for the thumbnail strip, along with the index of the central item within that slice.
-func (a *App) getViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) {
-	count := a.getCurrentImageCount()
+func (a *App) getViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) { //nolint:unused
+	count := a.imageState.GetCurrentImageCount()
 	if count == 0 {
 		return []ViewportItem{}, -1
 	}
@@ -207,7 +127,7 @@ func (a *App) GetImageFullPath() string {
 // loadAndDisplayCurrentImage loads the image at the current index in the active list
 // in a background goroutine and updates the UI on the main Fyne thread.
 func (a *App) loadAndDisplayCurrentImage() {
-	count := a.getCurrentImageCount()
+	count := a.imageState.GetCurrentImageCount()
 	// Handle empty list (either full or filtered)
 
 	if count == 0 { // Handle empty list (either full or filtered)
@@ -223,10 +143,10 @@ func (a *App) loadAndDisplayCurrentImage() {
 	imagePath := a.GetImageFullPath() // Get the full path of the current image
 
 	// Check index bounds again after potential random selection or if not random
-	if a.index < 0 || a.index >= count { // Use current count
+	if a.imageState.GetCurrentIndex() < 0 || a.imageState.GetCurrentIndex() >= count { // Use current count
 		// This might happen if images were deleted; try to reset index or handle error
-		a.index = 0     // Reset to first image
-		if count == 0 { // Double check after reset attempt
+		a.imageState.SetIndex(0) // Reset to first image
+		if count == 0 {          // Double check after reset attempt
 			// Already handled above, but defensive check
 			// This path should ideally not be hit if the initial count == 0 check is robust.
 			// For safety, ensure UI reflects no images.
@@ -308,8 +228,8 @@ func (a *App) deleteFile() {
 
 	// 3. Remove from the main image list (a.images)
 	originalIndex := -1
-	newImages := a.images[:0]
-	for i, item := range a.images {
+	newImages := a.imageState.images[:0]
+	for i, item := range a.imageState.images {
 		if item.Path == deletedPath {
 			originalIndex = i // Keep track of original index if needed
 		} else {
@@ -321,27 +241,27 @@ func (a *App) deleteFile() {
 	} else {
 		a.addLogMessage(fmt.Sprintf("Warning: Image %s not found in main list during deletion.", deletedPath))
 	}
-	a.images = newImages
+	a.imageState.images = newImages
 	// Rebuild the main index manager as the underlying data has changed.
-	if a.permutationManager != nil {
-		a.permutationManager = scan.NewPermutationManager(&a.images)
+	if a.imageState.permutationManager != nil {
+		a.imageState.permutationManager = scan.NewPermutationManager(&a.imageState.images)
 	}
 
 	// 4. Remove from the filtered list (a.filteredImages) if filtering is active
-	if a.isFiltered {
-		newFiltered := a.filteredImages[:0]
-		for _, item := range a.filteredImages {
+	if a.imageState.IsFiltered() {
+		newFiltered := a.imageState.filteredImages[:0]
+		for _, item := range a.imageState.filteredImages {
 			if item.Path != deletedPath {
 				newFiltered = append(newFiltered, item)
 			}
 		}
 		// Rebuild the filtered index manager.
-		if a.filteredPermutationManager != nil {
-			a.filteredPermutationManager = scan.NewPermutationManager(&newFiltered)
+		if a.imageState.filteredPermutationManager != nil {
+			a.imageState.filteredPermutationManager = scan.NewPermutationManager(&newFiltered)
 		}
-		a.filteredImages = newFiltered
+		a.imageState.filteredImages = newFiltered
 		// If the filtered list becomes empty, clear the filter
-		if len(a.filteredImages) == 0 {
+		if len(a.imageState.filteredImages) == 0 {
 			a.addLogMessage("Filtered list empty after deletion, clearing filter.")
 			a.clearFilter() // This will reset index and display
 			return          // clearFilter calls DisplayImage
@@ -349,18 +269,18 @@ func (a *App) deleteFile() {
 	}
 
 	// 5. Adjust index and display the next image
-	count := a.getCurrentImageCount()
+	count := a.imageState.GetCurrentImageCount()
 	if count == 0 {
 		// No images left at all (or in filter)
-		a.index = -1 // Indicate no valid index
+		a.imageState.SetIndex(-1) // Indicate no valid index
 	} else {
 		// Adjust index carefully
-		if a.index >= count { // If we deleted the last item
-			a.index = count - 1
+		if a.imageState.GetCurrentIndex() >= count { // If we deleted the last item
+			a.imageState.SetIndex(count - 1)
 		}
 		// Ensure index is within bounds [0, count-1]
-		if a.index < 0 {
-			a.index = 0
+		if a.imageState.GetCurrentIndex() < 0 {
+			a.imageState.SetIndex(0)
 		}
 	}
 	// Common call after index adjustment
@@ -371,7 +291,7 @@ func (a *App) deleteFile() {
 // loadImages scans the given root directory for image files in a background goroutine
 // and populates the main image list.
 func (a *App) loadImages(root string) {
-	a.images = nil // Clear previous images or a.images = a.images[:0]
+	a.imageState.images = nil // Clear previous images or a.images = a.images[:0]
 
 	// Define a logger function that matches scan.LoggerFunc
 	// and uses the app's logUIManager.
@@ -383,19 +303,15 @@ func (a *App) loadImages(root string) {
 	//imageChan := scan.Run(root, scanLogger) // Pass the logger
 	imageChan := a.Service.FileScan.Run(root, scanLogger)
 	for item := range imageChan { // Loop until the channel is closed
-		a.images = append(a.images, item)
+		a.imageState.images = append(a.imageState.images, item)
 		// Optionally, you could update a progress indicator here
 		// if the GUI needs to show loading progress.
 	}
-	msg := fmt.Sprintf("Loaded %d images from %s", len(a.images), root)
+	msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
 	fyne.Do(func() {
 		a.addLogMessage(msg)
 		a.refreshThumbnailStrip() // Update the thumbnail strip
 	})
-}
-
-func (a *App) imageCount() int {
-	return len(a.images)
 }
 
 // init initializes the application's core components, including the history manager,
@@ -458,7 +374,8 @@ func CreateApplication() {
 
 	ui := &App{app: a}
 
-	ui.Navigation = NewNavigationController(ui)
+	ui.imageState = NewImageState()
+	ui.Navigation = NewNavigationController(ui, ui.imageState)
 
 	// Set initial theme
 	ui.isDarkTheme = true // Default to dark theme
@@ -504,7 +421,6 @@ func CreateApplication() {
 
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.init(*slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
-	ui.random = true
 
 	ui.UI.clockLabel = widget.NewLabel("Time: ")
 	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
@@ -519,7 +435,7 @@ func CreateApplication() {
 
 	// Wait for initial scan
 	startTime := time.Now()
-	for ui.imageCount() < 100000 {
+	for ui.imageState.GetCurrentImageCount() < 100000 {
 		if time.Since(startTime) > 20*time.Second { // Timeout
 			ui.addLogMessage("Timeout waiting for images to load. Please check the directory.")
 			// No images loaded, so the UI will reflect this.
@@ -529,11 +445,11 @@ func CreateApplication() {
 	}
 
 	// Check if images were actually loaded
-	if ui.imageCount() > 0 {
+	if ui.imageState.GetCurrentImageCount() > 0 {
 		// Initialize the permutation manager (for random mode)
-		ui.permutationManager = scan.NewPermutationManager(&ui.images)
+		ui.imageState.permutationManager = scan.NewPermutationManager(&ui.imageState.images)
 		// Start at the beginning of the current view (sequential or random).
-		ui.index = 0
+		ui.imageState.SetIndex(0)
 		ticker := time.NewTicker(ui.slideshowManager.Interval())
 		go ui.pauser(ticker) // pauser will call loadAndDisplayCurrentImage via fyne.Do
 		go ui.updateTimer()

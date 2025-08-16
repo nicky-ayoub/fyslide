@@ -1,0 +1,244 @@
+package ui
+
+import (
+	"fmt"
+	"fyslide/internal/scan"
+)
+
+// ViewportItem is a helper struct for the thumbnail strip, bundling an image
+// with its index in the current view (shuffled or sequential).
+type ViewportItem struct {
+	Item      scan.FileItem
+	ViewIndex int
+}
+
+// ImageState manages the state of the image collection, including the full list,
+// filtered list, current index, and filtering/randomization status.
+type ImageState struct {
+	// The original, full list of images
+	images scan.FileItems
+	// Manages the permutation for the original images for random mode
+	permutationManager *scan.PermutationManager
+
+	// The list when a filter is active
+	filteredImages scan.FileItems
+	// Manages the permutation for the filtered images for random mode
+	filteredPermutationManager *scan.PermutationManager
+
+	// The current view index into the active list (sequential or shuffled)
+	index int
+
+	// Flag to indicate if filtering is active
+	isFiltered bool
+	// The tag currently being filtered by
+	currentFilterTag string
+
+	// Flag to indicate if random mode is active
+	random bool
+}
+
+// NewImageState creates a new ImageState manager.
+func NewImageState() *ImageState {
+	return &ImageState{
+		images: make(scan.FileItems, 0),
+		random: true, // Default to random on
+	}
+}
+
+// GetCurrentList returns the active image list (filtered or full)
+func (is *ImageState) GetCurrentList() scan.FileItems {
+	if is.isFiltered {
+		return is.filteredImages
+	}
+	return is.images
+}
+
+// GetCurrentImageCount returns the count of the active image list
+func (is *ImageState) GetCurrentImageCount() int {
+	return len(is.GetCurrentList())
+}
+
+// GetCurrentIndex returns the current view index.
+func (is *ImageState) GetCurrentIndex() int {
+	return is.index
+}
+
+// SetIndex sets the current view index.
+func (is *ImageState) SetIndex(i int) {
+	is.index = i
+}
+
+// GetActivePermutationManager returns the permutation manager for the active list.
+func (is *ImageState) GetActivePermutationManager() *scan.PermutationManager {
+	if is.isFiltered {
+		return is.filteredPermutationManager
+	}
+	return is.permutationManager
+}
+
+// IsRandom returns true if random mode is active.
+func (is *ImageState) IsRandom() bool {
+	return is.random
+}
+
+// IsFiltered returns true if a filter is active.
+func (is *ImageState) IsFiltered() bool {
+	return is.isFiltered
+}
+
+// GetCurrentItem returns the FileItem for the current index, or nil if invalid
+func (is *ImageState) GetCurrentItem() *scan.FileItem {
+	item, err := is.GetItemByViewIndex(is.index)
+	if err != nil {
+		// This is a common case (e.g., empty list), so logging might be too noisy.
+		// The caller should handle the nil case gracefully.
+		return nil
+	}
+	return item
+}
+
+// GetItemByViewIndex retrieves a FileItem from the active view (sequential or random)
+// using a specific view index. This is the core data retrieval logic.
+func (is *ImageState) GetItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
+	// 1. Determine the active data sources based on the filter state.
+	activeList := &is.images
+	activeManager := is.permutationManager
+
+	if is.isFiltered {
+		activeManager = is.filteredPermutationManager
+		activeList = &is.filteredImages
+	}
+
+	// 2. Check for an empty or uninitialized data source.
+	if activeList == nil || len(*activeList) == 0 {
+		return nil, fmt.Errorf("active list is empty or not initialized")
+	}
+
+	// 3. Retrieve the item based on the current mode (random or sequential).
+	if is.random {
+		if activeManager == nil {
+			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
+		}
+		// If we are not filtered, we are using the main permutation manager, which
+		// might be out of sync with the dynamically growing main image list.
+		// Sync it to discover any newly loaded images.
+		if !is.isFiltered {
+			activeManager.SyncNewData()
+		}
+		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
+		if err != nil {
+			return nil, fmt.Errorf("error getting data for shuffled index %d: %w", viewIndex, err)
+		}
+		return &item, nil
+	}
+
+	// Default to sequential mode retrieval.
+	if viewIndex < 0 || viewIndex >= len(*activeList) {
+		return nil, fmt.Errorf("sequential index %d out of bounds", viewIndex)
+	}
+	return &(*activeList)[viewIndex], nil
+}
+
+// ToggleRandomMode switches the random mode on or off and calculates the new
+// index to keep the same image in view.
+func (is *ImageState) ToggleRandomMode(currentPath string) {
+	is.random = !is.random
+
+	if currentPath == "" {
+		is.index = 0
+		return
+	}
+
+	newIndex := -1
+	activeList := is.GetCurrentList()
+
+	// Find the sequential index of the current item in the active list.
+	sequentialIndexInList := -1
+	for i, item := range activeList {
+		if item.Path == currentPath {
+			sequentialIndexInList = i
+			break
+		}
+	}
+
+	if sequentialIndexInList == -1 {
+		// This can happen if the list changed underneath; reset to the start.
+		is.index = 0
+	} else {
+		if is.random { // Switched TO random mode
+			activeManager := is.GetActivePermutationManager()
+			if activeManager != nil {
+				if !is.isFiltered {
+					activeManager.SyncNewData()
+				}
+				shuffledIndex, err := activeManager.GetShuffledIndex(sequentialIndexInList)
+				if err == nil {
+					newIndex = shuffledIndex
+				}
+			}
+		} else { // Switched TO sequential mode
+			newIndex = sequentialIndexInList
+		}
+		is.index = newIndex
+	}
+}
+
+// ApplyFilter sets the image state to a filtered view.
+func (is *ImageState) ApplyFilter(items scan.FileItems, tag string) {
+	is.filteredImages = items
+	is.filteredPermutationManager = scan.NewPermutationManager(&is.filteredImages)
+	is.isFiltered = true
+	is.currentFilterTag = tag
+	is.index = 0 // Always start at the beginning of a new filter
+}
+
+// ClearFilter resets the image state to the full, unfiltered view.
+func (is *ImageState) ClearFilter() {
+	if !is.isFiltered {
+		return
+	}
+	is.isFiltered = false
+	is.currentFilterTag = ""
+	is.filteredImages = nil
+	is.filteredPermutationManager = nil
+	// The caller is responsible for navigating after clearing the filter,
+	// as the desired destination (e.g., index 0 or previous image) may vary.
+}
+
+// GetViewportItems returns a slice of ViewportItems representing the current viewport
+// for the thumbnail strip, along with the index of the central item within that slice.
+func (is *ImageState) GetViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) {
+	count := is.GetCurrentImageCount()
+	if count == 0 {
+		return []ViewportItem{}, -1
+	}
+
+	halfWindow := windowSize / 2
+	start := centerIndex - halfWindow
+	end := centerIndex + halfWindow
+
+	// Adjust viewport if it goes out of bounds.
+	if start < 0 {
+		end -= start // equivalent to end += abs(start)
+		start = 0
+	}
+	if end >= count {
+		start -= (end - (count - 1))
+		end = count - 1
+	}
+	// Final check in case the list is smaller than the window.
+	if start < 0 {
+		start = 0
+	}
+
+	items := make([]ViewportItem, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		item, err := is.GetItemByViewIndex(i)
+		if err == nil && item != nil {
+			items = append(items, ViewportItem{Item: *item, ViewIndex: i})
+		}
+	}
+
+	newCenterIndex := centerIndex - start
+	return items, newCenterIndex
+}

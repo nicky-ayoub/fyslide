@@ -59,9 +59,9 @@ func (a *App) updateStatusBar() {
 	statusText := "Ready"
 
 	if currentItem != nil {
-		statusText = fmt.Sprintf("%s  |  Image %d / %d", currentItem.Path, a.index+1, a.getCurrentImageCount())
-		if a.isFiltered {
-			statusText += fmt.Sprintf(" (Filtered: %s)", a.currentFilterTag)
+		statusText = fmt.Sprintf("%s  |  Image %d / %d", currentItem.Path, a.imageState.GetCurrentIndex()+1, a.imageState.GetCurrentImageCount())
+		if a.imageState.IsFiltered() {
+			statusText += fmt.Sprintf(" (Filtered: %s)", a.imageState.currentFilterTag)
 		}
 	}
 	if a.slideshowManager.IsPaused() {
@@ -119,8 +119,8 @@ func (a *App) updateInfoText(info *service.ImageInfo) {
 	}
 
 	filterStatus := ""
-	if a.isFiltered {
-		filterStatus = fmt.Sprintf("\n**Filter Active:** %s\n", a.currentFilterTag)
+	if a.imageState.IsFiltered() {
+		filterStatus = fmt.Sprintf("\n**Filter Active:** %s\n", a.imageState.currentFilterTag)
 	}
 
 	md := fmt.Sprintf(`## Stats
@@ -138,7 +138,7 @@ func (a *App) updateInfoText(info *service.ImageInfo) {
 **Last modified:** %s
 
 ---
-## Tags
+## Tags for %s
 %s
 
 ---
@@ -146,11 +146,12 @@ func (a *App) updateInfoText(info *service.ImageInfo) {
 %s
 `,
 		filterStatus,
-		formatNumberWithCommas(int64(a.index)),
-		formatNumberWithCommas(int64(a.getCurrentImageCount())),
+		formatNumberWithCommas(int64(a.imageState.GetCurrentIndex())),
+		formatNumberWithCommas(int64(a.imageState.GetCurrentImageCount())),
 		formatNumberWithCommas(info.Size),
 		info.Width,
 		info.Height,
+		filepath.Base(a.img.Path),
 		info.ModTime.Format("2006-01-02 15:04:05"),
 		tagsString,
 		exifString,
@@ -184,7 +185,7 @@ func (a *App) refreshThumbnailStrip() {
 	a.UI.thumbnailStrip.RemoveAll()
 
 	const windowSize = 11 // Should be an odd number for a perfect center
-	viewportItems, centerThumbIndex := a.getViewportItems(a.index, windowSize)
+	viewportItems, centerThumbIndex := a.getViewportItems(a.imageState.GetCurrentIndex(), windowSize)
 
 	if len(viewportItems) == 0 {
 		a.UI.thumbnailStrip.Refresh()
@@ -200,7 +201,7 @@ func (a *App) refreshThumbnailStrip() {
 
 		// Create a tappable thumbnail widget.
 		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
-			if viewIndex == a.index {
+			if viewIndex == a.imageState.GetCurrentIndex() {
 				return // Do nothing if the current image's thumbnail is clicked
 			}
 			// Pause slideshow on manual interaction.
@@ -273,7 +274,7 @@ func (a *App) updateClearFilterMenuVisibility() {
 	if a.UI.clearFilterMenuItem == nil {
 		return
 	}
-	a.UI.clearFilterMenuItem.Disabled = !a.isFiltered
+	a.UI.clearFilterMenuItem.Disabled = !a.imageState.IsFiltered()
 	// Refresh the main menu to reflect the change in the item's disabled state.
 	if a.UI.MainWin.MainMenu() != nil {
 		a.UI.MainWin.MainMenu().Refresh()
@@ -300,7 +301,7 @@ func (a *App) togglePlay() {
 
 // getDiceIcon returns the appropriate dice icon resource based on random mode and current theme.
 func (a *App) getDiceIcon() fyne.Resource {
-	if a.random {
+	if a.imageState.IsRandom() {
 		if a.isDarkTheme {
 			return resourceDiceDark24Png
 		}
@@ -314,49 +315,15 @@ func (a *App) getDiceIcon() fyne.Resource {
 
 // toggleRandom handles toggling the random mode and updating the UI.
 func (a *App) toggleRandom() {
-	currentItem := a.getCurrentItem()
-	a.random = !a.random
+	currentItem := a.imageState.GetCurrentItem()
+	currentPath := ""
+	if currentItem != nil {
+		currentPath = currentItem.Path
+	}
+	a.imageState.ToggleRandomMode(currentPath)
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
 	}
-
-	if currentItem == nil {
-		a.index = 0
-	} else {
-		currentPath := currentItem.Path
-		newIndex := -1
-		activeList := a.getCurrentList()
-
-		sequentialIndexInList := -1
-		for i, item := range activeList {
-			if item.Path == currentPath {
-				sequentialIndexInList = i
-				break
-			}
-		}
-
-		if sequentialIndexInList == -1 {
-			a.addLogMessage(fmt.Sprintf("Could not find item %s in new view. Resetting.", filepath.Base(currentPath)))
-			a.index = 0
-		} else {
-			if a.random { // Switched TO random mode
-				activeManager := a.getActivePermutationManager()
-				if activeManager != nil {
-					if !a.isFiltered {
-						activeManager.SyncNewData()
-					}
-					shuffledIndex, err := activeManager.GetShuffledIndex(sequentialIndexInList)
-					if err == nil {
-						newIndex = shuffledIndex
-					}
-				}
-			} else { // Switched TO sequential mode
-				newIndex = sequentialIndexInList
-			}
-			a.index = newIndex
-		}
-	}
-
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}

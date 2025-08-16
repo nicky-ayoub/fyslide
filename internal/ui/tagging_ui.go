@@ -65,7 +65,7 @@ func (a *App) applyFilter(tags []string) {
 	}
 
 	newFilteredImages := make(scan.FileItems, 0, len(filteredPathSet))
-	for _, item := range a.images {
+	for _, item := range a.imageState.images {
 		if _, ok := filteredPathSet[item.Path]; ok {
 			newFilteredImages = append(newFilteredImages, item)
 		}
@@ -77,36 +77,22 @@ func (a *App) applyFilter(tags []string) {
 		return
 	}
 
-	a.filteredImages = newFilteredImages
-	a.filteredPermutationManager = scan.NewPermutationManager(&a.filteredImages)
-	a.isFiltered = true
-	a.currentFilterTag = strings.Join(tags, ", ")
-	a.index = 0
-	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(a.filteredImages), a.currentFilterTag))
+	filterTag := strings.Join(tags, ", ")
+	a.imageState.ApplyFilter(newFilteredImages, filterTag)
+	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
 
 	a.updateClearFilterMenuVisibility()
 	a.loadAndDisplayCurrentImage()
 	a.refreshThumbnailStrip()
 }
 
-// _clearFilterState resets the application's filter state variables without triggering a navigation.
-func (a *App) _clearFilterState() {
-	if !a.isFiltered {
-		return
-	}
-	a.isFiltered = false
-	a.currentFilterTag = ""
-	a.filteredImages = nil
-	a.filteredPermutationManager = nil
-}
-
 // clearFilter removes any active tag filter and navigates to the first image.
 func (a *App) clearFilter() {
-	if !a.isFiltered {
+	if !a.imageState.IsFiltered() {
 		return
 	}
 	a.addLogMessage("Filter cleared. Showing all images.")
-	a._clearFilterState()
+	a.imageState.ClearFilter()
 	a.updateClearFilterMenuVisibility()
 	a.Navigation.NavigateToIndex(0)
 	a.refreshThumbnailStrip()
@@ -232,7 +218,7 @@ func (a *App) processTagsForDirectory(
 	}
 
 	var imagesToProcess []string
-	for _, imageItem := range a.images {
+	for _, imageItem := range a.imageState.images {
 		if filepath.Dir(imageItem.Path) == currentDir {
 			imagesToProcess = append(imagesToProcess, imageItem.Path)
 		}

@@ -10,22 +10,23 @@ import (
 )
 
 type NavigationController struct {
-	app *App
+	app        *App
+	imageState *ImageState
 }
 
-func NewNavigationController(app *App) *NavigationController {
-	return &NavigationController{app: app}
+func NewNavigationController(app *App, imageState *ImageState) *NavigationController {
+	return &NavigationController{app: app, imageState: imageState}
 }
 
 // navigateToIndex sets the current image to a specific index, resets the navigation
 // queue, and loads the image. It's a central helper for direct jumps.
 func (nc *NavigationController) NavigateToIndex(newIndex int) {
-	count := nc.app.getCurrentImageCount()
+	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 || newIndex < 0 || newIndex >= count {
 		return // Do nothing if the list is empty or the index is out of bounds.
 	}
 
-	nc.app.index = newIndex
+	nc.imageState.index = newIndex
 	nc.app.loadAndDisplayCurrentImage()
 }
 
@@ -33,38 +34,38 @@ func (nc *NavigationController) NavigateToIndex(newIndex int) {
 // for example, from a thumbnail click. It preserves the navigation queue
 // in random mode where possible by rotating it.
 func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
-	count := nc.app.getCurrentImageCount()
+	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 || targetIndex < 0 || targetIndex >= count {
 		return // Invalid index
 	}
 
-	nc.app.index = targetIndex
+	nc.imageState.index = targetIndex
 
 	nc.app.loadAndDisplayCurrentImage()
 }
 
 func (nc *NavigationController) FirstImage() {
-	if nc.app.getCurrentImageCount() == 0 {
+	if nc.imageState.GetCurrentImageCount() == 0 {
 		return
 	}
-	nc.app.index = 0
+	nc.imageState.index = 0
 	nc.app.loadAndDisplayCurrentImage()
 }
 
 func (nc *NavigationController) LastImage() {
-	nc.NavigateToIndex(nc.app.getCurrentImageCount() - 1)
+	nc.NavigateToIndex(nc.imageState.GetCurrentImageCount() - 1)
 }
 
 // navigate moves the current image by a given offset.
 // A positive offset moves forward, a negative offset moves backward sequentially.
 // It dispatches to more specific handlers based on the offset.
 func (nc *NavigationController) Navigate(offset int) {
-	count := nc.app.getCurrentImageCount()
+	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 {
 		return
 	}
 
-	newIndex := nc.app.index + offset
+	newIndex := nc.imageState.index + offset
 
 	if newIndex >= count {
 		newIndex = count - 1
@@ -74,7 +75,7 @@ func (nc *NavigationController) Navigate(offset int) {
 		newIndex = 0 // Wrap to the end
 	}
 
-	nc.app.index = newIndex
+	nc.imageState.index = newIndex
 	nc.app.loadAndDisplayCurrentImage()
 }
 
@@ -96,7 +97,7 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 		nc.app.togglePlay()
 	}
 	// Get the current image count to validate user input.
-	count := nc.app.getCurrentImageCount()
+	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 {
 		dialog.ShowInformation("Jump to Image", "No images loaded.", nc.app.UI.MainWin)
 		return
