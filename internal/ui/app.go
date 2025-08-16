@@ -58,8 +58,9 @@ type App struct {
 	// of the app to trigger a refresh of the tag list view.
 	refreshTagsFunc func()
 
-	skipCount        int // NEW: Configurable skip count for PageUp/PageDown
-	maxLogMessages   int // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
+	logBuffer        []string // Buffer for log messages before LogUIManager is ready
+	skipCount        int      // NEW: Configurable skip count for PageUp/PageDown
+	maxLogMessages   int      // Maximum number of log messages to store, initialized from DefaultMaxLogMessages
 	logUIManager     *LogUIManager
 	Service          *service.Service
 	thumbnailManager *ThumbnailManager
@@ -330,8 +331,8 @@ func (a *App) initServices() error {
 				a.logUIManager.AddLogMessage(message)
 			})
 		} else {
-			// Fallback to console log if logUIManager is not yet ready
-			log.Printf("EarlyLog: %s", message)
+			// Buffer early logs if UI manager is not ready
+			a.logBuffer = append(a.logBuffer, message)
 		}
 	}
 
@@ -374,6 +375,18 @@ func (a *App) runInitialScanAndWait(dir string) {
 		}
 		time.Sleep(250 * time.Millisecond) // Poll for images
 	}
+}
+
+// flushLogBuffer sends any buffered log messages to the LogUIManager after it has been initialized.
+func (a *App) flushLogBuffer() {
+	if a.logUIManager == nil || len(a.logBuffer) == 0 {
+		return
+	}
+	for _, msg := range a.logBuffer {
+		// The AddLogMessage method on the manager will handle the UI updates
+		a.logUIManager.AddLogMessage(msg)
+	}
+	a.logBuffer = nil // Clear the buffer
 }
 
 // Command-line flags
@@ -435,6 +448,9 @@ func CreateApplication() {
 	ui.UI.MainWin.SetIcon(resourceIconPng)
 	ui.UI.MainWin.CenterOnScreen()
 	ui.UI.MainWin.SetFullScreen(true)
+
+	// After the UI is built and logUIManager is initialized, flush any buffered logs.
+	ui.flushLogBuffer()
 
 	// 4. Run the initial file scan and wait for some results
 	ui.runInitialScanAndWait(dir)

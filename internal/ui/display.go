@@ -5,7 +5,6 @@ import (
 	"fyslide/internal/custom_widgets"
 	"fyslide/internal/service"
 	"image/color"
-	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -77,9 +76,8 @@ func (a *App) AddLogMessage(message string) {
 	if a.logUIManager != nil {
 		a.logUIManager.AddLogMessage(message)
 	} else {
-		// Fallback if LogUIManager is not yet initialized
-		log.Printf("LogUIManager not ready, console log: %s", message)
-		return
+		// Buffer the log message if the UI manager is not ready
+		a.logBuffer = append(a.logBuffer, message)
 	}
 }
 
