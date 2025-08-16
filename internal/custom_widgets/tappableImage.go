@@ -1,4 +1,4 @@
-package ui
+package custom_widgets
 
 import (
 	"fyne.io/fyne/v2"
@@ -16,7 +16,7 @@ type tappableImage struct {
 }
 
 // newTappableImage creates a new tappableImage widget.
-func newTappableImage(res fyne.Resource, onTapped func()) *tappableImage {
+func NewTappableImage(res fyne.Resource, onTapped func()) *tappableImage {
 	ti := &tappableImage{
 		image:    canvas.NewImageFromResource(res),
 		onTapped: onTapped,

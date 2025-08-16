@@ -2,13 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"fyslide/internal/custom_widgets"
+	"fyslide/internal/service"
 	"image/color"
 	"log"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"fyslide/internal/service"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -200,7 +200,7 @@ func (a *App) refreshThumbnailStrip() {
 		viewIndex := viewportItem.ViewIndex
 
 		// Create a tappable thumbnail widget.
-		tappableThumb := newTappableImage(theme.FileImageIcon(), func() {
+		tappableThumb := custom_widgets.NewTappableImage(theme.FileImageIcon(), func() {
 			if viewIndex == a.imageState.GetCurrentIndex() {
 				return // Do nothing if the current image's thumbnail is clicked
 			}
