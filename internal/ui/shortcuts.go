@@ -6,7 +6,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/widget"
 )
 
 func (a *App) buildKeyboardShortcuts() {
@@ -68,60 +67,10 @@ func (a *App) buildKeyboardShortcuts() {
 	})
 }
 
-type shortcutDetail struct {
-	Description string
-	Shortcut    string
-}
-
 func (a *App) showShortcuts() {
-	shortcutData := []shortcutDetail{
-		{Description: "Quit Application", Shortcut: "Ctrl+Q"},
-		{Description: "Next Image", Shortcut: "Arrow Right"},
-		{Description: "Previous Image", Shortcut: "Arrow Left"},
-		{Description: "Skip Images Back (Page Up)", Shortcut: "Page Up"},
-		{Description: "Skip Images Forward (Page Down)", Shortcut: "Page Down"},
-		{Description: "Skip Images Back (Arrow Up)", Shortcut: "Arrow Up"},
-		{Description: "Skip Images Forward (Arrow Down)", Shortcut: "Arrow Down"},
-		{Description: "First Image", Shortcut: "Home"},
-		{Description: "Last Image", Shortcut: "End"},
-		{Description: "Toggle Play/Pause Slideshow", Shortcut: "P or Space"},
-		{Description: "Delete Current Image", Shortcut: "Delete"},
-		{Description: "Close Dialog/Overlay", Shortcut: "Esc"},
-		{Description: "Zoom In Image", Shortcut: "+"},
-		{Description: "Zoom Out Image", Shortcut: "-"},
-		{Description: "Reset Image Zoom/Pan", Shortcut: "0"},
-	}
-
 	win := a.app.NewWindow("Keyboard Shortcuts")
-	table := widget.NewTable(
-		func() (int, int) { return len(shortcutData) + 1, 2 }, // +1 for header row
-		func() fyne.CanvasObject {
-			return widget.NewLabel("")
-		},
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			label := obj.(*widget.Label)
-			isHeader := id.Row == 0 // First row is header
-			dataIndex := id.Row - 1
-
-			if id.Col == 0 { // Description column
-				if isHeader {
-					label.SetText("Description")
-				} else {
-					label.SetText(shortcutData[dataIndex].Description)
-				}
-			} else { // Shortcut column
-				if isHeader {
-					label.SetText("Shortcut")
-				} else {
-					label.SetText(shortcutData[dataIndex].Shortcut)
-				}
-			}
-			label.TextStyle.Bold = isHeader
-		},
-	)
-	table.SetColumnWidth(0, 250)
-	table.SetColumnWidth(1, 250)
-	win.SetContent(table)
-	win.Resize(fyne.NewSize(500, 500))
+	shortcutsWidget := custom_widgets.NewShortcutTable()
+	win.SetContent(shortcutsWidget)
+	win.Resize(fyne.NewSize(520, 500))
 	win.Show()
 }
