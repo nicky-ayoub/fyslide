@@ -106,8 +106,8 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.Navigation.Navigate(1) }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.Navigation.LastImage),
 		widget.NewToolbarAction(theme.ContentRedoIcon(), a.Navigation.ShowJumpToImageDialog),
-		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
-		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
+		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.addTag), // Changed from a.tagFile
+		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.removeTag),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSeparator(),
@@ -181,6 +181,10 @@ FySlide is an image viewer with tagging capabilities.
 const MaxVisibleThumbnails = 11
 
 func (a *App) buildMainUI() fyne.CanvasObject {
+	// Initialize UI elements that were previously in CreateApplication
+	a.UI.clockLabel = widget.NewLabel("Time: ")
+	a.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
+
 	a.UI.MainWin.SetMaster()
 	// set main mod key to super on darwin hosts, else set it to ctrl
 	if runtime.GOOS == "darwin" {
@@ -191,15 +195,15 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.toolBar = a.buildToolbar()
 
 	// --- Menu Item for Clearing Filter ---
-	a.UI.clearFilterMenuItem = fyne.NewMenuItem("Clear Filter", a.clearFilter)
+	a.UI.clearFilterMenuItem = fyne.NewMenuItem("Clear Filter", a.Tagging.clearFilter)
 	a.UI.clearFilterMenuItem.Disabled = true // Start disabled, enabled when a filter is active
 
 	// --- Main Menu ---
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
 		fyne.NewMenu("Edit",
-			fyne.NewMenuItem("Add Tag", a.addTag),
-			fyne.NewMenuItem("Remove Tag", a.removeTag),
+			fyne.NewMenuItem("Add Tag", a.Tagging.addTag),
+			fyne.NewMenuItem("Remove Tag", a.Tagging.removeTag),
 			fyne.NewMenuItemSeparator(), // Optional separator
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),

@@ -21,7 +21,6 @@ import (
 	//"fyne.io/fyne/v2/data/binding"
 
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 )
 
 const (
@@ -44,6 +43,7 @@ type App struct {
 
 	Navigation *NavigationController
 	imageState *ImageState
+	Tagging    *TaggingController
 
 	img         Img
 	zoomPanArea *ZoomPanArea
@@ -132,6 +132,20 @@ func (a *App) ListAllTags() ([]tagging.TagWithCount, error) {
 // GetWindow is a convenience method to satisfy the TagsViewHost interface.
 func (a *App) GetWindow() fyne.Window {
 	return a.UI.MainWin
+}
+
+// ApplyFilter is a convenience method to satisfy the TagsViewHost interface.
+// It delegates the call to the TaggingController.
+func (a *App) ApplyFilter(tags []string) {
+	if a.Tagging != nil {
+		a.Tagging.ApplyFilter(tags)
+	}
+}
+
+// RemoveTagGlobally is a convenience method to satisfy the TagsViewHost interface.
+// It delegates the call to the TaggingController.
+func (a *App) RemoveTagGlobally(tag string) error {
+	return a.Tagging.RemoveTagGlobally(tag)
 }
 
 // loadAndDisplayCurrentImage loads the image at the current index in the active list
@@ -243,8 +257,8 @@ func (a *App) deleteFile() {
 	// 4. Check if the filtered list became empty and needs clearing
 	if a.imageState.IsFiltered() && a.imageState.GetCurrentImageCount() == 0 {
 		a.AddLogMessage("Filtered list empty after deletion, clearing filter.")
-		a.clearFilter() // This will reset index and display, then load the new view
-		return          // clearFilter already triggers the necessary UI updates
+		a.Tagging.clearFilter() // This will reset index and display, then load the new view
+		return                  // clearFilter already triggers the necessary UI updates
 	}
 
 	// 5. Refresh the UI
@@ -306,6 +320,62 @@ func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 	}
 }
 
+// initServices initializes the database and all backend services.
+func (a *App) initServices() error {
+	// Define the logger function that TagDB and other services will use.
+	appLoggerFunc := func(message string) {
+		if a.logUIManager != nil {
+			// Ensure UI updates are on the main Fyne thread.
+			fyne.Do(func() {
+				a.logUIManager.AddLogMessage(message)
+			})
+		} else {
+			// Fallback to console log if logUIManager is not yet ready
+			log.Printf("EarlyLog: %s", message)
+		}
+	}
+
+	var err error
+	a.tagDB, err = tagging.NewTagDB("", appLoggerFunc)
+	if err != nil {
+		return fmt.Errorf("failed to initialize tag database: %w", err)
+	}
+
+	fileScanner := scan.FileScannerImpl{}
+	a.Service = service.NewService(a.tagDB, &fileScanner, appLoggerFunc)
+	a.ImageService = service.NewImageService()
+	a.thumbnailManager = NewThumbnailManager(a)
+
+	return nil
+}
+
+// initComponents initializes all the controller components of the application.
+// It should be called after services are initialized.
+func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
+	// Call the original init for basic setup (slideshow manager, skip count, etc.)
+	a.init(slideshowIntervalSec, skipNum)
+
+	// Now initialize controllers that depend on services and the app instance.
+	a.Navigation = NewNavigationController(a, a.imageState)
+	a.Tagging = NewTaggingController(a, a.Service, a.imageState)
+}
+
+// runInitialScanAndWait starts the background image scan and waits for it to
+// find at least one image or times out.
+func (a *App) runInitialScanAndWait(dir string) {
+	go a.loadImages(dir)
+
+	// Wait for the initial scan to find at least one image to display.
+	startTime := time.Now()
+	for a.imageState.GetCurrentImageCount() < 1 {
+		if time.Since(startTime) > 20*time.Second { // Timeout
+			a.AddLogMessage("Timeout waiting for images to load. Please check the directory.")
+			break
+		}
+		time.Sleep(250 * time.Millisecond) // Poll for images
+	}
+}
+
 // Command-line flags
 var slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
 var skipCountFlag = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
@@ -338,45 +408,23 @@ func CreateApplication() {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
-	ui := &App{app: a}
-
-	ui.imageState = NewImageState()
-	ui.Navigation = NewNavigationController(ui, ui.imageState)
+	ui := &App{app: a, imageState: NewImageState()}
 
 	// Set initial theme
 	ui.isDarkTheme = true // Default to dark theme
 	a.Settings().SetTheme(NewSmallTabsTheme(theme.DarkTheme()))
-	// Ensure initial random icon matches initial theme
-	if ui.UI.randomAction != nil { // This might be nil if called too early, but buildToolbar will set it.
-		ui.UI.randomAction.SetIcon(ui.getDiceIcon())
+
+	// 1. Initialize backend services (DB, etc.)
+	if err := ui.initServices(); err != nil {
+		log.Fatalf("Failed to start services: %v", err)
 	}
 
-	// Define the logger function that TagDB will use.
-	// This closure captures the 'ui' variable (*App instance).
-	appLoggerFunc := func(message string) {
-		if ui.logUIManager != nil {
-			// Ensure UI updates are on the main Fyne thread.
-			fyne.Do(func() {
-				ui.logUIManager.AddLogMessage(message)
-			})
-		} else {
-			// Fallback to console log if logUIManager is not yet ready
-			// This might happen for logs from NewTagDB before buildMainUI completes.
-			log.Printf("EarlyTagDBLog: %s", message)
-		}
-	}
+	// 2. Initialize controller components (slideshow, navigation, tagging)
+	ui.initComponents(*slideshowIntervalFlag, *skipCountFlag)
 
-	ui.tagDB, err = tagging.NewTagDB("", appLoggerFunc) // Pass the logger function
-	if err != nil {
-		log.Fatalf("Failed to initialize tag database: %v", err)
-	}
-	// --- Service Layer Integration ---
-	fileScanner := scan.FileScannerImpl{} // You may need to implement this as shown earlier
-	ui.Service = service.NewService(ui.tagDB, &fileScanner, appLoggerFunc)
-	ui.thumbnailManager = NewThumbnailManager(ui)
-	ui.ImageService = service.NewImageService()
-	// Initialize UI components that need the app instance
+	// 3. Build the main UI window and its components
 	ui.UI.MainWin = a.NewWindow("FySlide")
+	ui.UI.MainWin.SetContent(ui.buildMainUI())
 	ui.UI.MainWin.SetCloseIntercept(func() {
 		log.Println("Closing tag database...")
 		if err := ui.tagDB.Close(); err != nil {
@@ -384,41 +432,20 @@ func CreateApplication() {
 		}
 		ui.UI.MainWin.Close() // Proceed with closing the window
 	})
-
 	ui.UI.MainWin.SetIcon(resourceIconPng)
-	ui.init(*slideshowIntervalFlag, *skipCountFlag) // Pass parsed flags to init
-
-	ui.UI.clockLabel = widget.NewLabel("Time: ")
-	ui.UI.infoText = widget.NewRichTextFromMarkdown("# Info\n---\n")
-
-	// Status bar will be initialized in buildMainUI
-	ui.UI.MainWin.SetContent(ui.buildMainUI())
-
-	go ui.loadImages(dir)
-
 	ui.UI.MainWin.CenterOnScreen()
 	ui.UI.MainWin.SetFullScreen(true)
 
-	// Wait for initial scan
-	startTime := time.Now()
-	for ui.imageState.GetCurrentImageCount() < 100000 {
-		if time.Since(startTime) > 20*time.Second { // Timeout
-			ui.AddLogMessage("Timeout waiting for images to load. Please check the directory.")
-			// No images loaded, so the UI will reflect this.
-			break
-		}
-		time.Sleep(time.Second) // Slightly longer sleep
-	}
+	// 4. Run the initial file scan and wait for some results
+	ui.runInitialScanAndWait(dir)
 
-	// Check if images were actually loaded
+	// 5. Final setup after initial images are loaded
 	if ui.imageState.GetCurrentImageCount() > 0 {
 		// Initialize the permutation manager (for random mode)
 		ui.imageState.permutationManager = scan.NewPermutationManager(&ui.imageState.images)
 		// Start at the beginning of the current view (sequential or random).
 		ui.imageState.SetIndex(0)
-		ticker := time.NewTicker(ui.slideshowManager.Interval())
-		go ui.pauser(ticker) // pauser will call loadAndDisplayCurrentImage via fyne.Do
-		go ui.updateTimer()
+		ui.startBackgroundTasks()
 		ui.loadAndDisplayCurrentImage()
 	} else {
 		// This case is also hit on timeout if no images loaded.
@@ -426,7 +453,15 @@ func CreateApplication() {
 		ui.updateInfoText(nil)
 	}
 
+	// 6. Show the window and run the application
 	ui.UI.MainWin.ShowAndRun()
+}
+
+// startBackgroundTasks starts the goroutines for the slideshow ticker and UI clock.
+func (a *App) startBackgroundTasks() {
+	ticker := time.NewTicker(a.slideshowManager.Interval())
+	go a.pauser(ticker)
+	go a.updateTimer()
 }
 
 func (a *App) updateTimer() {
