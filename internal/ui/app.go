@@ -42,6 +42,8 @@ type App struct {
 	app fyne.App
 	UI  UI
 
+	Navigation *NavigationController
+
 	images                     scan.FileItems           // The original, full list of images
 	permutationManager         *scan.PermutationManager // Manages the original images
 	filteredImages             scan.FileItems           // The list when a filter is active
@@ -456,6 +458,8 @@ func CreateApplication() {
 
 	ui := &App{app: a}
 
+	ui.Navigation = NewNavigationController(ui)
+
 	// Set initial theme
 	ui.isDarkTheme = true // Default to dark theme
 	a.Settings().SetTheme(NewSmallTabsTheme(theme.DarkTheme()))
@@ -561,7 +565,7 @@ func (a *App) pauser(ticker *time.Ticker) {
 		}
 		if !a.slideshowManager.IsPaused() {
 			fyne.Do(func() {
-				a.navigate(1)
+				a.Navigation.Navigate(1)
 			})
 		}
 	}

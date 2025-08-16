@@ -1,3 +1,4 @@
+// In internal/ui/navigation_controller.go
 package ui
 
 import (
@@ -8,54 +9,62 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+type NavigationController struct {
+	app *App
+}
+
+func NewNavigationController(app *App) *NavigationController {
+	return &NavigationController{app: app}
+}
+
 // navigateToIndex sets the current image to a specific index, resets the navigation
 // queue, and loads the image. It's a central helper for direct jumps.
-func (a *App) navigateToIndex(newIndex int) {
-	count := a.getCurrentImageCount()
+func (nc *NavigationController) NavigateToIndex(newIndex int) {
+	count := nc.app.getCurrentImageCount()
 	if count == 0 || newIndex < 0 || newIndex >= count {
 		return // Do nothing if the list is empty or the index is out of bounds.
 	}
 
-	a.index = newIndex
-	a.loadAndDisplayCurrentImage()
+	nc.app.index = newIndex
+	nc.app.loadAndDisplayCurrentImage()
 }
 
 // navigateToImageIndex handles a direct jump to a specific image index,
 // for example, from a thumbnail click. It preserves the navigation queue
 // in random mode where possible by rotating it.
-func (a *App) navigateToImageIndex(targetIndex int) {
-	count := a.getCurrentImageCount()
+func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
+	count := nc.app.getCurrentImageCount()
 	if count == 0 || targetIndex < 0 || targetIndex >= count {
 		return // Invalid index
 	}
 
-	a.index = targetIndex
+	nc.app.index = targetIndex
 
-	a.loadAndDisplayCurrentImage()
+	nc.app.loadAndDisplayCurrentImage()
 }
 
-func (a *App) firstImage() {
-	if a.getCurrentImageCount() == 0 {
+func (nc *NavigationController) FirstImage() {
+	if nc.app.getCurrentImageCount() == 0 {
 		return
 	}
-	a.index = 0
-	a.loadAndDisplayCurrentImage()
+	nc.app.index = 0
+	nc.app.loadAndDisplayCurrentImage()
 }
 
-func (a *App) lastImage() {
-	a.navigateToIndex(a.getCurrentImageCount() - 1)
+func (nc *NavigationController) LastImage() {
+	nc.NavigateToIndex(nc.app.getCurrentImageCount() - 1)
 }
 
 // navigate moves the current image by a given offset.
 // A positive offset moves forward, a negative offset moves backward sequentially.
 // It dispatches to more specific handlers based on the offset.
-func (a *App) navigate(offset int) {
-	count := a.getCurrentImageCount()
+func (nc *NavigationController) Navigate(offset int) {
+	count := nc.app.getCurrentImageCount()
 	if count == 0 {
 		return
 	}
 
-	newIndex := a.index + offset
+	newIndex := nc.app.index + offset
 
 	if newIndex >= count {
 		newIndex = count - 1
@@ -65,31 +74,31 @@ func (a *App) navigate(offset int) {
 		newIndex = 0 // Wrap to the end
 	}
 
-	a.index = newIndex
-	a.loadAndDisplayCurrentImage()
+	nc.app.index = newIndex
+	nc.app.loadAndDisplayCurrentImage()
 }
 
 // ShowPreviousImage handles the "back" button logic.
-func (a *App) ShowPreviousImage() {
+func (nc *NavigationController) ShowPreviousImage() {
 	// --- Pause slideshow if it's playing (user is navigating back) ---
-	if !a.slideshowManager.IsPaused() {
-		a.togglePlay()
+	if !nc.app.slideshowManager.IsPaused() {
+		nc.app.togglePlay()
 	}
 
-	a.navigate(-1)
+	nc.Navigate(-1)
 }
 
 // showJumpToImageDialog displays a dialog to jump to a specific image number.
-func (a *App) showJumpToImageDialog() {
+func (nc *NavigationController) ShowJumpToImageDialog() {
 
 	// Pause slideshow on manual interaction.
-	if !a.slideshowManager.IsPaused() {
-		a.togglePlay()
+	if !nc.app.slideshowManager.IsPaused() {
+		nc.app.togglePlay()
 	}
 	// Get the current image count to validate user input.
-	count := a.getCurrentImageCount()
+	count := nc.app.getCurrentImageCount()
 	if count == 0 {
-		dialog.ShowInformation("Jump to Image", "No images loaded.", a.UI.MainWin)
+		dialog.ShowInformation("Jump to Image", "No images loaded.", nc.app.UI.MainWin)
 		return
 	}
 
@@ -106,17 +115,17 @@ func (a *App) showJumpToImageDialog() {
 		numStr := entry.Text
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			dialog.ShowInformation("Invalid Input", "Please enter a valid number.", a.UI.MainWin)
+			dialog.ShowInformation("Invalid Input", "Please enter a valid number.", nc.app.UI.MainWin)
 			return
 		}
 
 		if num < 0 || num > count-1 {
-			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), a.UI.MainWin)
+			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), nc.app.UI.MainWin)
 			return
 		}
 
-		a.navigateToIndex(num) // User input is 1-based, index is 0-based
-	}, a.UI.MainWin)
+		nc.NavigateToIndex(num) // User input is 1-based, index is 0-based
+	}, nc.app.UI.MainWin)
 
 	// Set OnSubmitted for the entry to submit the form on Enter key.
 	entry.OnSubmitted = func(s string) {
@@ -124,5 +133,5 @@ func (a *App) showJumpToImageDialog() {
 	}
 
 	formDialog.Show()
-	a.UI.MainWin.Canvas().Focus(entry)
+	nc.app.UI.MainWin.Canvas().Focus(entry)
 }

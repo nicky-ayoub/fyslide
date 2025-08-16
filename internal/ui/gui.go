@@ -127,12 +127,12 @@ func (a *App) buildToolbar() *widget.Toolbar {
 
 	t := widget.NewToolbar(
 		widget.NewToolbarAction(theme.CancelIcon(), func() { a.app.Quit() }),
-		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.firstImage),
-		widget.NewToolbarAction(theme.MediaSkipPreviousIcon(), a.ShowPreviousImage),
+		widget.NewToolbarAction(theme.MediaFastRewindIcon(), a.Navigation.FirstImage),
+		widget.NewToolbarAction(theme.MediaSkipPreviousIcon(), a.Navigation.ShowPreviousImage),
 		a.UI.pauseAction,
-		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.navigate(1) }),
-		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.lastImage),
-		widget.NewToolbarAction(theme.ContentRedoIcon(), a.showJumpToImageDialog),
+		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.Navigation.Navigate(1) }),
+		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.Navigation.LastImage),
+		widget.NewToolbarAction(theme.ContentRedoIcon(), a.Navigation.ShowJumpToImageDialog),
 		widget.NewToolbarAction(theme.DocumentIcon(), a.addTag), // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.removeTag),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
@@ -331,8 +331,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		fyne.NewMenu("View",
-			fyne.NewMenuItem("Next Image", func() { a.navigate(1) }),
-			fyne.NewMenuItem("Previous Image", a.ShowPreviousImage),
+			fyne.NewMenuItem("Next Image", func() { a.Navigation.Navigate(1) }),
+			fyne.NewMenuItem("Previous Image", a.Navigation.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),
 			a.UI.clearFilterMenuItem,
 		),

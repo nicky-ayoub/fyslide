@@ -108,7 +108,7 @@ func (a *App) clearFilter() {
 	a.addLogMessage("Filter cleared. Showing all images.")
 	a._clearFilterState()
 	a.updateClearFilterMenuVisibility()
-	a.navigateToIndex(0)
+	a.Navigation.NavigateToIndex(0)
 	a.refreshThumbnailStrip()
 }
 

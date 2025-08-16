@@ -20,21 +20,21 @@ func (a *App) buildKeyboardShortcuts() {
 		switch key.Name {
 		// --- Image Navigation ---
 		case fyne.KeyRight:
-			a.navigate(1)
+			a.Navigation.Navigate(1)
 		case fyne.KeyLeft:
-			a.ShowPreviousImage()
+			a.Navigation.ShowPreviousImage()
 		case fyne.KeyQ:
 			a.app.Quit()
 		case fyne.KeyP, fyne.KeySpace:
 			a.togglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
-			a.navigate(-a.skipCount)
+			a.Navigation.Navigate(-a.skipCount)
 		case fyne.KeyPageDown, fyne.KeyDown:
-			a.navigate(a.skipCount)
+			a.Navigation.Navigate(a.skipCount)
 		case fyne.KeyHome:
-			a.firstImage()
+			a.Navigation.FirstImage()
 		case fyne.KeyEnd:
-			a.lastImage()
+			a.Navigation.LastImage()
 		case fyne.KeyDelete:
 			a.deleteFileCheck()
 		// close dialogs with esc key

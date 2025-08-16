@@ -208,7 +208,7 @@ func (a *App) refreshThumbnailStrip() {
 				a.togglePlay()
 			}
 			// A thumbnail click is always a direct navigation action.
-			a.navigateToImageIndex(viewIndex)
+			a.Navigation.NavigateToImageIndex(viewIndex)
 		})
 		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
 
