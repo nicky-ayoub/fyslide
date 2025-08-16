@@ -2,14 +2,11 @@ package ui
 
 import (
 	"fmt"
-	custom_widgets "fyslide/internal/custom_widget"
+	"fyslide/internal/custom_widgets"
 	"image/color"
 	"runtime"
-	"sort"
-	"strings"
 
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/layout"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,13 +16,7 @@ import (
 )
 
 const (
-	imageViewIndex = 0
-	tagsViewIndex  = 1
-
-	noTagsFoundMsg       = "No tags found."
-	noTagsMatchSearchMsg = "No tags match search."
-	errorLoadingTagsMsg  = "Error loading tags."
-	initialSplitOffset   = 0.85
+	initialSplitOffset = 0.85
 )
 
 // UI struct
@@ -59,38 +50,20 @@ type UI struct {
 	collapseButton   *widget.Button
 }
 
-// tagListController manages the state and logic for the tags view.
-type tagListController struct {
-	app *App // To access services and other app-level methods
-
-	// UI Widgets
-	searchEntry   *widget.Entry
-	refreshButton *widget.Button
-	removeButton  *widget.Button
-	tagList       *widget.List
-	messageLabel  *widget.Label
-
-	sortMode string
-	// State
-	allTags              []tagListItem
-	filteredDisplayData  []tagListItem
-	selectedTagForAction string
-}
-
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
-func (a *App) selectStackView(index int) {
+func (a *App) SelectStackView(index int) {
 	if a.UI.contentStack == nil {
-		a.addLogMessage("Internal UI Error: Cannot switch view, content stack not initialized.")
+		a.AddLogMessage("Internal UI Error: Cannot switch view, content stack not initialized.")
 		return
 	}
 
 	if index < 0 || index >= len(a.UI.contentStack.Objects) {
-		a.addLogMessage(fmt.Sprintf("Internal UI Error: Invalid view index %d.", index))
+		a.AddLogMessage(fmt.Sprintf("Internal UI Error: Invalid view index %d.", index))
 		return
 	}
 	// Check if the object at the target index is nil
 	if a.UI.contentStack.Objects[index] == nil {
-		a.addLogMessage(fmt.Sprintf("Internal UI Error: Target view for index %d is not available.", index))
+		a.AddLogMessage(fmt.Sprintf("Internal UI Error: Target view for index %d is not available.", index))
 		return
 	}
 
@@ -108,7 +81,7 @@ func (a *App) selectStackView(index int) {
 	// log.Printf("DEBUG: Switched stack view to index %d", index)
 
 	// Special case: Refresh tags when switching TO the tags view
-	if index == tagsViewIndex && a.refreshTagsFunc != nil {
+	if index == custom_widgets.TagsViewIndex && a.refreshTagsFunc != nil {
 		// log.Println("DEBUG: Refreshing tags data on view switch.")
 		a.refreshTagsFunc()
 	}
@@ -142,10 +115,10 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 
 		widget.NewToolbarAction(theme.FileImageIcon(), func() { // Button for Image View
-			a.selectStackView(imageViewIndex) // Switch to image view
+			a.SelectStackView(custom_widgets.ImageViewIndex) // Switch to image view
 		}),
 		widget.NewToolbarAction(theme.ListIcon(), func() { // Button for Tags View
-			a.selectStackView(tagsViewIndex) // Switch to tags view
+			a.SelectStackView(custom_widgets.TagsViewIndex) // Switch to tags view
 		}),
 		widget.NewToolbarAction(theme.ColorPaletteIcon(), a.toggleTheme),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
@@ -156,109 +129,10 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	return t
 }
 
-// newTagListController creates and initializes a new controller for the tags view.
-func newTagListController(
-	app *App,
-	searchEntry *widget.Entry,
-	refreshButton *widget.Button,
-	removeButton *widget.Button,
-	tagList *widget.List,
-	sortMode string,
-	messageLabel *widget.Label,
-) *tagListController {
-	c := &tagListController{
-		app:           app,
-		searchEntry:   searchEntry,
-		refreshButton: refreshButton,
-		removeButton:  removeButton,
-		tagList:       tagList,
-		sortMode:      sortMode,
-		messageLabel:  messageLabel,
-	}
-
-	// Wire up the callbacks
-	c.searchEntry.OnChanged = c.filterAndRefreshList
-	c.refreshButton.OnTapped = c.loadAndFilterTagData
-
-	//	c.sortRadio.OnChanged = c.sortTagList
-	c.removeButton.OnTapped = c.onRemoveTapped
-	c.tagList.OnSelected = c.onTagSelected
-	c.tagList.OnUnselected = c.onTagUnselected
-
-	return c
-}
-func (c *tagListController) sortTagList() {
-	sort.Slice(c.allTags, func(i, j int) bool {
-		tagI := c.allTags[i]
-		tagJ := c.allTags[j]
-
-		if c.sortMode == "By Name" {
-			return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name)
-		}
-		// Default to "By Count"
-		if tagI.Count != tagJ.Count {
-			return tagI.Count > tagJ.Count // Descending
-		}
-		return strings.ToLower(tagI.Name) < strings.ToLower(tagJ.Name) // Secondary sort by name ascending
-	})
-}
-
 // buildTagsTab constructs the UI for the "Tags" management view.
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
-	// --- UI Widget Creation ---
-	searchEntry, refreshButton, removeButton, tagList, messageLabel := a._createTagListWidgets()
-
-	// --- Controller Creation and Wiring ---
-	// The controller will manage the sort mode state, starting with "By Count".
-	controller := newTagListController(a, searchEntry, refreshButton, removeButton, tagList, "By Count", messageLabel)
-
-	sortLabel := widget.NewLabel("Sort: By Count")
-
-	// Create a toggle for sorting
-	sortToggle := custom_widgets.NewToggle(func(toggled bool) {
-		if toggled {
-			controller.sortMode = "By Name"
-			sortLabel.SetText("Sort: By Name")
-		} else {
-			controller.sortMode = "By Count"
-			sortLabel.SetText("Sort: By Count")
-		}
-		// Re-sort the existing tag data in memory based on the new mode.
-		controller.sortTagList()
-		// Now, re-apply the current search filter to the newly sorted list and refresh the UI.
-		controller.filterAndRefreshList(controller.searchEntry.Text)
-	})
-
-	// --- Data Binding ---
-	tagList.Length = func() int {
-		return len(controller.filteredDisplayData)
-	}
-	tagList.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
-		item := controller.filteredDisplayData[id]
-		label := obj.(*widget.Label)
-		label.SetText(fmt.Sprintf("%s (%d)", item.Name, item.Count))
-	}
-
-	// --- Initial Data Load ---
-	controller.loadAndFilterTagData()
-	// --- Assemble Layout ---
-	sortControl := container.NewHBox(
-		sortLabel,
-		sortToggle,
-		layout.NewSpacer(),
-	)
-	// --- Assemble Layout ---
-	controls := container.NewVBox(
-		sortControl,
-		container.NewBorder(nil, nil, nil, refreshButton, searchEntry),
-	)
-
-	listContentArea := container.NewStack(messageLabel, tagList)
-	tagList.Hide() // Initially hide list, controller will show it if tags exist
-	content := container.NewBorder(controls, removeButton, nil, nil, listContentArea)
-
-	// The refresh function is now the controller's data loading method.
-	return content, controller.loadAndFilterTagData
+	tagsView := custom_widgets.NewTagsView(a)
+	return tagsView, tagsView.RefreshData
 }
 
 // showHelpDialog displays a simple help dialog with application features.

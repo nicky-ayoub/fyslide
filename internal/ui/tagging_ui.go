@@ -15,12 +15,12 @@ import (
 )
 
 // applyFilter filters the image list based on the selected tags.
-func (a *App) applyFilter(tags []string) {
+func (a *App) ApplyFilter(tags []string) {
 	if len(tags) == 0 {
 		a.clearFilter()
 		return
 	}
-	a.addLogMessage(fmt.Sprintf("Applying filter for tags: %s", strings.Join(tags, ", ")))
+	a.AddLogMessage(fmt.Sprintf("Applying filter for tags: %s", strings.Join(tags, ", ")))
 
 	initialPaths, err := a.Service.ListImagesForTag(tags[0])
 	if err != nil {
@@ -30,7 +30,7 @@ func (a *App) applyFilter(tags []string) {
 	}
 
 	if len(initialPaths) == 0 {
-		a.addLogMessage(fmt.Sprintf("No images found with tag '%s'. Clearing filter.", tags[0]))
+		a.AddLogMessage(fmt.Sprintf("No images found with tag '%s'. Clearing filter.", tags[0]))
 		a.clearFilter()
 		return
 	}
@@ -58,7 +58,7 @@ func (a *App) applyFilter(tags []string) {
 		filteredPathSet = intersection
 
 		if len(filteredPathSet) == 0 {
-			a.addLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
+			a.AddLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
 			a.clearFilter()
 			return
 		}
@@ -72,14 +72,14 @@ func (a *App) applyFilter(tags []string) {
 	}
 
 	if len(newFilteredImages) == 0 {
-		a.addLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
+		a.AddLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
 		a.clearFilter()
 		return
 	}
 
 	filterTag := strings.Join(tags, ", ")
 	a.imageState.ApplyFilter(newFilteredImages, filterTag)
-	a.addLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
+	a.AddLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
 
 	a.updateClearFilterMenuVisibility()
 	a.loadAndDisplayCurrentImage()
@@ -91,7 +91,7 @@ func (a *App) clearFilter() {
 	if !a.imageState.IsFiltered() {
 		return
 	}
-	a.addLogMessage("Filter cleared. Showing all images.")
+	a.AddLogMessage("Filter cleared. Showing all images.")
 	a.imageState.ClearFilter()
 	a.updateClearFilterMenuVisibility()
 	a.Navigation.NavigateToIndex(0)
@@ -99,13 +99,13 @@ func (a *App) clearFilter() {
 }
 
 // removeTagGlobally initiates the process of removing a specific tag from all images in the database.
-func (a *App) removeTagGlobally(tag string) error {
+func (a *App) RemoveTagGlobally(tag string) error {
 	if tag == "" {
 		return nil
 	}
-	a.addLogMessage(fmt.Sprintf("Global removal for tag '%s' started.", tag))
+	a.AddLogMessage(fmt.Sprintf("Global removal for tag '%s' started.", tag))
 	successes, errors, err := a.Service.RemoveTagGlobally(tag)
-	a.addLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successes, errors))
+	a.AddLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successes, errors))
 	return err
 }
 
@@ -113,10 +113,10 @@ func (a *App) removeTagGlobally(tag string) error {
 func (a *App) postOperationUpdate(errOp error, statusMessage string, filesAffectedCount int, wasCurrentFileAffected bool) {
 	if errOp != nil {
 		dialog.ShowError(errOp, a.UI.MainWin)
-		a.addLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
+		a.AddLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
 	} else {
 		if statusMessage != "" {
-			a.addLogMessage(fmt.Sprintf("Tag Operation Status: %s", statusMessage))
+			a.AddLogMessage(fmt.Sprintf("Tag Operation Status: %s", statusMessage))
 		}
 	}
 
@@ -129,7 +129,7 @@ func (a *App) postOperationUpdate(errOp error, statusMessage string, filesAffect
 			if err == nil && imgInfo != nil {
 				a.updateInfoText(imgInfo)
 			} else {
-				a.addLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
+				a.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
 			}
 		}
 	}
@@ -155,14 +155,14 @@ func (a *App) handleTagOperation(
 
 	a.slideshowManager.Pause(true)
 	if a.slideshowManager.IsPaused() {
-		a.addLogMessage(fmt.Sprintf("Slideshow paused for tag %s.", strings.ToLower(verb)))
+		a.AddLogMessage(fmt.Sprintf("Slideshow paused for tag %s.", strings.ToLower(verb)))
 	}
 
 	dialogCallback := func(confirm bool) {
 		defer func() {
 			a.slideshowManager.ResumeAfterOperation()
 			if !a.slideshowManager.IsPaused() {
-				a.addLogMessage("Slideshow resumed.")
+				a.AddLogMessage("Slideshow resumed.")
 			}
 		}()
 
@@ -177,7 +177,7 @@ func (a *App) handleTagOperation(
 	if entry, ok := focusableWidget.(*widget.Entry); ok {
 		entry.OnSubmitted = func(text string) {
 			if text != "" {
-				a.addLogMessage(fmt.Sprintf("Submitting %s for processing: %s", strings.ToLower(title), text))
+				a.AddLogMessage(fmt.Sprintf("Submitting %s for processing: %s", strings.ToLower(title), text))
 				formDialog.Submit()
 			}
 		}
@@ -209,7 +209,7 @@ func (a *App) processTagsForDirectory(
 	operationVerb string,
 ) *batchTagResult {
 
-	a.addLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
+	a.AddLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
 
 	type result struct {
 		// path is the file path of the image processed.
@@ -259,7 +259,7 @@ func (a *App) processTagsForDirectory(
 		}
 	}
 
-	a.addLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
+	a.AddLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
 		operationVerb, strings.Join(tags, ", "), filepath.Base(currentDir), batchResult.ImagesProcessed, batchResult.SuccessfulImages, batchResult.ErroredImages))
 	return batchResult
 }
@@ -335,7 +335,7 @@ func (a *App) addTag() {
 			} else {
 				errorsEncountered = len(tagsToAdd)
 			}
-			a.addLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(a.img.Path), successfulAdditions, errorsEncountered))
+			a.AddLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(a.img.Path), successfulAdditions, errorsEncountered))
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
 			} else if successfulAdditions > 0 {
@@ -405,7 +405,7 @@ func (a *App) removeTag() {
 				filesAffected[a.img.Path] = true
 				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
 			}
-			a.addLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(a.img.Path), imagesUntaggedCount, errorsEncountered))
+			a.AddLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(a.img.Path), imagesUntaggedCount, errorsEncountered))
 		}
 		a.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[a.img.Path])
 	}

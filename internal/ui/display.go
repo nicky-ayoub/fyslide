@@ -72,8 +72,8 @@ func (a *App) updateStatusBar() {
 	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
 }
 
-// addLogMessage adds a message to the UI log display.
-func (a *App) addLogMessage(message string) {
+// AddLogMessage adds a message to the UI log display.
+func (a *App) AddLogMessage(message string) {
 	if a.logUIManager != nil {
 		a.logUIManager.AddLogMessage(message)
 	} else {
@@ -169,10 +169,10 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 	a.updateInfoText(nil)
 	if errorType == "Decoding" && formatName != "" {
 		msg := fmt.Sprintf("Error %s %s (format: %s): %v", errorType, filepath.Base(imagePath), formatName, originalError)
-		a.addLogMessage(msg)
+		a.AddLogMessage(msg)
 	} else {
 		msg := fmt.Sprintf("Error %s %s: %v", errorType, filepath.Base(imagePath), originalError)
-		a.addLogMessage(msg)
+		a.AddLogMessage(msg)
 	}
 }
 

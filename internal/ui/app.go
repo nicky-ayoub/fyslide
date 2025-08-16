@@ -124,6 +124,16 @@ func (a *App) GetImageFullPath() string {
 	return imagePath
 }
 
+// ListAllTags is a convenience method to satisfy the TagsViewHost interface.
+func (a *App) ListAllTags() ([]tagging.TagWithCount, error) {
+	return a.Service.ListAllTags()
+}
+
+// GetWindow is a convenience method to satisfy the TagsViewHost interface.
+func (a *App) GetWindow() fyne.Window {
+	return a.UI.MainWin
+}
+
 // loadAndDisplayCurrentImage loads the image at the current index in the active list
 // in a background goroutine and updates the UI on the main Fyne thread.
 func (a *App) loadAndDisplayCurrentImage() {
@@ -136,7 +146,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
 		a.updateInfoText(nil)
-		a.addLogMessage("No images available.")
+		a.AddLogMessage("No images available.")
 		return // Exit the function, no image to load
 	}
 
@@ -156,7 +166,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
 				a.updateInfoText(nil)
-				a.addLogMessage("No images available after index reset.")
+				a.AddLogMessage("No images available after index reset.")
 			})
 			return
 		}
@@ -219,71 +229,27 @@ func (a *App) deleteFile() {
 
 	err := a.Service.DeleteImageFile(deletedPath)
 	if err != nil {
-		a.addLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
+		a.AddLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
 		// If the service layer couldn't delete the file (and its tags),
 		// it might be best to not alter the UI lists further.
 		dialog.ShowError(err, a.UI.MainWin)
 		return
 	}
 
-	// 3. Remove from the main image list (a.images)
-	originalIndex := -1
-	newImages := a.imageState.images[:0]
-	for i, item := range a.imageState.images {
-		if item.Path == deletedPath {
-			originalIndex = i // Keep track of original index if needed
-		} else {
-			newImages = append(newImages, item)
-		}
-	}
-	if originalIndex != -1 {
-		a.addLogMessage(fmt.Sprintf("Removed %s from image list.", filepath.Base(deletedPath)))
-	} else {
-		a.addLogMessage(fmt.Sprintf("Warning: Image %s not found in main list during deletion.", deletedPath))
-	}
-	a.imageState.images = newImages
-	// Rebuild the main index manager as the underlying data has changed.
-	if a.imageState.permutationManager != nil {
-		a.imageState.permutationManager = scan.NewPermutationManager(&a.imageState.images)
+	// 3. Delegate state update to ImageState
+	a.imageState.RemoveImage(deletedPath)
+	a.AddLogMessage(fmt.Sprintf("Removed %s from image list.", filepath.Base(deletedPath)))
+
+	// 4. Check if the filtered list became empty and needs clearing
+	if a.imageState.IsFiltered() && a.imageState.GetCurrentImageCount() == 0 {
+		a.AddLogMessage("Filtered list empty after deletion, clearing filter.")
+		a.clearFilter() // This will reset index and display, then load the new view
+		return          // clearFilter already triggers the necessary UI updates
 	}
 
-	// 4. Remove from the filtered list (a.filteredImages) if filtering is active
-	if a.imageState.IsFiltered() {
-		newFiltered := a.imageState.filteredImages[:0]
-		for _, item := range a.imageState.filteredImages {
-			if item.Path != deletedPath {
-				newFiltered = append(newFiltered, item)
-			}
-		}
-		// Rebuild the filtered index manager.
-		if a.imageState.filteredPermutationManager != nil {
-			a.imageState.filteredPermutationManager = scan.NewPermutationManager(&newFiltered)
-		}
-		a.imageState.filteredImages = newFiltered
-		// If the filtered list becomes empty, clear the filter
-		if len(a.imageState.filteredImages) == 0 {
-			a.addLogMessage("Filtered list empty after deletion, clearing filter.")
-			a.clearFilter() // This will reset index and display
-			return          // clearFilter calls DisplayImage
-		}
-	}
+	// 5. Refresh the UI
+	// The index was adjusted by RemoveImage. We just need to load the image at the new index.
 
-	// 5. Adjust index and display the next image
-	count := a.imageState.GetCurrentImageCount()
-	if count == 0 {
-		// No images left at all (or in filter)
-		a.imageState.SetIndex(-1) // Indicate no valid index
-	} else {
-		// Adjust index carefully
-		if a.imageState.GetCurrentIndex() >= count { // If we deleted the last item
-			a.imageState.SetIndex(count - 1)
-		}
-		// Ensure index is within bounds [0, count-1]
-		if a.imageState.GetCurrentIndex() < 0 {
-			a.imageState.SetIndex(0)
-		}
-	}
-	// Common call after index adjustment
 	a.loadAndDisplayCurrentImage()
 	a.refreshThumbnailStrip() // Update the thumbnail strip
 }
@@ -297,8 +263,8 @@ func (a *App) loadImages(root string) {
 	// and uses the app's logUIManager.
 	scanLogger := func(message string) {
 		// fyne.Do is important if scan.Run's logger calls happen from a non-main goroutine
-		// and a.addLogMessage directly updates UI. a.addLogMessage itself uses logUIManager.
-		fyne.Do(func() { a.addLogMessage(message) })
+		// and a.AddLogMessage directly updates UI. a.AddLogMessage itself uses logUIManager.
+		fyne.Do(func() { a.AddLogMessage(message) })
 	}
 	//imageChan := scan.Run(root, scanLogger) // Pass the logger
 	imageChan := a.Service.FileScan.Run(root, scanLogger)
@@ -309,7 +275,7 @@ func (a *App) loadImages(root string) {
 	}
 	msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
 	fyne.Do(func() {
-		a.addLogMessage(msg)
+		a.AddLogMessage(msg)
 		a.refreshThumbnailStrip() // Update the thumbnail strip
 	})
 }
@@ -323,8 +289,8 @@ func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 	// This closure captures 'a' (the App instance).
 	slideshowLogger := func(message string) {
 		// Ensure UI updates from logs happen on the Fyne goroutine.
-		// a.addLogMessage itself uses a.logUIManager which updates UI.
-		fyne.Do(func() { a.addLogMessage(fmt.Sprintf("Slideshow: %s", message)) })
+		// a.AddLogMessage itself uses a.logUIManager which updates UI.
+		fyne.Do(func() { a.AddLogMessage(fmt.Sprintf("Slideshow: %s", message)) })
 	}
 
 	a.skipCount = skipNum
@@ -437,7 +403,7 @@ func CreateApplication() {
 	startTime := time.Now()
 	for ui.imageState.GetCurrentImageCount() < 100000 {
 		if time.Since(startTime) > 20*time.Second { // Timeout
-			ui.addLogMessage("Timeout waiting for images to load. Please check the directory.")
+			ui.AddLogMessage("Timeout waiting for images to load. Please check the directory.")
 			// No images loaded, so the UI will reflect this.
 			break
 		}

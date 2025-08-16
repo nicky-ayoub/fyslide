@@ -2,6 +2,8 @@
 package ui
 
 import (
+	"fyslide/internal/custom_widgets"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
@@ -45,12 +47,12 @@ func (a *App) buildKeyboardShortcuts() {
 		// Zoom and Pan shortcuts - only if image view is active
 		case fyne.KeyPlus: // Numpad Add or regular '+' / '='
 			a.slideshowManager.Pause(true) // Pause slideshow
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
 				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
 			}
 		case fyne.KeyMinus: // Numpad Subtract or regular '-' / '_'
 			a.slideshowManager.Pause(true) // Pause slideshow
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
 				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
 			}
 		case fyne.Key0, fyne.KeyInsert: // Reset zoom/pan
@@ -58,7 +60,7 @@ func (a *App) buildKeyboardShortcuts() {
 			// If so, uncomment the line below.
 			// a.slideshowManager.Pause(true) // Pause slideshow
 
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[imageViewIndex].Visible() {
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
 				a.zoomPanArea.Reset()
 			}
 

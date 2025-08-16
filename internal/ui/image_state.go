@@ -205,6 +205,48 @@ func (is *ImageState) ClearFilter() {
 	// as the desired destination (e.g., index 0 or previous image) may vary.
 }
 
+// RemoveImage removes an image by its path from all relevant lists, adjusts the
+// internal index, and returns true if the active list became empty.
+func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
+	// 1. Remove from the main image list (is.images)
+	newImages := is.images[:0]
+	for _, item := range is.images {
+		if item.Path != path {
+			newImages = append(newImages, item)
+		}
+	}
+	is.images = newImages
+	// Rebuild the main permutation manager as the underlying data has changed.
+	if is.permutationManager != nil {
+		is.permutationManager = scan.NewPermutationManager(&is.images)
+	}
+
+	// 2. Remove from the filtered list (is.filteredImages) if filtering is active
+	if is.isFiltered {
+		newFiltered := is.filteredImages[:0]
+		for _, item := range is.filteredImages {
+			if item.Path != path {
+				newFiltered = append(newFiltered, item)
+			}
+		}
+		is.filteredImages = newFiltered
+		// Rebuild the filtered permutation manager.
+		if is.filteredPermutationManager != nil {
+			is.filteredPermutationManager = scan.NewPermutationManager(&is.filteredImages)
+		}
+	}
+
+	// 3. Adjust index and determine return values
+	count := is.GetCurrentImageCount()
+	if count == 0 {
+		is.index = -1 // No valid index
+		return true
+	} else if is.index >= count { // If we deleted the last item
+		is.index = count - 1
+	}
+	return false
+}
+
 // GetViewportItems returns a slice of ViewportItems representing the current viewport
 // for the thumbnail strip, along with the index of the central item within that slice.
 func (is *ImageState) GetViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) {
