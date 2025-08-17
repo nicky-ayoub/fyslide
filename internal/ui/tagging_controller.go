@@ -314,15 +314,7 @@ func (t *TaggingController) showAddTagDialog() {
 		widget.NewFormItem("", applyToAllCheck),
 	}
 
-	dialogCallback := func(confirm bool) {
-		t.host.GetSlideshowManager().Pause(true)
-		defer func() {
-			t.host.GetSlideshowManager().ResumeAfterOperation()
-		}()
-		if !confirm {
-			return
-		}
-
+	execute := func(confirm bool) {
 		rawInput := tagEntry.Text
 		potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
 		var tagsToAdd []string
@@ -377,15 +369,14 @@ func (t *TaggingController) showAddTagDialog() {
 		t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
-	formDialog := dialog.NewForm("Add Tag", "Add", "Cancel", formItems, dialogCallback, t.host.GetMainWindow())
-	tagEntry.OnSubmitted = func(text string) {
-		if text != "" {
-			t.host.AddLogMessage(fmt.Sprintf("Submitting Add Tag for processing: %s", text))
-			formDialog.Submit()
-		}
-	}
-	formDialog.Show()
-	t.host.GetMainWindow().Canvas().Focus(tagEntry)
+	t.handleTagOperation(
+		"Add Tag",
+		"Add",
+		formItems,
+		tagEntry,
+		nil, // No pre-dialog check needed
+		execute,
+	)
 }
 
 // showRemoveTagDialog displays a dialog for removing a tag from the current image or all images in the directory.
@@ -396,11 +387,13 @@ func (t *TaggingController) showRemoveTagDialog() {
 		return
 	}
 
-	if len(currentTags) == 0 {
-		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.host.GetMainWindow())
-		return
+	preDialogCheck := func() bool {
+		if len(currentTags) == 0 {
+			dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.host.GetMainWindow())
+			return false
+		}
+		return true
 	}
-
 	var selectedTag string
 	tagSelector := widget.NewSelect(currentTags, func(s string) { selectedTag = s })
 	tagSelector.SetSelected(currentTags[0])
@@ -412,14 +405,7 @@ func (t *TaggingController) showRemoveTagDialog() {
 		widget.NewFormItem("", removeFromAllCheck),
 	}
 
-	dialogCallback := func(confirm bool) {
-		t.host.GetSlideshowManager().Pause(true)
-		defer func() {
-			t.host.GetSlideshowManager().ResumeAfterOperation()
-		}()
-		if !confirm || selectedTag == "" {
-			return
-		}
+	execute := func(confirm bool) {
 		applyToAll := removeFromAllCheck.Checked
 		var errRemoveOp error
 		var statusMessage string
@@ -454,6 +440,12 @@ func (t *TaggingController) showRemoveTagDialog() {
 		t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
-	formDialog := dialog.NewForm("Remove Tag", "Remove", "Cancel", formItems, dialogCallback, t.host.GetMainWindow())
-	formDialog.Show()
+	t.handleTagOperation(
+		"Remove Tag",
+		"Remove",
+		formItems,
+		tagSelector,
+		preDialogCheck,
+		execute,
+	)
 }
