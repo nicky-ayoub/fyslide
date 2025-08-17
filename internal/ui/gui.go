@@ -72,11 +72,9 @@ func (a *App) SelectStackView(index int) {
 
 	// Refresh the stack container to apply visibility changes
 	a.UI.contentStack.Refresh()
-	// log.Printf("DEBUG: Switched stack view to index %d", index)
 
 	// Special case: Refresh tags when switching TO the tags view
 	if index == custom_widgets.TagsViewIndex && a.RefreshTagsFunc != nil {
-		// log.Println("DEBUG: Refreshing tags data on view switch.")
 		a.RefreshTagsFunc()
 	}
 }
@@ -100,8 +98,8 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.Navigation.Navigate(1) }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.Navigation.LastImage),
 		widget.NewToolbarAction(theme.ContentRedoIcon(), a.Navigation.ShowJumpToImageDialog),
-		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.addTag), // Changed from a.tagFile
-		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.removeTag),
+		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.showAddTagDialog),         // Changed from a.tagFile
+		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.showRemoveTagDialog), // Changed from a.removeTag
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSeparator(),
@@ -196,8 +194,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
 		fyne.NewMenu("Edit",
-			fyne.NewMenuItem("Add Tag", a.Tagging.addTag),
-			fyne.NewMenuItem("Remove Tag", a.Tagging.removeTag),
+			fyne.NewMenuItem("Add Tag", a.Tagging.showAddTagDialog),
+			fyne.NewMenuItem("Remove Tag", a.Tagging.showRemoveTagDialog),
 			fyne.NewMenuItemSeparator(), // Optional separator
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),

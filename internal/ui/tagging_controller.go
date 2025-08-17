@@ -288,8 +288,8 @@ func (t *TaggingController) processTagsForDirectory(
 	return batchResult
 }
 
-// addTag shows a dialog to add a new tag to the current image.
-func (t *TaggingController) addTag() {
+// showAddTagDialog displays a dialog for adding tags to the current image or all images in the directory.
+func (t *TaggingController) showAddTagDialog() {
 	currentTags, err := t.service.ListTagsForImage(t.host.GetImageFullPath())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.host.GetMainWindow())
@@ -314,7 +314,15 @@ func (t *TaggingController) addTag() {
 		widget.NewFormItem("", applyToAllCheck),
 	}
 
-	execute := func(confirm bool) {
+	dialogCallback := func(confirm bool) {
+		t.host.GetSlideshowManager().Pause(true)
+		defer func() {
+			t.host.GetSlideshowManager().ResumeAfterOperation()
+		}()
+		if !confirm {
+			return
+		}
+
 		rawInput := tagEntry.Text
 		potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
 		var tagsToAdd []string
@@ -369,11 +377,19 @@ func (t *TaggingController) addTag() {
 		t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
-	t.handleTagOperation("Add Tag", "Add", formItems, tagEntry, nil, execute)
+	formDialog := dialog.NewForm("Add Tag", "Add", "Cancel", formItems, dialogCallback, t.host.GetMainWindow())
+	tagEntry.OnSubmitted = func(text string) {
+		if text != "" {
+			t.host.AddLogMessage(fmt.Sprintf("Submitting Add Tag for processing: %s", text))
+			formDialog.Submit()
+		}
+	}
+	formDialog.Show()
+	t.host.GetMainWindow().Canvas().Focus(tagEntry)
 }
 
-// removeTag shows a dialog to remove an existing tag from the current image.
-func (t *TaggingController) removeTag() {
+// showRemoveTagDialog displays a dialog for removing a tag from the current image or all images in the directory.
+func (t *TaggingController) showRemoveTagDialog() {
 	currentTags, err := t.service.ListTagsForImage(t.host.GetImageFullPath())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.host.GetMainWindow())
@@ -396,8 +412,12 @@ func (t *TaggingController) removeTag() {
 		widget.NewFormItem("", removeFromAllCheck),
 	}
 
-	execute := func(confirm bool) {
-		if selectedTag == "" {
+	dialogCallback := func(confirm bool) {
+		t.host.GetSlideshowManager().Pause(true)
+		defer func() {
+			t.host.GetSlideshowManager().ResumeAfterOperation()
+		}()
+		if !confirm || selectedTag == "" {
 			return
 		}
 		applyToAll := removeFromAllCheck.Checked
@@ -434,5 +454,6 @@ func (t *TaggingController) removeTag() {
 		t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
-	t.handleTagOperation("Remove Tag", "Remove", formItems, nil, nil, execute)
+	formDialog := dialog.NewForm("Remove Tag", "Remove", "Cancel", formItems, dialogCallback, t.host.GetMainWindow())
+	formDialog.Show()
 }
