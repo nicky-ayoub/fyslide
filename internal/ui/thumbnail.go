@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fyslide/internal/service"
 	"image"
 	"image/png"
 	"path/filepath"
@@ -22,16 +23,18 @@ const (
 
 // ThumbnailManager handles generation and caching of image thumbnails.
 type ThumbnailManager struct {
-	cache      map[string]fyne.Resource
-	cacheMutex sync.RWMutex
-	app        *App // To access services
+	cache        map[string]fyne.Resource
+	cacheMutex   sync.RWMutex
+	imageService *service.ImageService
+	logger       func(string)
 }
 
 // NewThumbnailManager creates a new thumbnail manager.
-func NewThumbnailManager(app *App) *ThumbnailManager {
+func NewThumbnailManager(imageService *service.ImageService, logger func(string)) *ThumbnailManager {
 	return &ThumbnailManager{
-		cache: make(map[string]fyne.Resource),
-		app:   app,
+		cache:        make(map[string]fyne.Resource),
+		imageService: imageService,
+		logger:       logger,
 	}
 }
 
@@ -57,10 +60,10 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 	tm.cacheMutex.RUnlock()
 
 	go func() {
-		_, imgDecoded, err := tm.app.ImageService.GetImageInfo(path)
+		_, imgDecoded, err := tm.imageService.GetImageInfo(path)
 		if err != nil {
 			fyne.Do(func() {
-				tm.app.AddLogMessage("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
+				tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
 			})
 			return
 		}

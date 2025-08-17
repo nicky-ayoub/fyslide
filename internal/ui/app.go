@@ -335,7 +335,7 @@ func (a *App) initServices() error {
 	fileScanner := scan.FileScannerImpl{}
 	a.Service = service.NewService(a.tagDB, &fileScanner, appLoggerFunc)
 	a.ImageService = service.NewImageService()
-	a.thumbnailManager = NewThumbnailManager(a)
+	a.thumbnailManager = NewThumbnailManager(a.ImageService, appLoggerFunc)
 
 	return nil
 }
