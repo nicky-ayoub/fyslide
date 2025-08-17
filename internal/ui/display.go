@@ -2,17 +2,12 @@ package ui
 
 import (
 	"fmt"
-	"fyslide/internal/custom_widgets"
 	"fyslide/internal/service"
-	"image/color"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -174,70 +169,6 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 	}
 }
 
-// refreshThumbnailStrip updates the content of the horizontal thumbnail strip.
-// It calculates a window of thumbnails around the current image and displays them.
-func (a *App) refreshThumbnailStrip() {
-	if a.UI.thumbnailStrip == nil {
-		return
-	}
-	a.UI.thumbnailStrip.RemoveAll()
-
-	const windowSize = 11 // Should be an odd number for a perfect center
-	viewportItems, centerThumbIndex := a.getViewportItems(a.imageState.GetCurrentIndex(), windowSize)
-
-	if len(viewportItems) == 0 {
-		a.UI.thumbnailStrip.Refresh()
-		return
-	}
-
-	// Add a spacer before the thumbnails to push them to the center.
-	a.UI.thumbnailStrip.Add(layout.NewSpacer())
-
-	for i, viewportItem := range viewportItems {
-		item := viewportItem.Item
-		viewIndex := viewportItem.ViewIndex
-
-		// Create a tappable thumbnail widget.
-		tappableThumb := custom_widgets.NewTappableImage(theme.FileImageIcon(), func() {
-			if viewIndex == a.imageState.GetCurrentIndex() {
-				return // Do nothing if the current image's thumbnail is clicked
-			}
-			// Pause slideshow on manual interaction.
-			if !a.slideshowManager.IsPaused() {
-				a.togglePlay()
-			}
-			// A thumbnail click is always a direct navigation action.
-			a.Navigation.NavigateToImageIndex(viewIndex)
-		})
-		tappableThumb.SetMinSize(fyne.NewSize(ThumbnailWidth, ThumbnailHeight)) // Consistent size
-
-		// The thumbWidget is a stack that will hold the tappable image and a border if selected.
-		thumbWidget := container.NewStack(tappableThumb)
-
-		// Use a closure to update the thumbnail when it's loaded asynchronously.
-		updateThumb := func(resource fyne.Resource) {
-			tappableThumb.SetResource(resource)
-			thumbWidget.Refresh()
-		}
-		initialResource := a.thumbnailManager.GetThumbnail(item.Path, updateThumb)
-		tappableThumb.SetResource(initialResource)
-		thumbWidget.Refresh()
-
-		// Add a border for the selected image
-		if i == centerThumbIndex {
-			border := canvas.NewRectangle(color.Transparent)
-			border.StrokeColor = theme.Color(theme.ColorNamePrimary) // Use theme-aware color
-			border.StrokeWidth = 3
-			thumbWidget.Add(border) // Add border on top of the tappable image
-		}
-		a.UI.thumbnailStrip.Add(thumbWidget)
-	}
-	// Add a spacer after the thumbnails to complete the centering.
-	a.UI.thumbnailStrip.Add(layout.NewSpacer())
-
-	a.UI.thumbnailStrip.Refresh()
-}
-
 // updateShowFullSizeButtonVisibility enables or disables the "Show Full Size" toolbar action
 // based on the current image's zoom state and original size relative to the view.
 func (a *App) updateShowFullSizeButtonVisibility() {
@@ -326,7 +257,6 @@ func (a *App) toggleRandom() {
 		a.UI.toolBar.Refresh()
 	}
 	a.loadAndDisplayCurrentImage()
-	a.refreshThumbnailStrip()
 }
 
 // toggleTheme switches between the light and dark application themes.

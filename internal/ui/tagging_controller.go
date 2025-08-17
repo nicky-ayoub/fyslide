@@ -95,7 +95,7 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 
 	t.app.updateClearFilterMenuVisibility()
 	t.app.loadAndDisplayCurrentImage()
-	t.app.refreshThumbnailStrip()
+	t.app.UI.thumbnailBrowser.Refresh()
 }
 
 // clearFilter removes any active tag filter and navigates to the first image.
@@ -107,7 +107,7 @@ func (t *TaggingController) clearFilter() {
 	t.imageState.ClearFilter()
 	t.app.updateClearFilterMenuVisibility()
 	t.app.Navigation.NavigateToIndex(0)
-	t.app.refreshThumbnailStrip()
+	t.app.UI.thumbnailBrowser.Refresh()
 }
 
 // removeTagGlobally initiates the process of removing a specific tag from all images in the database.

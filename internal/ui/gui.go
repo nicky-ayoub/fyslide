@@ -3,10 +3,7 @@ package ui
 import (
 	"fmt"
 	"fyslide/internal/custom_widgets"
-	"image/color"
 	"runtime"
-
-	"fyne.io/fyne/v2/canvas"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -44,10 +41,7 @@ type UI struct {
 	statusLogUpBtn   *widget.Button
 	statusLogDownBtn *widget.Button
 
-	// --- Thumbnail Browser Elements ---
-	thumbnailBrowser *fyne.Container // Container holding the strip and collapse button
-	thumbnailStrip   *fyne.Container // The HBox holding the actual thumbnail images
-	collapseButton   *widget.Button
+	thumbnailBrowser *custom_widgets.ThumbnailBrowser
 }
 
 // selectStackView activates the view at the given index (0 or 1) in the main content stack.
@@ -282,27 +276,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 
 	logScrollButtons := container.NewHBox(a.UI.statusLogUpBtn, a.UI.statusLogDownBtn)
 
-	// --- Build Thumbnail Browser ---
-	a.UI.thumbnailStrip = container.NewHBox()
-
-	// Create a container for the strip that has a minimum height.
-	// We use a stack with a transparent rectangle that has the desired MinSize.
-	stripSizer := canvas.NewRectangle(color.Transparent)
-	stripSizer.SetMinSize(fyne.NewSize(0, ThumbnailHeight+10))
-	sizedStrip := container.NewStack(stripSizer, a.UI.thumbnailStrip)
-
-	a.UI.collapseButton = widget.NewButtonWithIcon("", theme.MoveDownIcon(), nil)
-	a.UI.collapseButton.OnTapped = func() {
-		// Toggle visibility of the sized container for the thumbnail strip
-		if sizedStrip.Visible() {
-			sizedStrip.Hide()
-			a.UI.collapseButton.SetIcon(theme.MoveUpIcon())
-		} else {
-			sizedStrip.Show()
-			a.UI.collapseButton.SetIcon(theme.MoveDownIcon())
-		}
-	}
-
 	a.UI.statusBar = container.NewBorder(
 		nil, nil, // top, bottom
 		a.UI.statusPathLabel, // left
@@ -310,11 +283,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.UI.statusLogLabel,  // center (main space for log message)
 	)
 
-	a.UI.thumbnailBrowser = container.NewBorder(
-		nil, nil, // top, bottom
-		nil, a.UI.collapseButton, // left, right
-		sizedStrip, // center - use the sized container
-	)
+	a.UI.thumbnailBrowser = custom_widgets.NewThumbnailBrowser(a)
 
 	// Instantiate LogUIManager now that its UI elements are created.
 	// a.maxLogMessages is set in App.init() using DefaultMaxLogMessages from app.go

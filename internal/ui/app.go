@@ -4,6 +4,7 @@ package ui
 import (
 	"flag"
 	"fmt"
+	"fyslide/internal/custom_widgets"
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
 	"fyslide/internal/slideshow"
@@ -78,44 +79,6 @@ func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) { //noli
 	return a.imageState.GetItemByViewIndex(viewIndex)
 }
 
-// getViewportItems returns a slice of ViewportItems representing the current viewport
-// for the thumbnail strip, along with the index of the central item within that slice.
-func (a *App) getViewportItems(centerIndex int, windowSize int) ([]ViewportItem, int) { //nolint:unused
-	count := a.imageState.GetCurrentImageCount()
-	if count == 0 {
-		return []ViewportItem{}, -1
-	}
-
-	halfWindow := windowSize / 2
-	start := centerIndex - halfWindow
-	end := centerIndex + halfWindow
-
-	// Adjust viewport if it goes out of bounds.
-	if start < 0 {
-		end -= start // equivalent to end += abs(start)
-		start = 0
-	}
-	if end >= count {
-		start -= (end - (count - 1))
-		end = count - 1
-	}
-	// Final check in case the list is smaller than the window.
-	if start < 0 {
-		start = 0
-	}
-
-	items := make([]ViewportItem, 0, end-start+1)
-	for i := start; i <= end; i++ {
-		item, err := a.getItemByViewIndex(i)
-		if err == nil && item != nil {
-			items = append(items, ViewportItem{Item: *item, ViewIndex: i})
-		}
-	}
-
-	newCenterIndex := centerIndex - start
-	return items, newCenterIndex
-}
-
 func (a *App) GetImageFullPath() string {
 	item := a.getCurrentItem()
 	if item == nil {
@@ -123,6 +86,33 @@ func (a *App) GetImageFullPath() string {
 	}
 	imagePath := item.Path
 	return imagePath
+}
+
+// --- ThumbnailHost Interface Implementation ---
+
+func (a *App) GetViewportItems(centerIndex, windowSize int) ([]custom_widgets.ViewportItem, int) {
+	items, newCenter := a.imageState.GetViewportItems(centerIndex, windowSize)
+	// Convert ui.ViewportItem to custom_widgets.ViewportItem
+	customItems := make([]custom_widgets.ViewportItem, len(items))
+	for i, item := range items {
+		customItems[i] = custom_widgets.ViewportItem{
+			Path:      item.Item.Path,
+			ViewIndex: item.ViewIndex,
+		}
+	}
+	return customItems, newCenter
+}
+
+func (a *App) GetCurrentIndex() int {
+	return a.imageState.GetCurrentIndex()
+}
+
+func (a *App) GetThumbnail(path string, onComplete func(fyne.Resource)) fyne.Resource {
+	return a.thumbnailManager.GetThumbnail(path, onComplete)
+}
+
+func (a *App) NavigateToImageIndex(index int) {
+	a.Navigation.NavigateToImageIndex(index)
 }
 
 // ListAllTags is a convenience method to satisfy the TagsViewHost interface.
@@ -212,7 +202,7 @@ func (a *App) loadAndDisplayCurrentImage() {
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
 			a.updateInfoText(imgInfo)
-			a.refreshThumbnailStrip() // Update the thumbnail strip
+			a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 		})
 	}(imagePath) // Pass the path and flag to the goroutine
 }
@@ -266,7 +256,7 @@ func (a *App) deleteFile() {
 	// The index was adjusted by RemoveImage. We just need to load the image at the new index.
 
 	a.loadAndDisplayCurrentImage()
-	a.refreshThumbnailStrip() // Update the thumbnail strip
+	a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 }
 
 // loadImages scans the given root directory for image files in a background goroutine
@@ -291,7 +281,7 @@ func (a *App) loadImages(root string) {
 	msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
 	fyne.Do(func() {
 		a.AddLogMessage(msg)
-		a.refreshThumbnailStrip() // Update the thumbnail strip
+		a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 	})
 }
 
@@ -488,6 +478,17 @@ func (a *App) updateTimer() {
 		formatted := time.Now().Format("Time: 03:04:05")
 		fyne.Do(func() { a.UI.clockLabel.SetText(formatted) })
 	}
+}
+
+func (a *App) IsSlideshowPaused() bool {
+	if a.slideshowManager == nil {
+		return true
+	}
+	return a.slideshowManager.IsPaused()
+}
+
+func (a *App) ToggleSlideshow() {
+	a.togglePlay()
 }
 
 func (a *App) pauser(ticker *time.Ticker) {
