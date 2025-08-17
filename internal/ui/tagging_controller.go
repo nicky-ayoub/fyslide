@@ -146,9 +146,8 @@ func (t *TaggingController) postOperationUpdate(errOp error, statusMessage strin
 	}
 
 	if filesAffectedCount > 0 {
-		if t.host.RefreshTags != nil {
-			t.host.RefreshTags()
-		}
+		t.host.RefreshTags()
+
 		if wasCurrentFileAffected {
 			imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath())
 			if err == nil && imgInfo != nil {
