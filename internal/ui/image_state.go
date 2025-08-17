@@ -193,16 +193,50 @@ func (is *ImageState) ApplyFilter(items scan.FileItems, tag string) {
 }
 
 // ClearFilter resets the image state to the full, unfiltered view.
-func (is *ImageState) ClearFilter() {
+// It attempts to find the current image in the main list and set the index
+// to maintain the user's position.
+func (is *ImageState) ClearFilter(currentPath string) {
 	if !is.isFiltered {
 		return
 	}
+
+	// Find the sequential index of the current image in the main list
+	// before we change the state.
+	newIndex := 0 // Default to 0 if not found
+	if currentPath != "" {
+		sequentialIndexInMainList := -1
+		for i, item := range is.images {
+			if item.Path == currentPath {
+				sequentialIndexInMainList = i
+				break
+			}
+		}
+
+		if sequentialIndexInMainList != -1 {
+			if is.random {
+				// If random mode is on, find the corresponding shuffled index in the main manager
+				if is.permutationManager != nil {
+					is.permutationManager.SyncNewData()
+					shuffledIndex, err := is.permutationManager.GetShuffledIndex(sequentialIndexInMainList)
+					if err == nil {
+						newIndex = shuffledIndex
+					}
+				}
+			} else {
+				// If not in random mode, the new index is just the sequential one.
+				newIndex = sequentialIndexInMainList
+			}
+		}
+	}
+
+	// Now, reset the filter state
 	is.isFiltered = false
 	is.currentFilterTag = ""
 	is.filteredImages = nil
 	is.filteredPermutationManager = nil
-	// The caller is responsible for navigating after clearing the filter,
-	// as the desired destination (e.g., index 0 or previous image) may vary.
+
+	// Set the new index
+	is.index = newIndex
 }
 
 // RemoveImage removes an image by its path from all relevant lists, adjusts the

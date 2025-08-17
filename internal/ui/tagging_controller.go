@@ -117,10 +117,12 @@ func (t *TaggingController) clearFilter() {
 	if !t.imageState.IsFiltered() {
 		return
 	}
+	currentPath := t.host.GetImageFullPath() // Get path *before* clearing
 	t.host.AddLogMessage("Filter cleared. Showing all images.")
-	t.imageState.ClearFilter()
+	t.imageState.ClearFilter(currentPath) // Pass the path to preserve position
 	t.host.UpdateClearFilterMenuVisibility()
-	t.host.NavigateToIndex(0)
+	// No longer need to navigate to 0, just load the new current image
+	t.host.LoadAndDisplayCurrentImage()
 }
 
 // removeTagGlobally initiates the process of removing a specific tag from all images in the database.
