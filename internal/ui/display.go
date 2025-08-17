@@ -49,7 +49,7 @@ func (a *App) updateStatusBar() {
 	if a.UI.statusPathLabel == nil {
 		return
 	}
-	currentItem := a.getCurrentItem()
+	currentItem := a.imageState.GetCurrentItem()
 	statusText := "Ready"
 
 	if currentItem != nil {

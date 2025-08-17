@@ -86,19 +86,8 @@ func (a *App) NavigateToIndex(index int) {
 	}
 }
 
-// getCurrentItem returns the FileItem for the current index, or nil if invalid
-func (a *App) getCurrentItem() *scan.FileItem {
-	return a.imageState.GetCurrentItem()
-}
-
-// getItemByViewIndex retrieves a FileItem from the active view (sequential or random)
-// using a specific view index. This is the core data retrieval logic.
-func (a *App) getItemByViewIndex(viewIndex int) (*scan.FileItem, error) { //nolint:unused
-	return a.imageState.GetItemByViewIndex(viewIndex)
-}
-
 func (a *App) GetImageFullPath() string {
-	item := a.getCurrentItem()
+	item := a.imageState.GetCurrentItem()
 	if item == nil {
 		return ""
 	}
