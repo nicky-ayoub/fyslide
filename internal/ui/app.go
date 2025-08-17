@@ -256,7 +256,6 @@ func (a *App) deleteFile() {
 	// The index was adjusted by RemoveImage. We just need to load the image at the new index.
 
 	a.LoadAndDisplayCurrentImage()
-	a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 }
 
 // loadImages scans the given root directory for image files in a background goroutine
