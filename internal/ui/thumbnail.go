@@ -62,9 +62,7 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 	go func() {
 		_, imgDecoded, err := tm.imageService.GetImageInfo(path)
 		if err != nil {
-			fyne.Do(func() {
-				tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
-			})
+			tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
 			return
 		}
 

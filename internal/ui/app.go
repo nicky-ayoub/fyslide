@@ -283,25 +283,16 @@ func (a *App) deleteFile() {
 func (a *App) loadImages(root string) {
 	a.imageState.images = nil // Clear previous images or a.images = a.images[:0]
 
-	// Define a logger function that matches scan.LoggerFunc
-	// and uses the app's logUIManager.
-	scanLogger := func(message string) {
-		// fyne.Do is important if scan.Run's logger calls happen from a non-main goroutine
-		// and a.AddLogMessage directly updates UI. a.AddLogMessage itself uses logUIManager.
-		fyne.Do(func() { a.AddLogMessage(message) })
-	}
-	//imageChan := scan.Run(root, scanLogger) // Pass the logger
-	imageChan := a.Service.FileScan.Run(root, scanLogger)
+	// a.AddLogMessage is thread-safe, so it can be passed directly as the logger.
+	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
 	for item := range imageChan { // Loop until the channel is closed
 		a.imageState.images = append(a.imageState.images, item)
 		// Optionally, you could update a progress indicator here
 		// if the GUI needs to show loading progress.
 	}
 	msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
-	fyne.Do(func() {
-		a.AddLogMessage(msg)
-		a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
-	})
+	a.AddLogMessage(msg)
+	fyne.Do(func() { a.UI.thumbnailBrowser.Refresh() }) // Refresh UI on main thread
 }
 
 // init initializes the application's core components, including the history manager,
@@ -309,12 +300,9 @@ func (a *App) loadImages(root string) {
 func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
 
-	// Define a logger function for SlideshowManager
-	// This closure captures 'a' (the App instance).
+	// a.AddLogMessage is thread-safe, so it can be called directly from any goroutine.
 	slideshowLogger := func(message string) {
-		// Ensure UI updates from logs happen on the Fyne goroutine.
-		// a.AddLogMessage itself uses a.logUIManager which updates UI.
-		fyne.Do(func() { a.AddLogMessage(fmt.Sprintf("Slideshow: %s", message)) })
+		a.AddLogMessage(fmt.Sprintf("Slideshow: %s", message))
 	}
 
 	a.skipCount = skipNum
@@ -332,18 +320,8 @@ func (a *App) init(slideshowIntervalSec float64, skipNum int) {
 
 // initServices initializes the database and all backend services.
 func (a *App) initServices() error {
-	// Define the logger function that TagDB and other services will use.
-	appLoggerFunc := func(message string) {
-		if a.logUIManager != nil {
-			// Ensure UI updates are on the main Fyne thread.
-			fyne.Do(func() {
-				a.logUIManager.AddLogMessage(message)
-			})
-		} else {
-			// Buffer early logs if UI manager is not ready
-			a.logBuffer = append(a.logBuffer, message)
-		}
-	}
+	// a.AddLogMessage is thread-safe and handles buffering, so it can be used directly.
+	appLoggerFunc := a.AddLogMessage
 
 	var err error
 	a.tagDB, err = tagging.NewTagDB("", appLoggerFunc)
