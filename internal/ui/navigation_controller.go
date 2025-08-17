@@ -130,12 +130,12 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 			return
 		}
 
-		if num < 0 || num > count-1 {
-			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), nc.host.GetWindow())
+		if num < 1 || num > count {
+			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 1 and %d.", count), nc.host.GetWindow())
 			return
 		}
 
-		nc.NavigateToIndex(num) // User input is 1-based, index is 0-based
+		nc.NavigateToIndex(num - 1) // User input is 1-based, index is 0-based
 	}, nc.host.GetWindow())
 
 	// Set OnSubmitted for the entry to submit the form on Enter key.
