@@ -452,7 +452,7 @@ func CreateApplication() {
 // startBackgroundTasks starts the goroutines for the slideshow ticker and UI clock.
 func (a *App) startBackgroundTasks() {
 	ticker := time.NewTicker(a.slideshowManager.Interval())
-	go a.pauser(ticker)
+	go a.slideshowAdvancer(ticker)
 	go a.updateTimer()
 }
 
@@ -477,7 +477,7 @@ func (a *App) ToggleSlideshow() {
 	a.TogglePlay()
 }
 
-func (a *App) pauser(ticker *time.Ticker) {
+func (a *App) slideshowAdvancer(ticker *time.Ticker) {
 	for range ticker.C {
 		if a.UI.MainWin == nil { // Check if window is still valid
 			ticker.Stop() // Stop the ticker
