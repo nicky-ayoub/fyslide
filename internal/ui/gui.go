@@ -75,9 +75,9 @@ func (a *App) SelectStackView(index int) {
 	// log.Printf("DEBUG: Switched stack view to index %d", index)
 
 	// Special case: Refresh tags when switching TO the tags view
-	if index == custom_widgets.TagsViewIndex && a.refreshTagsFunc != nil {
+	if index == custom_widgets.TagsViewIndex && a.RefreshTagsFunc != nil {
 		// log.Println("DEBUG: Refreshing tags data on view switch.")
-		a.refreshTagsFunc()
+		a.RefreshTagsFunc()
 	}
 }
 
@@ -241,7 +241,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 
 	// --- Build Tags View Content ---
 	tagsContent, refreshFunc := a.buildTagsTab()
-	a.refreshTagsFunc = refreshFunc
+	a.RefreshTagsFunc = refreshFunc
 	a.UI.tagsContentView = tagsContent // Store the tags view content
 
 	// --- Create the Content Stack ---

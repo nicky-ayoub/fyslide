@@ -55,9 +55,9 @@ type App struct {
 
 	isDarkTheme bool // NEW: track current theme
 
-	// refreshTagsFunc holds the function returned by buildTagsTab, allowing other parts
+	// RefreshTagsFunc holds the function returned by buildTagsTab, allowing other parts
 	// of the app to trigger a refresh of the tag list view.
-	refreshTagsFunc func()
+	RefreshTagsFunc func()
 
 	logBuffer        []string // Buffer for log messages before LogUIManager is ready
 	skipCount        int      // NEW: Configurable skip count for PageUp/PageDown
@@ -66,6 +66,24 @@ type App struct {
 	Service          *service.Service
 	thumbnailManager *ThumbnailManager
 	ImageService     *service.ImageService
+}
+
+func (a *App) GetImageService() *service.ImageService {
+	return a.ImageService
+}
+func (a *App) GetMainWindow() fyne.Window {
+	return a.UI.MainWin
+}
+func (a *App) RefreshTags() {
+	if a.RefreshTagsFunc != nil {
+		a.RefreshTagsFunc()
+	}
+}
+
+func (a *App) NavigateToIndex(index int) {
+	if a.Navigation != nil {
+		a.Navigation.NavigateToIndex(index)
+	}
 }
 
 // getCurrentItem returns the FileItem for the current index, or nil if invalid
@@ -88,7 +106,9 @@ func (a *App) GetImageFullPath() string {
 	return imagePath
 }
 
-// --- ThumbnailHost Interface Implementation ---
+func (a *App) GetSlideshowManager() *slideshow.SlideshowManager {
+	return a.slideshowManager
+}
 
 func (a *App) GetViewportItems(centerIndex, windowSize int) ([]custom_widgets.ViewportItem, int) {
 	items, newCenter := a.imageState.GetViewportItems(centerIndex, windowSize)
@@ -150,7 +170,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 		a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
-		a.updateInfoText(nil)
+		a.UpdateInfoText(nil)
 		a.AddLogMessage("No images available.")
 		return // Exit the function, no image to load
 	}
@@ -170,7 +190,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 				a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
-				a.updateInfoText(nil)
+				a.UpdateInfoText(nil)
 				a.AddLogMessage("No images available after index reset.")
 			})
 			return
@@ -201,7 +221,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
-			a.updateInfoText(imgInfo)
+			a.UpdateInfoText(imgInfo)
 			a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 		})
 	}(imagePath) // Pass the path and flag to the goroutine
@@ -455,7 +475,7 @@ func CreateApplication() {
 	} else {
 		// This case is also hit on timeout if no images loaded.
 		ui.updateStatusBar() // Will show "No images available" or similar.
-		ui.updateInfoText(nil)
+		ui.UpdateInfoText(nil)
 	}
 
 	// 6. Show the window and run the application

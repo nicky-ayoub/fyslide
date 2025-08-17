@@ -76,9 +76,9 @@ func (a *App) AddLogMessage(message string) {
 	}
 }
 
-// updateInfoText generates and displays the markdown-formatted metadata for the
+// UpdateInfoText generates and displays the markdown-formatted metadata for the
 // current image in the info panel, including stats, tags, and EXIF data.
-func (a *App) updateInfoText(info *service.ImageInfo) {
+func (a *App) UpdateInfoText(info *service.ImageInfo) {
 	if a.img.Path == "" {
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
 		return
@@ -159,7 +159,7 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 	a.img = Img{Path: imagePath, EXIFData: make(map[string]string)} // Keep path, clear EXIF
 	a.zoomPanArea.SetImage(nil)
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
-	a.updateInfoText(nil)
+	a.UpdateInfoText(nil)
 	if errorType == "Decoding" && formatName != "" {
 		msg := fmt.Sprintf("Error %s %s (format: %s): %v", errorType, filepath.Base(imagePath), formatName, originalError)
 		a.AddLogMessage(msg)
@@ -197,9 +197,9 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 	}
 }
 
-// updateClearFilterMenuVisibility enables or disables the "Clear Filter" menu item
+// UpdateClearFilterMenuVisibility enables or disables the "Clear Filter" menu item
 // based on whether a filter is currently active.
-func (a *App) updateClearFilterMenuVisibility() {
+func (a *App) UpdateClearFilterMenuVisibility() {
 	if a.UI.clearFilterMenuItem == nil {
 		return
 	}

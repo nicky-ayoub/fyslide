@@ -9,21 +9,36 @@ import (
 
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
+	"fyslide/internal/slideshow"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
+// TaggingHost interface defines the methods required by the TaggingController
+type TaggingHost interface {
+	AddLogMessage(msg string)
+	LoadAndDisplayCurrentImage()
+	UpdateClearFilterMenuVisibility()
+	GetMainWindow() fyne.Window
+	GetImageFullPath() string
+	GetImageService() *service.ImageService
+	RefreshTags()
+	UpdateInfoText(info *service.ImageInfo)
+	GetSlideshowManager() *slideshow.SlideshowManager
+	NavigateToIndex(index int)
+}
+
 type TaggingController struct {
 	service    *service.Service
 	imageState *ImageState
-	app        *App
+	host       TaggingHost
 }
 
 // NewTaggingController creates a new instance of TaggingController.
-func NewTaggingController(a *App, s *service.Service, i *ImageState) *TaggingController {
-	return &TaggingController{app: a, service: s, imageState: i}
+func NewTaggingController(h TaggingHost, s *service.Service, i *ImageState) *TaggingController {
+	return &TaggingController{host: h, service: s, imageState: i}
 }
 
 // applyFilter filters the image list based on the selected tags.
@@ -32,17 +47,17 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 		t.clearFilter()
 		return
 	}
-	t.app.AddLogMessage(fmt.Sprintf("Applying filter for tags: %s", strings.Join(tags, ", ")))
+	t.host.AddLogMessage(fmt.Sprintf("Applying filter for tags: %s", strings.Join(tags, ", ")))
 
 	initialPaths, err := t.service.ListImagesForTag(tags[0])
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tags[0], err), t.app.UI.MainWin)
+		dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tags[0], err), t.host.GetMainWindow())
 		t.clearFilter()
 		return
 	}
 
 	if len(initialPaths) == 0 {
-		t.app.AddLogMessage(fmt.Sprintf("No images found with tag '%s'. Clearing filter.", tags[0]))
+		t.host.AddLogMessage(fmt.Sprintf("No images found with tag '%s'. Clearing filter.", tags[0]))
 		t.clearFilter()
 		return
 	}
@@ -56,7 +71,7 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 		tag := tags[i]
 		nextTagPaths, err := t.service.ListImagesForTag(tag)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tag, err), t.app.UI.MainWin)
+			dialog.ShowError(fmt.Errorf("failed to get images for tag '%s': %w", tag, err), t.host.GetMainWindow())
 			t.clearFilter()
 			return
 		}
@@ -70,7 +85,7 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 		filteredPathSet = intersection
 
 		if len(filteredPathSet) == 0 {
-			t.app.AddLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
+			t.host.AddLogMessage(fmt.Sprintf("No images found with all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
 			t.clearFilter()
 			return
 		}
@@ -84,17 +99,17 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 	}
 
 	if len(newFilteredImages) == 0 {
-		t.app.AddLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
+		t.host.AddLogMessage(fmt.Sprintf("No currently loaded images match all selected tags. Clearing filter: %s", strings.Join(tags, ", ")))
 		t.clearFilter()
 		return
 	}
 
 	filterTag := strings.Join(tags, ", ")
 	t.imageState.ApplyFilter(newFilteredImages, filterTag)
-	t.app.AddLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
+	t.host.AddLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
 
-	t.app.updateClearFilterMenuVisibility()
-	t.app.LoadAndDisplayCurrentImage()
+	t.host.UpdateClearFilterMenuVisibility()
+	t.host.LoadAndDisplayCurrentImage()
 }
 
 // clearFilter removes any active tag filter and navigates to the first image.
@@ -102,10 +117,10 @@ func (t *TaggingController) clearFilter() {
 	if !t.imageState.IsFiltered() {
 		return
 	}
-	t.app.AddLogMessage("Filter cleared. Showing all images.")
+	t.host.AddLogMessage("Filter cleared. Showing all images.")
 	t.imageState.ClearFilter()
-	t.app.updateClearFilterMenuVisibility()
-	t.app.Navigation.NavigateToIndex(0)
+	t.host.UpdateClearFilterMenuVisibility()
+	t.host.NavigateToIndex(0)
 }
 
 // removeTagGlobally initiates the process of removing a specific tag from all images in the database.
@@ -113,33 +128,33 @@ func (t *TaggingController) RemoveTagGlobally(tag string) error {
 	if tag == "" {
 		return nil
 	}
-	t.app.AddLogMessage(fmt.Sprintf("Global removal for tag '%s' started.", tag))
+	t.host.AddLogMessage(fmt.Sprintf("Global removal for tag '%s' started.", tag))
 	successes, errors, err := t.service.RemoveTagGlobally(tag)
-	t.app.AddLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successes, errors))
+	t.host.AddLogMessage(fmt.Sprintf("Global removal for '%s': %d successes, %d errors.", tag, successes, errors))
 	return err
 }
 
 // postOperationUpdate handles common UI feedback after a tag operation completes.
 func (t *TaggingController) postOperationUpdate(errOp error, statusMessage string, filesAffectedCount int, wasCurrentFileAffected bool) {
 	if errOp != nil {
-		dialog.ShowError(errOp, t.app.UI.MainWin)
-		t.app.AddLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
+		dialog.ShowError(errOp, t.host.GetMainWindow())
+		t.host.AddLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
 	} else {
 		if statusMessage != "" {
-			t.app.AddLogMessage(fmt.Sprintf("Tag Operation Status: %s", statusMessage))
+			t.host.AddLogMessage(fmt.Sprintf("Tag Operation Status: %s", statusMessage))
 		}
 	}
 
 	if filesAffectedCount > 0 {
-		if t.app.refreshTagsFunc != nil {
-			t.app.refreshTagsFunc()
+		if t.host.RefreshTags != nil {
+			t.host.RefreshTags()
 		}
 		if wasCurrentFileAffected {
-			imgInfo, _, err := t.app.ImageService.GetImageInfo(t.app.img.Path)
+			imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath())
 			if err == nil && imgInfo != nil {
-				t.app.updateInfoText(imgInfo)
+				t.host.UpdateInfoText(imgInfo)
 			} else {
-				t.app.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
+				t.host.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
 			}
 		}
 	}
@@ -154,8 +169,8 @@ func (t *TaggingController) handleTagOperation(
 	preDialogCheck func() bool,
 	execute func(confirm bool),
 ) {
-	if t.app.img.Path == "" {
-		dialog.ShowInformation(title, "No image loaded to "+strings.ToLower(verb)+" tags.", t.app.UI.MainWin)
+	if t.host.GetImageFullPath() == "" {
+		dialog.ShowInformation(title, "No image loaded to "+strings.ToLower(verb)+" tags.", t.host.GetMainWindow())
 		return
 	}
 
@@ -163,16 +178,16 @@ func (t *TaggingController) handleTagOperation(
 		return
 	}
 
-	t.app.slideshowManager.Pause(true)
-	if t.app.slideshowManager.IsPaused() {
-		t.app.AddLogMessage(fmt.Sprintf("Slideshow paused for tag %s.", strings.ToLower(verb)))
+	t.host.GetSlideshowManager().Pause(true)
+	if t.host.GetSlideshowManager().IsPaused() {
+		t.host.AddLogMessage(fmt.Sprintf("Slideshow paused for tag %s.", strings.ToLower(verb)))
 	}
 
 	dialogCallback := func(confirm bool) {
 		defer func() {
-			t.app.slideshowManager.ResumeAfterOperation()
-			if !t.app.slideshowManager.IsPaused() {
-				t.app.AddLogMessage("Slideshow resumed.")
+			t.host.GetSlideshowManager().ResumeAfterOperation()
+			if !t.host.GetSlideshowManager().IsPaused() {
+				t.host.AddLogMessage("Slideshow resumed.")
 			}
 		}()
 
@@ -182,12 +197,12 @@ func (t *TaggingController) handleTagOperation(
 		execute(confirm)
 	}
 
-	formDialog := dialog.NewForm(title, verb, "Cancel", formItems, dialogCallback, t.app.UI.MainWin)
+	formDialog := dialog.NewForm(title, verb, "Cancel", formItems, dialogCallback, t.host.GetMainWindow())
 
 	if entry, ok := focusableWidget.(*widget.Entry); ok {
 		entry.OnSubmitted = func(text string) {
 			if text != "" {
-				t.app.AddLogMessage(fmt.Sprintf("Submitting %s for processing: %s", strings.ToLower(title), text))
+				t.host.AddLogMessage(fmt.Sprintf("Submitting %s for processing: %s", strings.ToLower(title), text))
 				formDialog.Submit()
 			}
 		}
@@ -195,7 +210,7 @@ func (t *TaggingController) handleTagOperation(
 
 	formDialog.Show()
 	if focusableWidget != nil {
-		t.app.UI.MainWin.Canvas().Focus(focusableWidget)
+		t.host.GetMainWindow().Canvas().Focus(focusableWidget)
 	}
 }
 
@@ -219,7 +234,7 @@ func (t *TaggingController) processTagsForDirectory(
 	operationVerb string,
 ) *batchTagResult {
 
-	t.app.AddLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
+	t.host.AddLogMessage(fmt.Sprintf("Batch %s directory: %s with [%s]", operationVerb, filepath.Base(currentDir), strings.Join(tags, ", ")))
 
 	type result struct {
 		// path is the file path of the image processed.
@@ -269,16 +284,16 @@ func (t *TaggingController) processTagsForDirectory(
 		}
 	}
 
-	t.app.AddLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
+	t.host.AddLogMessage(fmt.Sprintf("Batch %s for [%s] in '%s' complete. Images processed: %d, Successes: %d, Errors: %d.",
 		operationVerb, strings.Join(tags, ", "), filepath.Base(currentDir), batchResult.ImagesProcessed, batchResult.SuccessfulImages, batchResult.ErroredImages))
 	return batchResult
 }
 
 // addTag shows a dialog to add a new tag to the current image.
 func (t *TaggingController) addTag() {
-	currentTags, err := t.service.ListTagsForImage(t.app.img.Path)
+	currentTags, err := t.service.ListTagsForImage(t.host.GetImageFullPath())
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.app.UI.MainWin)
+		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.host.GetMainWindow())
 		return
 	}
 
@@ -314,7 +329,7 @@ func (t *TaggingController) addTag() {
 		}
 
 		if len(tagsToAdd) == 0 {
-			dialog.ShowInformation("Add Tags", "No valid tags entered.", t.app.UI.MainWin)
+			dialog.ShowInformation("Add Tags", "No valid tags entered.", t.host.GetMainWindow())
 			return
 		}
 
@@ -325,7 +340,7 @@ func (t *TaggingController) addTag() {
 		var successfulAdditions, errorsEncountered int
 
 		if applyToAll {
-			currentDir := filepath.Dir(t.app.img.Path)
+			currentDir := filepath.Dir(t.host.GetImageFullPath())
 			result := t.processTagsForDirectory(currentDir, tagsToAdd, t.service.AddTagsToImage, "tagging")
 			successfulAdditions = result.SuccessfulImages * len(tagsToAdd)
 			errorsEncountered = result.ErroredImages * len(tagsToAdd)
@@ -338,21 +353,21 @@ func (t *TaggingController) addTag() {
 				statusMessage = fmt.Sprintf("Added tag(s) to %d images in %s.", len(filesAffected), filepath.Base(currentDir))
 			}
 		} else {
-			errAddOp = t.service.AddTagsToImage(t.app.img.Path, tagsToAdd)
+			errAddOp = t.service.AddTagsToImage(t.host.GetImageFullPath(), tagsToAdd)
 			if errAddOp == nil {
 				successfulAdditions = len(tagsToAdd)
-				filesAffected[t.app.img.Path] = true
+				filesAffected[t.host.GetImageFullPath()] = true
 			} else {
 				errorsEncountered = len(tagsToAdd)
 			}
-			t.app.AddLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(t.app.img.Path), successfulAdditions, errorsEncountered))
+			t.host.AddLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), successfulAdditions, errorsEncountered))
 			if errorsEncountered > 0 {
 				statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
 			} else if successfulAdditions > 0 {
 				statusMessage = fmt.Sprintf("Added %d tag(s) to current image.", len(tagsToAdd))
 			}
 		}
-		t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.app.img.Path])
+		t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
 	t.handleTagOperation("Add Tag", "Add", formItems, tagEntry, nil, execute)
@@ -360,14 +375,14 @@ func (t *TaggingController) addTag() {
 
 // removeTag shows a dialog to remove an existing tag from the current image.
 func (t *TaggingController) removeTag() {
-	currentTags, err := t.service.ListTagsForImage(t.app.img.Path)
+	currentTags, err := t.service.ListTagsForImage(t.host.GetImageFullPath())
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.app.UI.MainWin)
+		dialog.ShowError(fmt.Errorf("failed to get current tags: %w", err), t.host.GetMainWindow())
 		return
 	}
 
 	if len(currentTags) == 0 {
-		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.app.UI.MainWin)
+		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.host.GetMainWindow())
 		return
 	}
 
@@ -393,7 +408,7 @@ func (t *TaggingController) removeTag() {
 		filesAffected := make(map[string]bool)
 
 		if applyToAll {
-			currentDir := filepath.Dir(t.app.img.Path)
+			currentDir := filepath.Dir(t.host.GetImageFullPath())
 			op := func(path string, tags []string) error {
 				return t.service.RemoveTagsFromImage(path, tags)
 			}
@@ -409,15 +424,15 @@ func (t *TaggingController) removeTag() {
 				statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", selectedTag, imagesUntaggedCount, filepath.Base(currentDir))
 			}
 		} else {
-			errRemoveOp = t.service.RemoveTagsFromImage(t.app.img.Path, []string{selectedTag})
+			errRemoveOp = t.service.RemoveTagsFromImage(t.host.GetImageFullPath(), []string{selectedTag})
 			if errRemoveOp == nil {
 				imagesUntaggedCount = 1
-				filesAffected[t.app.img.Path] = true
+				filesAffected[t.host.GetImageFullPath()] = true
 				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
 			}
-			t.app.AddLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(t.app.img.Path), imagesUntaggedCount, errorsEncountered))
+			t.host.AddLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), imagesUntaggedCount, errorsEncountered))
 		}
-		t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.app.img.Path])
+		t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
 	}
 
 	t.handleTagOperation("Remove Tag", "Remove", formItems, nil, nil, execute)
