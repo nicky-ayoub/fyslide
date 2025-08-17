@@ -139,9 +139,9 @@ func (a *App) RemoveTagGlobally(tag string) error {
 	return a.Tagging.RemoveTagGlobally(tag)
 }
 
-// loadAndDisplayCurrentImage loads the image at the current index in the active list
+// LoadAndDisplayCurrentImage loads the image at the current index in the active list
 // in a background goroutine and updates the UI on the main Fyne thread.
-func (a *App) loadAndDisplayCurrentImage() {
+func (a *App) LoadAndDisplayCurrentImage() {
 	count := a.imageState.GetCurrentImageCount()
 	// Handle empty list (either full or filtered)
 
@@ -255,7 +255,7 @@ func (a *App) deleteFile() {
 	// 5. Refresh the UI
 	// The index was adjusted by RemoveImage. We just need to load the image at the new index.
 
-	a.loadAndDisplayCurrentImage()
+	a.LoadAndDisplayCurrentImage()
 	a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 }
 
@@ -347,7 +347,7 @@ func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
 	a.init(slideshowIntervalSec, skipNum)
 
 	// Now initialize controllers that depend on services and the app instance.
-	a.Navigation = NewNavigationController(a, a.imageState)
+	a.Navigation = NewNavigationController(a, a.imageState) // 'a' satisfies NavigationHost
 	a.Tagging = NewTaggingController(a, a.Service, a.imageState)
 }
 
@@ -452,7 +452,7 @@ func CreateApplication() {
 		// Start at the beginning of the current view (sequential or random).
 		ui.imageState.SetIndex(0)
 		ui.startBackgroundTasks()
-		ui.loadAndDisplayCurrentImage()
+		ui.LoadAndDisplayCurrentImage()
 	} else {
 		// This case is also hit on timeout if no images loaded.
 		ui.updateStatusBar() // Will show "No images available" or similar.
@@ -488,7 +488,7 @@ func (a *App) IsSlideshowPaused() bool {
 }
 
 func (a *App) ToggleSlideshow() {
-	a.togglePlay()
+	a.TogglePlay()
 }
 
 func (a *App) pauser(ticker *time.Ticker) {

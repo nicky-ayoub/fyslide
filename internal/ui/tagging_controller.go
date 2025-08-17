@@ -94,7 +94,7 @@ func (t *TaggingController) ApplyFilter(tags []string) {
 	t.app.AddLogMessage(fmt.Sprintf("Filter active: %d images with tags '%s'.", len(newFilteredImages), filterTag))
 
 	t.app.updateClearFilterMenuVisibility()
-	t.app.loadAndDisplayCurrentImage()
+	t.app.LoadAndDisplayCurrentImage()
 	t.app.UI.thumbnailBrowser.Refresh()
 }
 

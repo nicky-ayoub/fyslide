@@ -88,7 +88,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 	if a.slideshowManager != nil && !a.slideshowManager.IsPaused() {
 		initialPauseIcon = theme.MediaPauseIcon()
 	}
-	a.UI.pauseAction = widget.NewToolbarAction(initialPauseIcon, a.togglePlay)
+	a.UI.pauseAction = widget.NewToolbarAction(initialPauseIcon, a.TogglePlay)
 	a.UI.showFullSizeAction = widget.NewToolbarAction(theme.ZoomInIcon(), a.handleShowFullSizeBtn)
 	a.UI.showFullSizeAction.Disable() // Initially disabled
 

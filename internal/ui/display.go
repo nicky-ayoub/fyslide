@@ -210,8 +210,8 @@ func (a *App) updateClearFilterMenuVisibility() {
 	}
 }
 
-// togglePlay handles toggling the slideshow state and updating the UI icon.
-func (a *App) togglePlay() {
+// TogglePlay handles toggling the slideshow state and updating the UI icon.
+func (a *App) TogglePlay() {
 	a.slideshowManager.TogglePlayPause()
 	if a.slideshowManager.IsPaused() {
 		if a.UI.pauseAction != nil {
@@ -256,7 +256,7 @@ func (a *App) toggleRandom() {
 	if a.UI.toolBar != nil {
 		a.UI.toolBar.Refresh()
 	}
-	a.loadAndDisplayCurrentImage()
+	a.LoadAndDisplayCurrentImage()
 }
 
 // toggleTheme switches between the light and dark application themes.

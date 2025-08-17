@@ -26,8 +26,8 @@ func (a *App) buildKeyboardShortcuts() {
 			a.Navigation.ShowPreviousImage()
 		case fyne.KeyQ:
 			a.app.Quit()
-		case fyne.KeyP, fyne.KeySpace:
-			a.togglePlay()
+		case fyne.KeyP, fyne.KeySpace: // Toggle Play
+			a.TogglePlay()
 		case fyne.KeyPageUp, fyne.KeyUp:
 			a.Navigation.Navigate(-a.skipCount)
 		case fyne.KeyPageDown, fyne.KeyDown:

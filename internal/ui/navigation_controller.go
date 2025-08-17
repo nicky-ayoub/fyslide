@@ -5,17 +5,27 @@ import (
 	"fmt"
 	"strconv"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
+// NavigationHost defines the interface that the NavigationController needs to
+// communicate with its hosting application.
+type NavigationHost interface {
+	LoadAndDisplayCurrentImage()
+	IsSlideshowPaused() bool
+	TogglePlay()
+	GetWindow() fyne.Window
+}
+
 type NavigationController struct {
-	app        *App
+	host       NavigationHost
 	imageState *ImageState
 }
 
-func NewNavigationController(app *App, imageState *ImageState) *NavigationController {
-	return &NavigationController{app: app, imageState: imageState}
+func NewNavigationController(host NavigationHost, imageState *ImageState) *NavigationController {
+	return &NavigationController{host: host, imageState: imageState}
 }
 
 // navigateToIndex sets the current image to a specific index, resets the navigation
@@ -27,7 +37,7 @@ func (nc *NavigationController) NavigateToIndex(newIndex int) {
 	}
 
 	nc.imageState.index = newIndex
-	nc.app.loadAndDisplayCurrentImage()
+	nc.host.LoadAndDisplayCurrentImage()
 }
 
 // navigateToImageIndex handles a direct jump to a specific image index,
@@ -41,7 +51,7 @@ func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
 
 	nc.imageState.index = targetIndex
 
-	nc.app.loadAndDisplayCurrentImage()
+	nc.host.LoadAndDisplayCurrentImage()
 }
 
 func (nc *NavigationController) FirstImage() {
@@ -49,7 +59,7 @@ func (nc *NavigationController) FirstImage() {
 		return
 	}
 	nc.imageState.index = 0
-	nc.app.loadAndDisplayCurrentImage()
+	nc.host.LoadAndDisplayCurrentImage()
 }
 
 func (nc *NavigationController) LastImage() {
@@ -76,14 +86,14 @@ func (nc *NavigationController) Navigate(offset int) {
 	}
 
 	nc.imageState.index = newIndex
-	nc.app.loadAndDisplayCurrentImage()
+	nc.host.LoadAndDisplayCurrentImage()
 }
 
 // ShowPreviousImage handles the "back" button logic.
 func (nc *NavigationController) ShowPreviousImage() {
 	// --- Pause slideshow if it's playing (user is navigating back) ---
-	if !nc.app.slideshowManager.IsPaused() {
-		nc.app.togglePlay()
+	if !nc.host.IsSlideshowPaused() {
+		nc.host.TogglePlay()
 	}
 
 	nc.Navigate(-1)
@@ -93,13 +103,13 @@ func (nc *NavigationController) ShowPreviousImage() {
 func (nc *NavigationController) ShowJumpToImageDialog() {
 
 	// Pause slideshow on manual interaction.
-	if !nc.app.slideshowManager.IsPaused() {
-		nc.app.togglePlay()
+	if !nc.host.IsSlideshowPaused() {
+		nc.host.TogglePlay()
 	}
 	// Get the current image count to validate user input.
 	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 {
-		dialog.ShowInformation("Jump to Image", "No images loaded.", nc.app.UI.MainWin)
+		dialog.ShowInformation("Jump to Image", "No images loaded.", nc.host.GetWindow())
 		return
 	}
 
@@ -116,17 +126,17 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 		numStr := entry.Text
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			dialog.ShowInformation("Invalid Input", "Please enter a valid number.", nc.app.UI.MainWin)
+			dialog.ShowInformation("Invalid Input", "Please enter a valid number.", nc.host.GetWindow())
 			return
 		}
 
 		if num < 0 || num > count-1 {
-			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), nc.app.UI.MainWin)
+			dialog.ShowInformation("Out of Range", fmt.Sprintf("Please enter a number between 0 and %d.", count-1), nc.host.GetWindow())
 			return
 		}
 
 		nc.NavigateToIndex(num) // User input is 1-based, index is 0-based
-	}, nc.app.UI.MainWin)
+	}, nc.host.GetWindow())
 
 	// Set OnSubmitted for the entry to submit the form on Enter key.
 	entry.OnSubmitted = func(s string) {
@@ -134,5 +144,5 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 	}
 
 	formDialog.Show()
-	nc.app.UI.MainWin.Canvas().Focus(entry)
+	nc.host.GetWindow().Canvas().Focus(entry)
 }
