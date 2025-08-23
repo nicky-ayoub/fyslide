@@ -52,7 +52,7 @@ func CreateApplication() {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
-	ui := &App{app: a, imageState: NewImageState()}
+	ui := &App{app: a, imageState: NewImageState(), scanCompleteChan: make(chan bool, 1)}
 
 	// Set initial theme
 	ui.isDarkTheme = true // Default to dark theme
@@ -69,10 +69,12 @@ func CreateApplication() {
 	splashIcon := canvas.NewImageFromResource(resourceIconPng)
 	splashIcon.SetMinSize(fyne.NewSize(128, 128))
 	splashText := widget.NewLabel("Initializing...")
+	splashProgress := widget.NewProgressBarInfinite()
 	splashText.Alignment = fyne.TextAlignCenter
 	splashContent := container.NewVBox(
 		layout.NewSpacer(),
 		container.NewHBox(layout.NewSpacer(), splashIcon, layout.NewSpacer()),
+		splashProgress,
 		splashText,
 		layout.NewSpacer(),
 	)
@@ -119,7 +121,7 @@ func CreateApplication() {
 
 		updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(dir)))
 		// 4. Run the initial file scan and wait for some results
-		ui.runInitialScanAndWait(dir)
+		ui.runInitialScanAndWait(dir, splashText)
 
 		updateSplash("Loading initial image...")
 		// 5. Final setup after initial images are loaded

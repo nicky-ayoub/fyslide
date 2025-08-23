@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
 )
 
 const (
@@ -69,17 +70,44 @@ func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
 
 // runInitialScanAndWait starts the background image scan and waits for it to
 // find at least one image or times out.
-func (a *App) runInitialScanAndWait(dir string) {
+func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
 	go a.loadImages(dir)
 
-	// Wait for the initial scan to find at least one image to display.
-	startTime := time.Now()
-	for a.imageState.GetCurrentImageCount() < 1 {
-		if time.Since(startTime) > 20*time.Second { // Timeout
+	timeout := time.NewTimer(10 * time.Second)
+	defer timeout.Stop()
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.scanCompleteChan:
+			a.AddLogMessage("Initial scan completed.")
+			// Update the label one last time
+			if splashLabel != nil {
+				count := a.imageState.GetCurrentImageCount()
+				fyne.Do(func() {
+					splashLabel.SetText(fmt.Sprintf("Scan complete. %d files found.", count))
+				})
+				time.Sleep(250 * time.Millisecond) // Give user a moment to read the final count
+			}
+			return // Exit the wait loop
+		case <-timeout.C:
 			a.AddLogMessage("Timeout waiting for images to load. Please check the directory.")
-			break
+			return // Exit the wait loop
+		case <-ticker.C:
+			// This is our polling tick
+			count := a.imageState.GetCurrentImageCount()
+			if splashLabel != nil {
+				fyne.Do(func() {
+					splashLabel.SetText(fmt.Sprintf("Scanning... %d files found", count))
+				})
+			}
+			if count >= 100000 {
+				a.AddLogMessage("Sufficient images found. Starting application...")
+				return // Exit the wait loop
+			}
 		}
-		time.Sleep(250 * time.Millisecond) // Poll for images
 	}
 }
 

@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"fyslide/internal/scan"
 	"path/filepath"
 	"time"
 
@@ -121,15 +122,54 @@ func (a *App) deleteFile() {
 // loadImages scans the given root directory for image files in a background goroutine
 // and populates the main image list.
 func (a *App) loadImages(root string) {
-	a.imageState.images = nil // Clear previous images or a.images = a.images[:0]
+	// Signal completion when this function exits, no matter how.
+	defer func() {
+		select {
+		case a.scanCompleteChan <- true:
+		default:
+		}
+	}()
+
+	a.imageState.images = nil // Clear previous images
 
 	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
-	for item := range imageChan {
-		a.imageState.images = append(a.imageState.images, item)
+
+	const batchSize = 1000
+	const batchTimeout = 100 * time.Millisecond
+
+	batch := make(scan.FileItems, 0, batchSize)
+	ticker := time.NewTicker(batchTimeout)
+	defer ticker.Stop()
+
+	// Loop to process images from the channel
+	for {
+		select {
+		case item, ok := <-imageChan:
+			if !ok { // Channel is closed, scanner is done.
+				// Add any remaining items in the final batch.
+				if len(batch) > 0 {
+					a.imageState.AddImages(batch)
+				}
+				// Finalize and exit the function.
+				msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
+				a.AddLogMessage(msg)
+				fyne.Do(func() { a.UI.thumbnailBrowser.Refresh() })
+				return // Exit the function, defer will signal completion.
+			}
+
+			batch = append(batch, item)
+			if len(batch) >= batchSize {
+				a.imageState.AddImages(batch)
+				batch = make(scan.FileItems, 0, batchSize) // Reset batch, keeping capacity.
+			}
+		case <-ticker.C:
+			// Timeout reached, add whatever is in the batch to update the UI count.
+			if len(batch) > 0 {
+				a.imageState.AddImages(batch)
+				batch = make(scan.FileItems, 0, batchSize)
+			}
+		}
 	}
-	msg := fmt.Sprintf("Loaded %d images from %s", a.imageState.GetCurrentImageCount(), root)
-	a.AddLogMessage(msg)
-	fyne.Do(func() { a.UI.thumbnailBrowser.Refresh() }) // Refresh UI on main thread
 }
 
 // updateTimer updates the clock in the UI.

@@ -46,6 +46,7 @@ type App struct {
 	logUIManager     *LogUIManager
 	Service          *service.Service
 	thumbnailManager *ThumbnailManager
+	scanCompleteChan chan bool
 	ImageService     *service.ImageService
 }
 
