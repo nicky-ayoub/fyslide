@@ -22,7 +22,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 		a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 		a.UI.MainWin.SetTitle("FySlide")
 		a.updateStatusBar()
-		a.UpdateInfoText(nil)
+		a.UpdateInfoText(nil, nil, nil)
 		a.AddLogMessage("No images available.")
 		return // Exit the function, no image to load
 	}
@@ -39,7 +39,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 				a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
 				a.UI.MainWin.SetTitle("FySlide")
 				a.updateStatusBar()
-				a.UpdateInfoText(nil)
+				a.UpdateInfoText(nil, nil, nil)
 				a.AddLogMessage("No images available after index reset.")
 			})
 			return
@@ -51,7 +51,10 @@ func (a *App) LoadAndDisplayCurrentImage() {
 	// Launch goroutine for loading and decoding
 	go func(path string) {
 		// Load all image info at once, including the decoded image
-		imgInfo, imgDecoded, err := a.ImageService.GetImageInfo(path)
+		imgInfo, imgDecoded, err := a.ImageService.GetImageInfo(path) // This can be slow (disk I/O, decoding)
+		// Also fetch database data in the background to avoid blocking the UI thread.
+		currentTags, tagsErr := a.Service.ListTagsForImage(path)
+
 		if err != nil {
 			fyne.Do(func() {
 				a.handleImageDisplayError(path, "loading/decoding", err, "") // formatName not directly available here
@@ -70,7 +73,7 @@ func (a *App) LoadAndDisplayCurrentImage() {
 
 			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
 			a.updateStatusBar()
-			a.UpdateInfoText(imgInfo)
+			a.UpdateInfoText(imgInfo, currentTags, tagsErr)
 			a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
 		})
 	}(imagePath) // Pass the path and flag to the goroutine

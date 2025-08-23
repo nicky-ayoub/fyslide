@@ -78,7 +78,7 @@ func (a *App) AddLogMessage(message string) {
 
 // UpdateInfoText generates and displays the markdown-formatted metadata for the
 // current image in the info panel, including stats, tags, and EXIF data.
-func (a *App) UpdateInfoText(info *service.ImageInfo) {
+func (a *App) UpdateInfoText(info *service.ImageInfo, currentTags []string, tagsErr error) {
 	if a.img.Path == "" {
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
 		return
@@ -90,9 +90,10 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 	}
 
 	// --- Get Tags ---
-	currentTags, err := a.Service.ListTagsForImage(a.img.Path) // Use service layer
-	tagsString := "(none)"                                     // Default if no tags or error occurred
-	if err == nil && len(currentTags) > 0 {
+	tagsString := "(none)" // Default if no tags or error occurred
+	if tagsErr != nil {
+		tagsString = "(error loading tags)"
+	} else if len(currentTags) > 0 {
 		tagsString = strings.Join(currentTags, ", ")
 	}
 
@@ -159,7 +160,7 @@ func (a *App) handleImageDisplayError(imagePath, errorType string, originalError
 	a.img = Img{Path: imagePath, EXIFData: make(map[string]string)} // Keep path, clear EXIF
 	a.zoomPanArea.SetImage(nil)
 	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
-	a.UpdateInfoText(nil)
+	a.UpdateInfoText(nil, nil, nil)
 	if errorType == "Decoding" && formatName != "" {
 		msg := fmt.Sprintf("Error %s %s (format: %s): %v", errorType, filepath.Base(imagePath), formatName, originalError)
 		a.AddLogMessage(msg)

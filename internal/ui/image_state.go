@@ -60,6 +60,9 @@ func (is *ImageState) AddImages(items scan.FileItems) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 	is.images = append(is.images, items...)
+	if is.permutationManager != nil {
+		is.permutationManager.SyncNewData()
+	}
 }
 
 // getCurrentList_unlocked returns the active image list. It is not thread-safe
@@ -161,12 +164,6 @@ func (is *ImageState) getItemByViewIndex_unlocked(viewIndex int) (*scan.FileItem
 	if is.random {
 		if activeManager == nil {
 			return nil, fmt.Errorf("random mode is on but PermutationManager is not initialized")
-		}
-		// If we are not filtered, we are using the main permutation manager, which
-		// might be out of sync with the dynamically growing main image list.
-		// Sync it to discover any newly loaded images.
-		if !is.isFiltered {
-			activeManager.SyncNewData()
 		}
 		item, err := activeManager.GetDataByShuffledIndex(viewIndex)
 		if err != nil {

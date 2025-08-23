@@ -119,6 +119,8 @@ func CreateApplication() {
 		// After the UI is built and logUIManager is initialized, flush any buffered logs.
 		ui.flushLogBuffer()
 
+		// Initialize the permutation manager (for random mode) before the scan starts.
+		ui.imageState.permutationManager = scan.NewPermutationManager(&ui.imageState.images)
 		updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(dir)))
 		// 4. Run the initial file scan and wait for some results
 		ui.runInitialScanAndWait(dir, splashText)
@@ -126,8 +128,6 @@ func CreateApplication() {
 		updateSplash("Loading initial image...")
 		// 5. Final setup after initial images are loaded
 		if ui.imageState.GetCurrentImageCount() > 0 {
-			// Initialize the permutation manager (for random mode)
-			ui.imageState.permutationManager = scan.NewPermutationManager(&ui.imageState.images)
 			// Start at the beginning of the current view (sequential or random).
 			ui.imageState.SetIndex(0)
 			ui.startBackgroundTasks()
@@ -135,7 +135,7 @@ func CreateApplication() {
 		} else {
 			// This case is also hit on timeout if no images loaded.
 			ui.updateStatusBar() // Will show "No images available" or similar.
-			ui.UpdateInfoText(nil)
+			ui.UpdateInfoText(nil, nil, nil)
 		}
 
 		// 6. Close splash and show main window
