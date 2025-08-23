@@ -60,9 +60,14 @@ func (is *ImageState) AddImages(items scan.FileItems) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 	is.images = append(is.images, items...)
-	if is.permutationManager != nil {
-		is.permutationManager.SyncNewData()
-	}
+}
+
+// SyncPermutationManager ensures the main permutation manager is up-to-date
+// with the current list of images. This should be called after a bulk add.
+func (is *ImageState) SyncPermutationManager() {
+	is.mu.Lock()
+	defer is.mu.Unlock()
+	is.permutationManager.SyncNewData()
 }
 
 // getCurrentList_unlocked returns the active image list. It is not thread-safe
@@ -302,41 +307,63 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 
-	// 1. Remove from the main image list (is.images)
-	newImages := is.images[:0]
-	for _, item := range is.images {
-		if item.Path != path {
-			newImages = append(newImages, item)
+	// --- Find the view index of the item to be removed BEFORE any changes ---
+	// This is crucial for correctly adjusting the index later.
+	viewIndexOfItemToRemove := -1
+	countBeforeRemoval := is.getCurrentImageCount_unlocked()
+	for i := 0; i < countBeforeRemoval; i++ {
+		item, err := is.getItemByViewIndex_unlocked(i)
+		if err == nil && item != nil && item.Path == path {
+			viewIndexOfItemToRemove = i
+			break
 		}
 	}
-	is.images = newImages
-	// Rebuild the main permutation manager as the underlying data has changed.
-	if is.permutationManager != nil {
+
+	// --- 1. Remove from the main image list (is.images) ---
+	originalIndexToRemove := -1
+	for i, item := range is.images {
+		if item.Path == path {
+			originalIndexToRemove = i
+			break
+		}
+	}
+	if originalIndexToRemove != -1 {
+		is.images = append(is.images[:originalIndexToRemove], is.images[originalIndexToRemove+1:]...)
+		// Inefficiently rebuild the permutation manager. This resets the shuffle order,
+		// which is a known UX issue due to PermutationManager limitations.
 		is.permutationManager = scan.NewPermutationManager(&is.images)
 	}
 
-	// 2. Remove from the filtered list (is.filteredImages) if filtering is active
+	// --- 2. Remove from the filtered list if active ---
 	if is.isFiltered {
-		newFiltered := is.filteredImages[:0]
-		for _, item := range is.filteredImages {
-			if item.Path != path {
-				newFiltered = append(newFiltered, item)
+		filteredIndexToRemove := -1
+		for i, item := range is.filteredImages {
+			if item.Path == path {
+				filteredIndexToRemove = i
+				break
 			}
 		}
-		is.filteredImages = newFiltered
-		// Rebuild the filtered permutation manager.
-		if is.filteredPermutationManager != nil {
+		if filteredIndexToRemove != -1 {
+			is.filteredImages = append(is.filteredImages[:filteredIndexToRemove], is.filteredImages[filteredIndexToRemove+1:]...)
 			is.filteredPermutationManager = scan.NewPermutationManager(&is.filteredImages)
 		}
 	}
 
-	// 3. Adjust index and determine return values
-	count := is.getCurrentImageCount_unlocked()
-	if count == 0 {
-		is.index = -1 // No valid index
+	// --- 3. Adjust index and determine return values ---
+	countAfterRemoval := is.getCurrentImageCount_unlocked()
+	if countAfterRemoval == 0 {
+		is.index = -1
 		return true
-	} else if is.index >= count { // If we deleted the last item
-		is.index = count - 1
+	}
+
+	// If the removed item was before the current one in the view, decrement the index.
+	if viewIndexOfItemToRemove != -1 && is.index > viewIndexOfItemToRemove {
+		is.index--
+	}
+
+	// If the index is now out of bounds (e.g., we deleted the last item), clamp it.
+	if is.index >= countAfterRemoval {
+		is.index = countAfterRemoval - 1
 	}
 	return false
 }

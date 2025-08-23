@@ -128,6 +128,10 @@ func CreateApplication() {
 		updateSplash("Loading initial image...")
 		// 5. Final setup after initial images are loaded
 		if ui.imageState.GetCurrentImageCount() > 0 {
+			// Now that the initial scan is done, sync the permutation manager for random mode.
+			// This is done once here for performance, instead of on every batch add.
+			ui.imageState.SyncPermutationManager()
+
 			// Start at the beginning of the current view (sequential or random).
 			ui.imageState.SetIndex(0)
 			ui.startBackgroundTasks()
