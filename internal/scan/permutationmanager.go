@@ -89,6 +89,45 @@ func (im *PermutationManager) SyncNewData() {
 	im.lastKnownLength = currentLength
 }
 
+// DataRemoved informs the manager that an item was removed from the underlying
+// data slice at a specific index. It updates the internal maps efficiently
+// without performing a full re-shuffle.
+// The caller is responsible for having already removed the item from the data slice.
+func (im *PermutationManager) DataRemoved(originalIndexRemoved int) error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	if originalIndexRemoved < 0 || originalIndexRemoved >= im.lastKnownLength {
+		return fmt.Errorf("original index %d out of bounds for removal (last known length: %d)", originalIndexRemoved, im.lastKnownLength)
+	}
+
+	// 1. Find the shuffled index of the item that was removed.
+	shuffledIndexToRemove := im.reverseMap[originalIndexRemoved]
+
+	// 2. Remove the entry from the shuffled map.
+	im.shuffledMap = append(im.shuffledMap[:shuffledIndexToRemove], im.shuffledMap[shuffledIndexToRemove+1:]...)
+
+	// 3. The underlying data slice has shrunk. Any original index in our shuffledMap
+	// that was greater than the one we removed is now off by one. We must decrement them.
+	for i, origIdx := range im.shuffledMap {
+		if origIdx > originalIndexRemoved {
+			im.shuffledMap[i]--
+		}
+	}
+
+	// 4. The reverse map is now invalid. Rebuild it from the updated shuffled map.
+	// The new length is one less than before.
+	newLength := im.lastKnownLength - 1
+	im.reverseMap = make([]int, newLength)
+	for newShuffledIdx, newOriginalIdx := range im.shuffledMap {
+		im.reverseMap[newOriginalIdx] = newShuffledIdx
+	}
+
+	// 5. Update the last known length.
+	im.lastKnownLength = newLength
+	return nil
+}
+
 // GetShuffledIndex returns the current shuffled index for a given original index.
 func (im *PermutationManager) GetShuffledIndex(originalIndex int) (int, error) {
 	im.mu.RLock()         // Acquire a read lock

@@ -329,9 +329,9 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 	}
 	if originalIndexToRemove != -1 {
 		is.images = append(is.images[:originalIndexToRemove], is.images[originalIndexToRemove+1:]...)
-		// Inefficiently rebuild the permutation manager. This resets the shuffle order,
-		// which is a known UX issue due to PermutationManager limitations.
-		is.permutationManager = scan.NewPermutationManager(&is.images)
+		if is.permutationManager != nil {
+			is.permutationManager.DataRemoved(originalIndexToRemove)
+		}
 	}
 
 	// --- 2. Remove from the filtered list if active ---
@@ -345,7 +345,9 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 		}
 		if filteredIndexToRemove != -1 {
 			is.filteredImages = append(is.filteredImages[:filteredIndexToRemove], is.filteredImages[filteredIndexToRemove+1:]...)
-			is.filteredPermutationManager = scan.NewPermutationManager(&is.filteredImages)
+			if is.filteredPermutationManager != nil {
+				is.filteredPermutationManager.DataRemoved(filteredIndexToRemove)
+			}
 		}
 	}
 
