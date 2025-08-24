@@ -70,26 +70,26 @@ func (is *ImageState) SyncPermutationManager() {
 	is.permutationManager.SyncNewData()
 }
 
-// getCurrentList_unlocked returns the active image list. It is not thread-safe
+// getCurrentListUnlocked returns the active image list. It is not thread-safe
 // and must be called from a method that holds a lock.
-func (is *ImageState) getCurrentList_unlocked() scan.FileItems {
+func (is *ImageState) getCurrentListUnlocked() scan.FileItems {
 	if is.isFiltered {
 		return is.filteredImages
 	}
 	return is.images
 }
 
-// getCurrentImageCount_unlocked returns the count of the active image list.
+// getCurrentImageCountUnlocked returns the count of the active image list.
 // It is not thread-safe and must be called from a method that holds a lock.
-func (is *ImageState) getCurrentImageCount_unlocked() int {
-	return len(is.getCurrentList_unlocked())
+func (is *ImageState) getCurrentImageCountUnlocked() int {
+	return len(is.getCurrentListUnlocked())
 }
 
 // GetCurrentImageCount returns the count of the active image list in a thread-safe manner.
 func (is *ImageState) GetCurrentImageCount() int {
 	is.mu.RLock()
 	defer is.mu.RUnlock()
-	return is.getCurrentImageCount_unlocked()
+	return is.getCurrentImageCountUnlocked()
 }
 
 // GetCurrentIndex returns the current view index.
@@ -106,9 +106,9 @@ func (is *ImageState) SetIndex(i int) {
 	is.index = i
 }
 
-// getActivePermutationManager_unlocked returns the permutation manager for the active list.
+// getActivePermutationManagerUnlocked returns the permutation manager for the active list.
 // It is not thread-safe and must be called from a method that holds a lock.
-func (is *ImageState) getActivePermutationManager_unlocked() *scan.PermutationManager {
+func (is *ImageState) getActivePermutationManagerUnlocked() *scan.PermutationManager {
 	if is.isFiltered {
 		return is.filteredPermutationManager
 	}
@@ -119,7 +119,7 @@ func (is *ImageState) getActivePermutationManager_unlocked() *scan.PermutationMa
 func (is *ImageState) GetActivePermutationManager() *scan.PermutationManager {
 	is.mu.RLock()
 	defer is.mu.RUnlock()
-	return is.getActivePermutationManager_unlocked()
+	return is.getActivePermutationManagerUnlocked()
 }
 
 // IsRandom returns true if random mode is active.
@@ -140,7 +140,7 @@ func (is *ImageState) IsFiltered() bool {
 func (is *ImageState) GetCurrentItem() *scan.FileItem {
 	is.mu.RLock()
 	defer is.mu.RUnlock()
-	item, err := is.getItemByViewIndex_unlocked(is.index)
+	item, err := is.getItemByViewIndexUnlocked(is.index)
 	if err != nil {
 		// This is a common case (e.g., empty list), so logging might be too noisy.
 		// The caller should handle the nil case gracefully.
@@ -149,12 +149,12 @@ func (is *ImageState) GetCurrentItem() *scan.FileItem {
 	return item
 }
 
-// getItemByViewIndex_unlocked retrieves a FileItem from the active view (sequential or random)
+// getItemByViewIndexUnlocked retrieves a FileItem from the active view (sequential or random)
 // using a specific view index. It is not thread-safe and must be called from a method that holds a lock.
-func (is *ImageState) getItemByViewIndex_unlocked(viewIndex int) (*scan.FileItem, error) {
+func (is *ImageState) getItemByViewIndexUnlocked(viewIndex int) (*scan.FileItem, error) {
 	// 1. Determine the active data sources based on the filter state.
 	activeList := &is.images
-	activeManager := is.getActivePermutationManager_unlocked()
+	activeManager := is.getActivePermutationManagerUnlocked()
 
 	if is.isFiltered {
 		activeList = &is.filteredImages
@@ -189,7 +189,7 @@ func (is *ImageState) getItemByViewIndex_unlocked(viewIndex int) (*scan.FileItem
 func (is *ImageState) GetItemByViewIndex(viewIndex int) (*scan.FileItem, error) {
 	is.mu.RLock()
 	defer is.mu.RUnlock()
-	return is.getItemByViewIndex_unlocked(viewIndex)
+	return is.getItemByViewIndexUnlocked(viewIndex)
 }
 
 // ToggleRandomMode switches the random mode on or off and calculates the new
@@ -206,7 +206,7 @@ func (is *ImageState) ToggleRandomMode(currentPath string) {
 	}
 
 	newIndex := -1
-	activeList := is.getCurrentList_unlocked()
+	activeList := is.getCurrentListUnlocked()
 
 	// Find the sequential index of the current item in the active list.
 	sequentialIndexInList := -1
@@ -222,7 +222,7 @@ func (is *ImageState) ToggleRandomMode(currentPath string) {
 		is.index = 0
 	} else {
 		if is.random { // Switched TO random mode
-			activeManager := is.getActivePermutationManager_unlocked()
+			activeManager := is.getActivePermutationManagerUnlocked()
 			if activeManager != nil {
 				if !is.isFiltered {
 					activeManager.SyncNewData()
@@ -310,9 +310,9 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 	// --- Find the view index of the item to be removed BEFORE any changes ---
 	// This is crucial for correctly adjusting the index later.
 	viewIndexOfItemToRemove := -1
-	countBeforeRemoval := is.getCurrentImageCount_unlocked()
+	countBeforeRemoval := is.getCurrentImageCountUnlocked()
 	for i := 0; i < countBeforeRemoval; i++ {
-		item, err := is.getItemByViewIndex_unlocked(i)
+		item, err := is.getItemByViewIndexUnlocked(i)
 		if err == nil && item != nil && item.Path == path {
 			viewIndexOfItemToRemove = i
 			break
@@ -352,7 +352,7 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 	}
 
 	// --- 3. Adjust index and determine return values ---
-	countAfterRemoval := is.getCurrentImageCount_unlocked()
+	countAfterRemoval := is.getCurrentImageCountUnlocked()
 	if countAfterRemoval == 0 {
 		is.index = -1
 		return true
@@ -376,7 +376,7 @@ func (is *ImageState) GetViewportItems(centerIndex int, windowSize int) ([]Viewp
 	is.mu.RLock()
 	defer is.mu.RUnlock()
 
-	count := is.getCurrentImageCount_unlocked()
+	count := is.getCurrentImageCountUnlocked()
 	if count == 0 {
 		return []ViewportItem{}, -1
 	}
@@ -401,7 +401,7 @@ func (is *ImageState) GetViewportItems(centerIndex int, windowSize int) ([]Viewp
 
 	items := make([]ViewportItem, 0, end-start+1)
 	for i := start; i <= end; i++ {
-		item, err := is.getItemByViewIndex_unlocked(i)
+		item, err := is.getItemByViewIndexUnlocked(i)
 		if err == nil && item != nil {
 			items = append(items, ViewportItem{Item: *item, ViewIndex: i})
 		}
