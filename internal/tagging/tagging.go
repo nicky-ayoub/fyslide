@@ -16,8 +16,8 @@ import (
 
 const (
 	dbFileName         = "fyslide_tags.db"
-	ImagesToTagsBucket = "ImagesToTags" // Bucket name for image path to tags mapping.
-	TagsToImagesBucket = "TagsToImages" // Bucket name for tag to image paths mapping.
+	imagesToTagsBucket = "ImagesToTags" // Bucket name for image path to tags mapping.
+	tagsToImagesBucket = "TagsToImages" // Bucket name for tag to image paths mapping.
 )
 
 // LoggerFunc defines a function signature for logging messages.
@@ -75,13 +75,13 @@ func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
 
 	// Ensure buckets exist
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(ImagesToTagsBucket))
+		_, err := tx.CreateBucketIfNotExists([]byte(imagesToTagsBucket))
 		if err != nil {
-			return fmt.Errorf("failed to create bucket %s: %w", ImagesToTagsBucket, err)
+			return fmt.Errorf("failed to create bucket %s: %w", imagesToTagsBucket, err)
 		}
-		_, err = tx.CreateBucketIfNotExists([]byte(TagsToImagesBucket))
+		_, err = tx.CreateBucketIfNotExists([]byte(tagsToImagesBucket))
 		if err != nil {
-			return fmt.Errorf("failed to create bucket %s: %w", TagsToImagesBucket, err)
+			return fmt.Errorf("failed to create bucket %s: %w", tagsToImagesBucket, err)
 		}
 		return nil
 	})
@@ -203,13 +203,13 @@ func (tdb *TagDB) AddTag(imagePath string, tag string) error {
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
 		// 1. Update Image -> Tags mapping
-		_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, true)
+		_, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(imagePath), tag, true)
 		if err != nil {
 			return fmt.Errorf("updating image->tags for '%s' with tag '%s': %w", imagePath, tag, err)
 		}
 
 		// 2. Update Tag -> Images mapping
-		_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, true)
+		_, err = tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, true)
 		if err != nil {
 			return fmt.Errorf("updating tag->images for '%s' with image '%s': %w", tag, imagePath, err)
 		}
@@ -228,12 +228,12 @@ func (tdb *TagDB) AddTagsToImage(imagePath string, tags []string) error {
 				continue
 			}
 			// 1. Update Image -> Tags mapping
-			_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, true)
+			_, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(imagePath), tag, true)
 			if err != nil {
 				return fmt.Errorf("updating image->tags for '%s' with tag '%s': %w", imagePath, tag, err)
 			}
 			// 2. Update Tag -> Images mapping
-			_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, true)
+			_, err = tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, true)
 			if err != nil {
 				return fmt.Errorf("updating tag->images for '%s' with image '%s': %w", tag, imagePath, err)
 			}
@@ -249,13 +249,13 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
 		// 1. Update Image -> Tags mapping
-		_, err := tdb._updateStoredList(tx, []byte(ImagesToTagsBucket), []byte(imagePath), tag, false)
+		_, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(imagePath), tag, false)
 		if err != nil {
 			return fmt.Errorf("updating image->tags for '%s' removing tag '%s': %w", imagePath, tag, err)
 		}
 
 		// 2. Update Tag -> Images mapping
-		_, err = tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, false)
+		_, err = tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, false)
 		if err != nil {
 			return fmt.Errorf("updating tag->images for '%s' removing image '%s': %w", tag, imagePath, err)
 		}
@@ -267,7 +267,7 @@ func (tdb *TagDB) RemoveTag(imagePath string, tag string) error {
 func (tdb *TagDB) GetTags(imagePath string) ([]string, error) {
 	var tags []string
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		bucket := tx.Bucket([]byte(imagesToTagsBucket))
 		tagsBytes := bucket.Get([]byte(imagePath))
 		if tagsBytes == nil {
 			tags = []string{} // No tags found, return empty list
@@ -288,7 +288,7 @@ func (tdb *TagDB) GetTags(imagePath string) ([]string, error) {
 func (tdb *TagDB) GetImages(tag string) ([]string, error) {
 	var images []string
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(TagsToImagesBucket))
+		bucket := tx.Bucket([]byte(tagsToImagesBucket))
 		imagesBytes := bucket.Get([]byte(tag))
 		if imagesBytes == nil {
 			images = []string{} // No images found, return empty list
@@ -310,7 +310,7 @@ func (tdb *TagDB) GetImages(tag string) ([]string, error) {
 func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
 	var allTagsInfo []TagWithCount
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(TagsToImagesBucket))
+		bucket := tx.Bucket([]byte(tagsToImagesBucket))
 		return bucket.ForEach(func(k, v []byte) error { // k is tag name, v is list of image paths
 			tagName := string(k)
 			imageList, err := decodeList(v)
@@ -341,7 +341,7 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 		return fmt.Errorf("image path cannot be empty")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		imgBucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
 
 		// 1. Get all tags currently associated with the image
 		currentTagsBytes := imgBucket.Get([]byte(imagePath))
@@ -364,7 +364,7 @@ func (tdb *TagDB) RemoveAllTagsForImage(imagePath string) error {
 			// The _updateStoredList helper handles decoding, removing, encoding, and deleting the key if the list becomes empty.
 			// It also handles the case where the tag might not exist or its list is already empty.
 			// The 'changed' boolean return isn't strictly needed here but the error is.
-			_, err := tdb._updateStoredList(tx, []byte(TagsToImagesBucket), []byte(tag), imagePath, false)
+			_, err := tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, false)
 			if err != nil {
 				// If one update fails, the transaction will be rolled back.
 				return fmt.Errorf("failed to remove image '%s' from tag '%s' during cleanup: %w", imagePath, tag, err)
@@ -387,30 +387,30 @@ func (tdb *TagDB) DeleteOrphanedTagKey(tag string) error {
 		return fmt.Errorf("tag cannot be empty for DeleteOrphanedTagKey")
 	}
 	return tdb.db.Update(func(tx *bolt.Tx) error {
-		tagBucket := tx.Bucket([]byte(TagsToImagesBucket))
+		tagBucket := tx.Bucket([]byte(tagsToImagesBucket))
 		if tagBucket == nil {
 			// This should not happen if DB is initialized correctly
-			return fmt.Errorf("bucket %s not found during DeleteOrphanedTagKey", TagsToImagesBucket)
+			return fmt.Errorf("bucket %s not found during DeleteOrphanedTagKey", tagsToImagesBucket)
 		}
 		// We trust that the caller has determined this tag is orphaned.
 		// If the key doesn't exist, Delete does nothing and returns nil.
 		if err := tagBucket.Delete([]byte(tag)); err != nil {
-			return fmt.Errorf("failed to delete orphaned tag key '%s' from %s bucket: %w", tag, TagsToImagesBucket, err)
+			return fmt.Errorf("failed to delete orphaned tag key '%s' from %s bucket: %w", tag, tagsToImagesBucket, err)
 		}
 		return nil
 	})
 }
 
-// GetAllImagePaths retrieves all image paths stored in the ImagesToTagsBucket.
+// GetAllImagePaths retrieves all image paths stored in the imagesToTagsBucket.
 func (tdb *TagDB) GetAllImagePaths() ([]string, error) {
 	var paths []string
 	err := tdb.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(ImagesToTagsBucket))
+		bucket := tx.Bucket([]byte(imagesToTagsBucket))
 		if bucket == nil {
 			// Bucket doesn't exist, which means no images are tagged.
 			return nil // Not an error, just no paths.
 		}
-		return bucket.ForEach(func(k, v []byte) error {
+		return bucket.ForEach(func(k, _ []byte) error {
 			paths = append(paths, string(k))
 			return nil
 		})

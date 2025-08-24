@@ -1,3 +1,4 @@
+// Package main fySlide is a simple image viewer with basic tagging and slideshow capabilities.
 package main
 
 //go:generate fyne bundle --package ui -output ../../internal/ui/bundle1.go ../../assets/icon.png

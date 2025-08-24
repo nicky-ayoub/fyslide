@@ -1,4 +1,4 @@
-// package ui contains the core application state and host interface implementations.
+// Package ui contains the core application state and host interface implementations.
 package ui
 
 import (
@@ -52,26 +52,31 @@ type App struct {
 
 // --- Host Interface Implementations ---
 
+// GetImageService returns the application's image service.
 func (a *App) GetImageService() *service.ImageService {
 	return a.ImageService
 }
 
+// GetMainWindow returns the main application window.
 func (a *App) GetMainWindow() fyne.Window {
 	return a.UI.MainWin
 }
 
+// RefreshTags triggers a refresh of the tags view.
 func (a *App) RefreshTags() {
 	if a.RefreshTagsFunc != nil {
 		a.RefreshTagsFunc()
 	}
 }
 
+// NavigateToIndex navigates the view to a specific image index.
 func (a *App) NavigateToIndex(index int) {
 	if a.Navigation != nil {
 		a.Navigation.NavigateToIndex(index)
 	}
 }
 
+// GetImageFullPath returns the full path of the currently displayed image.
 func (a *App) GetImageFullPath() string {
 	item := a.imageState.GetCurrentItem()
 	if item == nil {
@@ -80,53 +85,74 @@ func (a *App) GetImageFullPath() string {
 	return item.Path
 }
 
+// GetSlideshowManager returns the application's slideshow manager.
 func (a *App) GetSlideshowManager() *slideshow.SlideshowManager {
 	return a.slideshowManager
 }
 
+// GetViewportItems returns a slice of items for the thumbnail browser's viewport.
+// It satisfies the ThumbnailHost interface.
 func (a *App) GetViewportItems(centerIndex, windowSize int) ([]custom_widgets.ViewportItem, int) {
 	items, newCenter := a.imageState.GetViewportItems(centerIndex, windowSize)
 	// Convert ui.ViewportItem to custom_widgets.ViewportItem
 	customItems := make([]custom_widgets.ViewportItem, len(items))
 	for i, item := range items {
 		customItems[i] = custom_widgets.ViewportItem{
-			Path:      item.Item.Path,
+			// Path is used by the thumbnail browser to request a thumbnail.
+			Path: item.Item.Path,
+			// ViewIndex is used to navigate to the image when the thumbnail is clicked.
 			ViewIndex: item.ViewIndex,
 		}
 	}
 	return customItems, newCenter
 }
 
+// GetCurrentIndex returns the index of the current image in the active view.
+// It satisfies the ThumbnailHost interface.
 func (a *App) GetCurrentIndex() int {
 	return a.imageState.GetCurrentIndex()
 }
 
+// GetThumbnail retrieves or generates a thumbnail for the given image path.
+// It satisfies the ThumbnailHost interface.
 func (a *App) GetThumbnail(path string, onComplete func(fyne.Resource)) fyne.Resource {
 	return a.thumbnailManager.GetThumbnail(path, onComplete)
 }
 
+// NavigateToImageIndex navigates directly to an image by its view index.
+// It satisfies the ThumbnailHost interface.
 func (a *App) NavigateToImageIndex(index int) {
 	a.Navigation.NavigateToImageIndex(index)
 }
 
+// ListAllTags returns all unique tags from the database with their counts.
+// It satisfies the TagsViewHost interface.
 func (a *App) ListAllTags() ([]tagging.TagWithCount, error) {
 	return a.Service.ListAllTags()
 }
 
+// GetWindow returns the main application window.
+// It satisfies the TagsViewHost and NavigationHost interfaces.
 func (a *App) GetWindow() fyne.Window {
 	return a.UI.MainWin
 }
 
+// ApplyFilter applies a tag-based filter to the image list.
+// It satisfies the TagsViewHost interface.
 func (a *App) ApplyFilter(tags []string) {
 	if a.Tagging != nil {
 		a.Tagging.ApplyFilter(tags)
 	}
 }
 
+// RemoveTagGlobally removes a tag from all images in the database.
+// It satisfies the TagsViewHost interface.
 func (a *App) RemoveTagGlobally(tag string) error {
 	return a.Tagging.RemoveTagGlobally(tag)
 }
 
+// IsSlideshowPaused returns true if the slideshow is currently paused.
+// It satisfies the ThumbnailHost interface.
 func (a *App) IsSlideshowPaused() bool {
 	if a.slideshowManager == nil {
 		return true
@@ -134,6 +160,8 @@ func (a *App) IsSlideshowPaused() bool {
 	return a.slideshowManager.IsPaused()
 }
 
+// ToggleSlideshow toggles the play/pause state of the slideshow.
+// It satisfies the ThumbnailHost interface.
 func (a *App) ToggleSlideshow() {
 	a.TogglePlay()
 }
