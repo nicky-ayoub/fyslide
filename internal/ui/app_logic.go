@@ -1,4 +1,4 @@
-// package ui contains the core application logic and event handlers.
+// Package ui contains the core application logic and event handlers.
 package ui
 
 import (

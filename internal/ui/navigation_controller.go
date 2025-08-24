@@ -1,4 +1,4 @@
-// In internal/ui/navigation_controller.go
+// Package ui In internal/ui/navigation_controller.go
 package ui
 
 import (
@@ -19,17 +19,19 @@ type NavigationHost interface {
 	GetWindow() fyne.Window
 }
 
+// NavigationController manages image navigation logic.
 type NavigationController struct {
 	host       NavigationHost
 	imageState *ImageState
 }
 
+// NewNavigationController creates a new navigation controller.
 func NewNavigationController(host NavigationHost, imageState *ImageState) *NavigationController {
 	return &NavigationController{host: host, imageState: imageState}
 }
 
-// navigateToIndex sets the current image to a specific index, resets the navigation
-// queue, and loads the image. It's a central helper for direct jumps.
+// NavigateToIndex sets the current image to a specific index and loads the image.
+// It's a central helper for direct jumps like from the "Jump to" dialog.
 func (nc *NavigationController) NavigateToIndex(newIndex int) {
 	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 || newIndex < 0 || newIndex >= count {
@@ -40,9 +42,8 @@ func (nc *NavigationController) NavigateToIndex(newIndex int) {
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
-// navigateToImageIndex handles a direct jump to a specific image index,
-// for example, from a thumbnail click. It preserves the navigation queue
-// in random mode where possible by rotating it.
+// NavigateToImageIndex handles a direct jump to a specific image index,
+// for example, from a thumbnail click.
 func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
 	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 || targetIndex < 0 || targetIndex >= count {
@@ -54,6 +55,7 @@ func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
+// FirstImage navigates to the first image in the current list.
 func (nc *NavigationController) FirstImage() {
 	if nc.imageState.GetCurrentImageCount() == 0 {
 		return
@@ -62,13 +64,13 @@ func (nc *NavigationController) FirstImage() {
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
+// LastImage navigates to the last image in the current list.
 func (nc *NavigationController) LastImage() {
 	nc.NavigateToIndex(nc.imageState.GetCurrentImageCount() - 1)
 }
 
-// navigate moves the current image by a given offset.
+// Navigate moves the current image by a given offset.
 // A positive offset moves forward, a negative offset moves backward sequentially.
-// It dispatches to more specific handlers based on the offset.
 func (nc *NavigationController) Navigate(offset int) {
 	count := nc.imageState.GetCurrentImageCount()
 	if count == 0 {
@@ -89,7 +91,7 @@ func (nc *NavigationController) Navigate(offset int) {
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
-// ShowPreviousImage handles the "back" button logic.
+// ShowPreviousImage navigates to the previous image and pauses the slideshow if active.
 func (nc *NavigationController) ShowPreviousImage() {
 	// --- Pause slideshow if it's playing (user is navigating back) ---
 	if !nc.host.IsSlideshowPaused() {
@@ -99,7 +101,7 @@ func (nc *NavigationController) ShowPreviousImage() {
 	nc.Navigate(-1)
 }
 
-// showJumpToImageDialog displays a dialog to jump to a specific image number.
+// ShowJumpToImageDialog displays a dialog to jump to a specific image number.
 func (nc *NavigationController) ShowJumpToImageDialog() {
 
 	// Pause slideshow on manual interaction.
@@ -139,7 +141,7 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 	}, nc.host.GetWindow())
 
 	// Set OnSubmitted for the entry to submit the form on Enter key.
-	entry.OnSubmitted = func(s string) {
+	entry.OnSubmitted = func(_ string) {
 		formDialog.Submit()
 	}
 

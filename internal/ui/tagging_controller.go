@@ -31,6 +31,7 @@ type TaggingHost interface {
 	NavigateToIndex(index int)
 }
 
+// TaggingController manages tagging operations and interactions with the tagging service.
 type TaggingController struct {
 	service    *service.Service
 	imageState *ImageState
@@ -48,7 +49,7 @@ func (t *TaggingController) IsBusy() bool {
 	return t.activeOps.Load() > 0
 }
 
-// applyFilter filters the image list based on the selected tags.
+// ApplyFilter filters the image list based on the selected tags.
 func (t *TaggingController) ApplyFilter(tags []string) {
 	if len(tags) == 0 {
 		t.clearFilter()
@@ -132,7 +133,7 @@ func (t *TaggingController) clearFilter() {
 	t.host.LoadAndDisplayCurrentImage()
 }
 
-// removeTagGlobally initiates the process of removing a specific tag from all images in the database.
+// RemoveTagGlobally initiates the process of removing a specific tag from all images in the database.
 func (t *TaggingController) RemoveTagGlobally(tag string) error {
 	if tag == "" {
 		return nil
@@ -326,7 +327,7 @@ func (t *TaggingController) showAddTagDialog() {
 		widget.NewFormItem("", applyToAllCheck),
 	}
 
-	execute := func(confirm bool) {
+	execute := func(_ bool) {
 		// Capture values from UI elements before starting the goroutine.
 		rawInput := tagEntry.Text
 		applyToAll := applyToAllCheck.Checked
@@ -432,7 +433,7 @@ func (t *TaggingController) showRemoveTagDialog() {
 		widget.NewFormItem("", removeFromAllCheck),
 	}
 
-	execute := func(confirm bool) {
+	execute := func(_ bool) {
 		// Capture values from UI elements before starting the goroutine.
 		applyToAll := removeFromAllCheck.Checked
 		tagToRemove := selectedTag

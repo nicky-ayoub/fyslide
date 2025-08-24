@@ -1,11 +1,12 @@
+// Package service provides image loading and metadata extraction services.
 package service
 
 import (
 	"fmt"
 	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
+	_ "image/gif"  // Register GIF format
+	_ "image/jpeg" // Register JPEG format
+	_ "image/png"  // Register PNG format
 	"io"
 	"os"
 	"time"

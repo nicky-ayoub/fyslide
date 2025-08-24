@@ -1,4 +1,4 @@
-// package ui contains application lifecycle and initialization logic.
+// Package ui contains application lifecycle and initialization logic.
 package ui
 
 import (

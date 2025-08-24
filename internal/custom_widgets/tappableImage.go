@@ -15,7 +15,7 @@ type TappableImage struct {
 	onTapped func()
 }
 
-// newTappableImage creates a new TappableImage widget.
+// NewTappableImage creates a new TappableImage widget.
 func NewTappableImage(res fyne.Resource, onTapped func()) *TappableImage {
 	ti := &TappableImage{
 		image:    canvas.NewImageFromResource(res),

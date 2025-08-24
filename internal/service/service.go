@@ -222,6 +222,7 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 // CleanDatabase performs maintenance on the tag database.
 // It runs in two phases:
 // 1. It removes all tag entries for image files that no longer exist on disk.
+
 // BatchRemoveTagsFromDirectory removes tags from all supported images in a directory (recursive).
 func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) (int, int, error) {
 	if dir == "" || len(tags) == 0 {
@@ -252,6 +253,7 @@ func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) (int, 
 
 // 2. It removes tag keys that are no longer associated with any images (orphaned tags).
 // It returns the number of files and tags cleaned, and any error encountered.
+
 // CleanDatabase removes tags for non-existent files and deletes orphaned tags.
 func (s *Service) CleanDatabase() (filesCleaned, tagsCleaned int, err error) {
 	// Phase 1: Remove tags for non-existent files

@@ -44,7 +44,7 @@ type UI struct {
 	thumbnailBrowser *custom_widgets.ThumbnailBrowser
 }
 
-// selectStackView activates the view at the given index (0 or 1) in the main content stack.
+// SelectStackView activates the view at the given index (0 or 1) in the main content stack.
 func (a *App) SelectStackView(index int) {
 	if a.UI.contentStack == nil {
 		a.AddLogMessage("Internal UI Error: Cannot switch view, content stack not initialized.")
