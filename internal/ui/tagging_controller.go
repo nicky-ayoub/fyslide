@@ -320,58 +320,70 @@ func (t *TaggingController) showAddTagDialog() {
 	}
 
 	execute := func(confirm bool) {
+		// Capture values from UI elements before starting the goroutine.
 		rawInput := tagEntry.Text
-		potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
-		var tagsToAdd []string
-		uniqueTags := make(map[string]bool)
-		for _, pt := range potentialTags {
-			tag := strings.ToLower(strings.TrimSpace(pt))
-			if tag != "" && !uniqueTags[tag] {
-				tagsToAdd = append(tagsToAdd, tag)
-				uniqueTags[tag] = true
-			}
-		}
-
-		if len(tagsToAdd) == 0 {
-			dialog.ShowInformation("Add Tags", "No valid tags entered.", t.host.GetMainWindow())
-			return
-		}
-
 		applyToAll := applyToAllCheck.Checked
-		var errAddOp error
-		var statusMessage string
-		filesAffected := make(map[string]bool)
-		var successfulAdditions, errorsEncountered int
 
-		if applyToAll {
-			currentDir := filepath.Dir(t.host.GetImageFullPath())
-			result := t.processTagsForDirectory(currentDir, tagsToAdd, t.service.AddTagsToImage, "tagging")
-			successfulAdditions = result.SuccessfulImages * len(tagsToAdd)
-			errorsEncountered = result.ErroredImages * len(tagsToAdd)
-			errAddOp = result.FirstError
-			filesAffected = result.FilesAffected
-
-			if errorsEncountered > 0 {
-				statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
-			} else if successfulAdditions > 0 {
-				statusMessage = fmt.Sprintf("Added tag(s) to %d images in %s.", len(filesAffected), filepath.Base(currentDir))
+		// Run the potentially long-running tag operation in a background goroutine
+		// so the UI doesn't freeze.
+		go func() {
+			potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
+			var tagsToAdd []string
+			uniqueTags := make(map[string]bool)
+			for _, pt := range potentialTags {
+				tag := strings.ToLower(strings.TrimSpace(pt))
+				if tag != "" && !uniqueTags[tag] {
+					tagsToAdd = append(tagsToAdd, tag)
+					uniqueTags[tag] = true
+				}
 			}
-		} else {
-			errAddOp = t.service.AddTagsToImage(t.host.GetImageFullPath(), tagsToAdd)
-			if errAddOp == nil {
-				successfulAdditions = len(tagsToAdd)
-				filesAffected[t.host.GetImageFullPath()] = true
+
+			if len(tagsToAdd) == 0 {
+				fyne.Do(func() {
+					dialog.ShowInformation("Add Tags", "No valid tags entered.", t.host.GetMainWindow())
+				})
+				return
+			}
+
+			t.host.AddLogMessage(fmt.Sprintf("Starting background task to add tags: [%s]", strings.Join(tagsToAdd, ", ")))
+
+			var errAddOp error
+			var statusMessage string
+			filesAffected := make(map[string]bool)
+			var successfulAdditions, errorsEncountered int
+
+			if applyToAll {
+				currentDir := filepath.Dir(t.host.GetImageFullPath())
+				result := t.processTagsForDirectory(currentDir, tagsToAdd, t.service.AddTagsToImage, "tagging")
+				successfulAdditions = result.SuccessfulImages * len(tagsToAdd)
+				errorsEncountered = result.ErroredImages * len(tagsToAdd)
+				errAddOp = result.FirstError
+				filesAffected = result.FilesAffected
+
+				if errorsEncountered > 0 {
+					statusMessage = fmt.Sprintf("Partial success adding tags to %d images. %d errors occurred.", len(filesAffected), errorsEncountered)
+				} else if successfulAdditions > 0 {
+					statusMessage = fmt.Sprintf("Added tag(s) to %d images in %s.", len(filesAffected), filepath.Base(currentDir))
+				}
 			} else {
-				errorsEncountered = len(tagsToAdd)
+				errAddOp = t.service.AddTagsToImage(t.host.GetImageFullPath(), tagsToAdd)
+				if errAddOp == nil {
+					successfulAdditions = len(tagsToAdd)
+					filesAffected[t.host.GetImageFullPath()] = true
+				} else {
+					errorsEncountered = len(tagsToAdd)
+				}
+				t.host.AddLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), successfulAdditions, errorsEncountered))
+				if errorsEncountered > 0 {
+					statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
+				} else if successfulAdditions > 0 {
+					statusMessage = fmt.Sprintf("Added %d tag(s) to current image.", len(tagsToAdd))
+				}
 			}
-			t.host.AddLogMessage(fmt.Sprintf("Add to %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), successfulAdditions, errorsEncountered))
-			if errorsEncountered > 0 {
-				statusMessage = fmt.Sprintf("Partial success adding tags. %d errors occurred.", errorsEncountered)
-			} else if successfulAdditions > 0 {
-				statusMessage = fmt.Sprintf("Added %d tag(s) to current image.", len(tagsToAdd))
-			}
-		}
-		t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
+			fyne.Do(func() {
+				t.postOperationUpdate(errAddOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
+			})
+		}()
 	}
 
 	t.handleTagOperation(
@@ -411,38 +423,48 @@ func (t *TaggingController) showRemoveTagDialog() {
 	}
 
 	execute := func(confirm bool) {
+		// Capture values from UI elements before starting the goroutine.
 		applyToAll := removeFromAllCheck.Checked
-		var errRemoveOp error
-		var statusMessage string
-		var imagesUntaggedCount, errorsEncountered int
-		filesAffected := make(map[string]bool)
+		tagToRemove := selectedTag
 
-		if applyToAll {
-			currentDir := filepath.Dir(t.host.GetImageFullPath())
-			op := func(path string, tags []string) error {
-				return t.service.RemoveTagsFromImage(path, tags)
-			}
-			result := t.processTagsForDirectory(currentDir, []string{selectedTag}, op, "untagging")
-			imagesUntaggedCount = result.SuccessfulImages
-			errorsEncountered = result.ErroredImages
-			errRemoveOp = result.FirstError
-			filesAffected = result.FilesAffected
+		// Run the potentially long-running tag operation in a background goroutine.
+		go func() {
+			var errRemoveOp error
+			var statusMessage string
+			var imagesUntaggedCount, errorsEncountered int
+			filesAffected := make(map[string]bool)
 
-			if errorsEncountered > 0 {
-				statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
-			} else if imagesUntaggedCount > 0 {
-				statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", selectedTag, imagesUntaggedCount, filepath.Base(currentDir))
+			if applyToAll {
+				currentDir := filepath.Dir(t.host.GetImageFullPath())
+				op := func(path string, tags []string) error {
+					return t.service.RemoveTagsFromImage(path, tags)
+				}
+				result := t.processTagsForDirectory(currentDir, []string{tagToRemove}, op, "untagging")
+				imagesUntaggedCount = result.SuccessfulImages
+				errorsEncountered = result.ErroredImages
+				errRemoveOp = result.FirstError
+				filesAffected = result.FilesAffected
+
+				if errorsEncountered > 0 {
+					statusMessage = fmt.Sprintf("Partial success removing tag. %d images untagged, %d errors.", imagesUntaggedCount, errorsEncountered)
+				} else if imagesUntaggedCount > 0 {
+					statusMessage = fmt.Sprintf("Tag '%s' removed from %d images in directory %s.", tagToRemove, imagesUntaggedCount, filepath.Base(currentDir))
+				}
+			} else {
+				errRemoveOp = t.service.RemoveTagsFromImage(t.host.GetImageFullPath(), []string{tagToRemove})
+				if errRemoveOp == nil {
+					imagesUntaggedCount = 1
+					filesAffected[t.host.GetImageFullPath()] = true
+					statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", tagToRemove)
+				} else {
+					errorsEncountered = 1
+				}
+				t.host.AddLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), imagesUntaggedCount, errorsEncountered))
 			}
-		} else {
-			errRemoveOp = t.service.RemoveTagsFromImage(t.host.GetImageFullPath(), []string{selectedTag})
-			if errRemoveOp == nil {
-				imagesUntaggedCount = 1
-				filesAffected[t.host.GetImageFullPath()] = true
-				statusMessage = fmt.Sprintf("Tag '%s' removed from current image.", selectedTag)
-			}
-			t.host.AddLogMessage(fmt.Sprintf("Remove from %s: %d successes, %d errors.", filepath.Base(t.host.GetImageFullPath()), imagesUntaggedCount, errorsEncountered))
-		}
-		t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
+			fyne.Do(func() {
+				t.postOperationUpdate(errRemoveOp, statusMessage, len(filesAffected), filesAffected[t.host.GetImageFullPath()])
+			})
+		}()
 	}
 
 	t.handleTagOperation(
