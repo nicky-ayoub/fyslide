@@ -162,12 +162,12 @@ func (zpa *ZoomPanArea) IsOriginalLargerThanView() bool {
 }
 
 // clampInt ensures val is within min and max (inclusive).
-func clampInt(val, min, max int) int {
-	if val < min {
-		return min
+func clampInt(val, aMin, aMax int) int {
+	if val < aMin {
+		return aMin
 	}
-	if val > max {
-		return max
+	if val > aMax {
+		return aMax
 	}
 	return val
 }
