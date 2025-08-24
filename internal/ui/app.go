@@ -122,6 +122,7 @@ func CreateApplication() {
 		})
 		ui.UI.MainWin.SetIcon(resourceIconPng)
 		ui.UI.MainWin.CenterOnScreen()
+
 		ui.UI.MainWin.SetFullScreen(true)
 
 		// After the UI is built and logUIManager is initialized, flush any buffered logs.
@@ -143,7 +144,8 @@ func CreateApplication() {
 			// Start at the beginning of the current view (sequential or random).
 			ui.imageState.SetIndex(0)
 			ui.startBackgroundTasks()
-			ui.LoadAndDisplayCurrentImage()
+			// The first image will be loaded after the main window is shown to ensure
+			// correct sizing.
 		} else {
 			// This case is also hit on timeout if no images loaded.
 			ui.updateStatusBar() // Will show "No images available" or similar.
@@ -154,6 +156,10 @@ func CreateApplication() {
 		fyne.Do(func() {
 			splashWin.Close()
 			ui.UI.MainWin.Show()
+			// Now that the window is visible and all widgets have their final sizes,
+			// we can load the first image. The internal Reset() call within
+			// LoadAndDisplayCurrentImage will now use the correct component size.
+			ui.LoadAndDisplayCurrentImage()
 		})
 	}()
 
