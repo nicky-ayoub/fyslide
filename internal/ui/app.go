@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 
 	"fyne.io/fyne/v2/layout"
@@ -106,9 +107,16 @@ func CreateApplication() {
 		ui.UI.MainWin = a.NewWindow("FySlide")
 		ui.UI.MainWin.SetContent(ui.buildMainUI())
 		ui.UI.MainWin.SetCloseIntercept(func() {
-			log.Println("Closing tag database...")
-			if err := ui.tagDB.Close(); err != nil {
-				log.Printf("Error closing tag database: %v", err)
+			if ui.Tagging.IsBusy() {
+				dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
+				return
+			}
+
+			log.Println("Closing application resources...")
+			if ui.tagDB != nil {
+				if err := ui.tagDB.Close(); err != nil {
+					log.Printf("Error closing tag database: %v", err)
+				}
 			}
 			ui.UI.MainWin.Close() // Proceed with closing the window
 		})

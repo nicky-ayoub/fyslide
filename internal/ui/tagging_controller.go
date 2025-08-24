@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
@@ -34,11 +35,17 @@ type TaggingController struct {
 	service    *service.Service
 	imageState *ImageState
 	host       TaggingHost
+	activeOps  atomic.Int32
 }
 
 // NewTaggingController creates a new instance of TaggingController.
 func NewTaggingController(h TaggingHost, s *service.Service, i *ImageState) *TaggingController {
 	return &TaggingController{host: h, service: s, imageState: i}
+}
+
+// IsBusy returns true if there are background tagging operations in progress.
+func (t *TaggingController) IsBusy() bool {
+	return t.activeOps.Load() > 0
 }
 
 // applyFilter filters the image list based on the selected tags.
@@ -327,6 +334,9 @@ func (t *TaggingController) showAddTagDialog() {
 		// Run the potentially long-running tag operation in a background goroutine
 		// so the UI doesn't freeze.
 		go func() {
+			t.activeOps.Add(1)
+			defer t.activeOps.Add(-1)
+
 			potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
 			var tagsToAdd []string
 			uniqueTags := make(map[string]bool)
@@ -429,6 +439,9 @@ func (t *TaggingController) showRemoveTagDialog() {
 
 		// Run the potentially long-running tag operation in a background goroutine.
 		go func() {
+			t.activeOps.Add(1)
+			defer t.activeOps.Add(-1)
+
 			var errRemoveOp error
 			var statusMessage string
 			var imagesUntaggedCount, errorsEncountered int
