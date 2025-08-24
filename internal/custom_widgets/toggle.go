@@ -1,4 +1,5 @@
-package custom_widgets
+// Package custom_widgets contains custom Fyne widgets for the application.
+package custom_widgets // import "fyslide/internal/custom_widgets"
 
 import (
 	"fmt"
@@ -13,12 +14,15 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// Toggle is a widget that can be in two states, on or off.
 type Toggle struct {
 	widget.DisableableWidget
+	// Toggled is the current state of the toggle.
 	Toggled bool
 
 	togglePLock sync.RWMutex
 
+	// OnChanged is the callback function that is called when the state of the toggle changes.
 	OnChanged func(bool) `json:"="`
 
 	focused bool
@@ -29,6 +33,7 @@ type Toggle struct {
 	minSize fyne.Size // cached for hover/top pos calcs
 }
 
+// NewToggle creates a new toggle widget.
 func NewToggle(changed func(bool)) *Toggle {
 	t := &Toggle{
 		OnChanged: changed,
@@ -37,6 +42,7 @@ func NewToggle(changed func(bool)) *Toggle {
 	return t
 }
 
+// NewToggleWithData creates a new toggle widget with a data binding.
 func NewToggleWithData(data binding.Bool) *Toggle {
 	toggle := NewToggle(nil)
 	toggle.Bind(data)
@@ -44,6 +50,7 @@ func NewToggleWithData(data binding.Bool) *Toggle {
 	return toggle
 }
 
+// Bind connects the toggle to a data binding.
 func (t *Toggle) Bind(data binding.Bool) {
 	t.binder.SetCallback(t.updateFromData)
 	t.binder.Bind(data)
@@ -53,6 +60,7 @@ func (t *Toggle) Bind(data binding.Bool) {
 	}
 }
 
+// SetToggled sets the state of the toggle.
 func (t *Toggle) SetToggled(toggled bool) {
 	t.togglePLock.Lock()
 	if toggled == t.Toggled {
@@ -71,6 +79,7 @@ func (t *Toggle) SetToggled(toggled bool) {
 	t.Refresh()
 }
 
+// Hide hides the toggle widget.
 func (t *Toggle) Hide() {
 	if t.focused {
 		t.FocusLost()
@@ -81,10 +90,12 @@ func (t *Toggle) Hide() {
 	t.BaseWidget.Hide()
 }
 
+// MouseIn is called when the mouse enters the widget.
 func (t *Toggle) MouseIn(me *desktop.MouseEvent) {
 	t.MouseMoved(me)
 }
 
+// MouseOut is called when the mouse leaves the widget.
 func (t *Toggle) MouseOut() {
 	if t.hovered {
 		t.hovered = false
@@ -92,6 +103,7 @@ func (t *Toggle) MouseOut() {
 	}
 }
 
+// MouseMoved is called when the mouse moves over the widget.
 func (t *Toggle) MouseMoved(me *desktop.MouseEvent) {
 	if t.Disabled() {
 		return
@@ -106,6 +118,7 @@ func (t *Toggle) MouseMoved(me *desktop.MouseEvent) {
 	}
 }
 
+// Tapped is called when the user taps the widget.
 func (t *Toggle) Tapped(pe *fyne.PointEvent) {
 	if t.Disabled() {
 		return
@@ -126,12 +139,14 @@ func (t *Toggle) Tapped(pe *fyne.PointEvent) {
 	t.SetToggled(!t.Toggled)
 }
 
+// MinSize returns the minimum size of the widget.
 func (t *Toggle) MinSize() fyne.Size {
 	t.ExtendBaseWidget(t)
 	t.minSize = t.BaseWidget.MinSize()
 	return t.minSize
 }
 
+// CreateRenderer creates a new renderer for the toggle widget.
 func (t *Toggle) CreateRenderer() fyne.WidgetRenderer {
 	th := t.Theme()
 	v := fyne.CurrentApp().Settings().ThemeVariant()
@@ -171,6 +186,7 @@ func (t *Toggle) CreateRenderer() fyne.WidgetRenderer {
 	return r
 }
 
+// FocusGained is called when the widget gains focus.
 func (t *Toggle) FocusGained() {
 	if t.Disabled() {
 		return
@@ -181,11 +197,13 @@ func (t *Toggle) FocusGained() {
 	t.Refresh()
 }
 
+// FocusLost is called when the widget loses focus.
 func (t *Toggle) FocusLost() {
 	t.focused = false
 	t.Refresh()
 }
 
+// TypedRune is called when a rune is typed.
 func (t *Toggle) TypedRune(r rune) {
 	if t.Disabled() {
 		return
@@ -195,8 +213,10 @@ func (t *Toggle) TypedRune(r rune) {
 	}
 }
 
+// TypedKey is called when a key is typed.
 func (t *Toggle) TypedKey(key *fyne.KeyEvent) {}
 
+// Unbind disconnects the toggle from a data binding.
 func (t *Toggle) Unbind() {
 	t.OnChanged = nil
 	t.binder.Unbind()
@@ -259,50 +279,49 @@ func (r *toggleRenderer) Objects() []fyne.CanvasObject {
 	}
 }
 
-func (t *toggleRenderer) MinSize() fyne.Size {
-	th := t.toggle.Theme()
+func (r *toggleRenderer) MinSize() fyne.Size {
+	th := r.toggle.Theme()
 
 	pad4 := th.Size(theme.SizeNameInnerPadding)
 	iconInline := th.Size(theme.SizeNameInlineIcon)
 	borderSize := th.Size(theme.SizeNameInputBorder)
-	min := fyne.NewSize(
+	minFunc := fyne.NewSize(
 		(iconInline*2)+pad4*2+borderSize,
 		iconInline+pad4+borderSize,
 	)
 
-	return min
+	return minFunc
 }
 
-func (t *toggleRenderer) Layout(size fyne.Size) {
-	th := t.toggle.Theme()
+func (r *toggleRenderer) Layout(size fyne.Size) {
+	th := r.toggle.Theme()
 	innerPadding := th.Size(theme.SizeNameInnerPadding)
 	borderSize := th.Size(theme.SizeNameInputBorder)
 	iconInlineSize := th.Size(theme.SizeNameInlineIcon)
 
-	t.indicatorOffPos = fyne.NewPos(
+	r.indicatorOffPos = fyne.NewPos(
 		innerPadding/2+borderSize,
 		(size.Height-iconInlineSize-borderSize-innerPadding/2)/2,
 	)
 	indicatorSize := fyne.NewSquareSize(iconInlineSize + innerPadding/2)
 
 	focusIndicatorSize := fyne.NewSquareSize(iconInlineSize + innerPadding)
-	t.focusIndicatorOffPos = fyne.NewPos(
+	r.focusIndicatorOffPos = fyne.NewPos(
 		innerPadding/4+borderSize,
 		(size.Height-focusIndicatorSize.Height)/2,
 	)
-	t.indicatorOnPos = t.indicatorOffPos.AddXY(iconInlineSize+innerPadding, 0)
-	t.focusIndicatorOnPos = t.focusIndicatorOffPos.AddXY(iconInlineSize+innerPadding, 0)
+	r.indicatorOnPos = r.indicatorOffPos.AddXY(iconInlineSize+innerPadding, 0)
+	r.focusIndicatorOnPos = r.focusIndicatorOffPos.AddXY(iconInlineSize+innerPadding, 0)
 
-	t.toggle.togglePLock.RLock()
-	toggled := t.toggle.Toggled
-	t.toggle.togglePLock.RUnlock()
-	t.focusIndicator.Resize(focusIndicatorSize)
+	r.toggle.togglePLock.RLock()
+	toggled := r.toggle.Toggled
+	r.toggle.togglePLock.RUnlock()
 	if toggled {
-		t.indicator.Move(t.indicatorOnPos)
-		t.focusIndicator.Move(t.focusIndicatorOnPos)
+		r.indicator.Move(r.indicatorOnPos)
+		r.focusIndicator.Move(r.focusIndicatorOnPos)
 	} else {
-		t.indicator.Move(t.indicatorOffPos)
-		t.focusIndicator.Move(t.focusIndicatorOffPos)
+		r.indicator.Move(r.indicatorOffPos)
+		r.focusIndicator.Move(r.focusIndicatorOffPos)
 	}
 
 	bgPos := fyne.NewPos(
@@ -310,60 +329,60 @@ func (t *toggleRenderer) Layout(size fyne.Size) {
 		(size.Height-iconInlineSize)/2,
 	)
 	bgSize := fyne.NewSize(iconInlineSize*2+innerPadding, iconInlineSize)
-	t.bg.Resize(bgSize)
-	t.bg.Move(bgPos)
-	t.indicator.Resize(indicatorSize)
+	r.bg.Resize(bgSize)
+	r.bg.Move(bgPos)
+	r.indicator.Resize(indicatorSize)
 }
 
-func (t *toggleRenderer) applyTheme(th fyne.Theme, v fyne.ThemeVariant) {
-	if t.toggle.Disabled() {
-		t.indicator.FillColor = th.Color(theme.ColorNameDisabled, v)
+func (r *toggleRenderer) applyTheme(th fyne.Theme, v fyne.ThemeVariant) {
+	if r.toggle.Disabled() {
+		r.indicator.FillColor = th.Color(theme.ColorNameDisabled, v)
 	} else {
-		t.indicator.FillColor = th.Color(theme.ColorNameForegroundOnPrimary, v)
+		r.indicator.FillColor = th.Color(theme.ColorNameForegroundOnPrimary, v)
 	}
 
-	t.indicator.StrokeColor = th.Color(theme.ColorNameInputBorder, v)
-	t.indicator.StrokeWidth = th.Size(theme.SizeNameInputBorder)
+	r.indicator.StrokeColor = th.Color(theme.ColorNameInputBorder, v)
+	r.indicator.StrokeWidth = th.Size(theme.SizeNameInputBorder)
 
-	t.bg.CornerRadius = th.Size(theme.SizeNameInlineIcon) / 2
-	t.bg.StrokeWidth = th.Size(theme.SizeNameInputBorder)
+	r.bg.CornerRadius = th.Size(theme.SizeNameInlineIcon) / 2
+	r.bg.StrokeWidth = th.Size(theme.SizeNameInputBorder)
 }
 
-func (t *toggleRenderer) Refresh() {
-	th := t.toggle.Theme()
+func (r *toggleRenderer) Refresh() {
+	th := r.toggle.Theme()
 	v := fyne.CurrentApp().Settings().ThemeVariant()
 
-	t.toggle.togglePLock.RLock()
-	t.applyTheme(th, v)
-	t.updateFocusIndicator(th, v)
-	t.updateToggle(th, v)
-	t.toggle.togglePLock.RUnlock()
+	r.toggle.togglePLock.RLock()
+	r.applyTheme(th, v)
+	r.updateFocusIndicator(th, v)
+	r.updateToggle(th, v)
+	r.toggle.togglePLock.RUnlock()
 }
 
-func (t *toggleRenderer) updateFocusIndicator(th fyne.Theme, v fyne.ThemeVariant) {
-	if t.toggle.Disabled() {
-		t.focusIndicator.FillColor = color.Transparent
-	} else if t.toggle.focused {
-		t.focusIndicator.FillColor = th.Color(theme.ColorNameFocus, v)
-	} else if t.toggle.hovered {
-		t.focusIndicator.FillColor = th.Color(theme.ColorNameHover, v)
+func (r *toggleRenderer) updateFocusIndicator(th fyne.Theme, v fyne.ThemeVariant) {
+	if r.toggle.Disabled() {
+		r.focusIndicator.FillColor = color.Transparent
+	} else if r.toggle.focused {
+		r.focusIndicator.FillColor = th.Color(theme.ColorNameFocus, v)
+	} else if r.toggle.hovered {
+		r.focusIndicator.FillColor = th.Color(theme.ColorNameHover, v)
 	} else {
-		t.focusIndicator.FillColor = color.Transparent
+		r.focusIndicator.FillColor = color.Transparent
 	}
 
-	if t.toggle.Toggled {
-		t.focusIndicator.Move(t.focusIndicatorOnPos)
+	if r.toggle.Toggled {
+		r.focusIndicator.Move(r.focusIndicatorOnPos)
 	} else {
-		t.focusIndicator.Move(t.focusIndicatorOffPos)
+		r.focusIndicator.Move(r.focusIndicatorOffPos)
 	}
 }
 
-func (t *toggleRenderer) updateToggle(th fyne.Theme, v fyne.ThemeVariant) {
-	if t.toggle.Toggled {
-		t.indicator.Move(t.indicatorOnPos)
-		t.bg.FillColor = th.Color(theme.ColorNamePrimary, v)
+func (r *toggleRenderer) updateToggle(th fyne.Theme, v fyne.ThemeVariant) {
+	if r.toggle.Toggled {
+		r.indicator.Move(r.indicatorOnPos)
+		r.bg.FillColor = th.Color(theme.ColorNamePrimary, v)
 	} else {
-		t.indicator.Move(t.indicatorOffPos)
-		t.bg.FillColor = th.Color(theme.ColorNameInputBackground, v)
+		r.indicator.Move(r.indicatorOffPos)
+		r.bg.FillColor = th.Color(theme.ColorNameInputBackground, v)
 	}
 }
