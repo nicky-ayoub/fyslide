@@ -62,13 +62,13 @@ func CreateApplication() {
 	// --- Splash Screen ---
 	splashWin := a.NewWindow("Loading FySlide")
 	splashWin.SetFixedSize(true)
-	splashWin.Resize(fyne.NewSize(320, 240))
+	splashWin.Resize(fyne.NewSize(640, 480))
 	splashWin.SetPadded(true)
 	splashWin.CenterOnScreen()
 	//splashWin.SetDecorated(false) // No title bar, etc.
 
-	splashIcon := canvas.NewImageFromResource(resourceIconPng)
-	splashIcon.SetMinSize(fyne.NewSize(128, 128))
+	splashIcon := canvas.NewImageFromResource(resourceFyslidesplash004Png)
+	splashIcon.SetMinSize(fyne.NewSize(480, 480))
 	splashText := widget.NewLabel("Initializing...")
 	splashProgress := widget.NewProgressBarInfinite()
 	splashText.Alignment = fyne.TextAlignCenter
