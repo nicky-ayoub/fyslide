@@ -2,19 +2,20 @@
 package service
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"  // Register GIF format
-	_ "image/jpeg" // Register JPEG format
-	_ "image/png"  // Register PNG format
-	"io"
+	_ "image/gif"  // Register GIF decoder
+	_ "image/jpeg" // Register JPEG decoder
+	_ "image/png"  // Register PNG decoder
 	"os"
 	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
 
-// ImageInfo holds metadata about an image file.
+// ImageInfo holds metadata about an image.
 type ImageInfo struct {
 	Width    int
 	Height   int
@@ -23,64 +24,84 @@ type ImageInfo struct {
 	EXIFData map[string]string
 }
 
-// ImageService provides image loading and metadata extraction.
-type ImageService struct {
-}
+// ImageService provides methods for loading and decoding images.
+type ImageService struct{}
 
 // NewImageService creates a new ImageService.
 func NewImageService() *ImageService {
 	return &ImageService{}
 }
 
-// GetEXIF extracts a few common EXIF fields from an image file.
-func (is *ImageService) GetEXIF(r io.Reader) (map[string]string, error) {
-	x, err := exif.Decode(r)
+// GetImageInfo reads an image file, decodes it, and extracts metadata.
+func (is *ImageService) GetImageInfo(path string) (*ImageInfo, image.Image, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, nil // Not all images have EXIF; not an error for non-JPEGs
+		return nil, nil, fmt.Errorf("opening file: %w", err)
 	}
-	result := make(map[string]string)
-	for _, field := range []string{
-		"DateTime", "Model", "Make", "ExposureTime", "FNumber", "ISOSpeedRatings", "FocalLength",
-	} {
-		tag, err := x.Get(exif.FieldName(field))
-		if err == nil && tag != nil {
-			result[field] = tag.String()
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding image: %w", err)
+	}
+
+	// Reset file pointer to read EXIF data
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, nil, fmt.Errorf("seeking file for exif: %w", err)
+	}
+
+	exifData, _ := exif.Decode(file) // Ignore error, EXIF might not be present
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting file stats: %w", err)
+	}
+
+	info := &ImageInfo{
+		Width:    img.Bounds().Dx(),
+		Height:   img.Bounds().Dy(),
+		Size:     fileInfo.Size(),
+		ModTime:  fileInfo.ModTime(),
+		EXIFData: make(map[string]string),
+	}
+
+	if exifData != nil {
+		// Extract specific EXIF fields
+		if camModel, err := exifData.Get(exif.Model); err == nil {
+			info.EXIFData["Camera Model"] = camModel.String()
+		}
+		if fNum, err := exifData.Get(exif.FNumber); err == nil {
+			numer, denom, _ := fNum.Rat2(0)
+			info.EXIFData["F-Number"] = fmt.Sprintf("f/%.1f", float64(numer)/float64(denom))
+		}
+		if expTime, err := exifData.Get(exif.ExposureTime); err == nil {
+			numer, denom, _ := expTime.Rat2(0)
+			info.EXIFData["Exposure Time"] = fmt.Sprintf("%d/%d s", numer, denom)
 		}
 	}
-	return result, nil
+
+	return info, img, nil
 }
 
-// GetImageInfo returns width, height, file size, mod time, and EXIF data.
-func (is *ImageService) GetImageInfo(path string) (*ImageInfo, image.Image, error) {
-	f, err := os.Open(path)
+// GetEmbeddedThumbnail attempts to read an embedded EXIF thumbnail from an image file.
+// It returns the decoded thumbnail image or an error if one is not found or cannot be decoded.
+func (is *ImageService) GetEmbeddedThumbnail(path string) (image.Image, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open image for info: %w", err)
+		return nil, fmt.Errorf("opening file for thumbnail: %w", err)
 	}
-	defer f.Close()
+	defer file.Close()
 
-	fi, err := f.Stat()
+	x, err := exif.Decode(file)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to stat image file: %w", err)
+		return nil, errors.New("no EXIF data found")
 	}
 
-	exifData, _ := is.GetEXIF(f) // Pass the file reader, EXIF is optional
-
-	// Seek back to the beginning of the file for image decoding
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
-		return nil, nil, fmt.Errorf("failed to seek in image file: %w", err)
-	}
-
-	img, _, err := image.Decode(f) // Decode the image using the same file handle
+	thumbBytes, err := x.JpegThumbnail()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode image for info: %w", err)
+		return nil, fmt.Errorf("no JPEG thumbnail in EXIF: %w", err)
 	}
 
-	bounds := img.Bounds()
-	return &ImageInfo{
-		Width:    bounds.Dx(),
-		Height:   bounds.Dy(),
-		Size:     fi.Size(),
-		ModTime:  fi.ModTime(),
-		EXIFData: exifData,
-	}, img, nil
+	img, _, err := image.Decode(bytes.NewReader(thumbBytes))
+	return img, err
 }

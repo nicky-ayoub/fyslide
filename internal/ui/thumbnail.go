@@ -60,13 +60,28 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 	tm.cacheMutex.RUnlock()
 
 	go func() {
-		_, imgDecoded, err := tm.imageService.GetImageInfo(path)
+		var thumbImg image.Image
+
+		// First, try to get the fast, embedded EXIF thumbnail.
+		embeddedThumb, err := tm.imageService.GetEmbeddedThumbnail(path)
 		if err != nil {
-			tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
-			return
+			// This is not a fatal error, just means no embedded thumb. Fall back to full decode.
+			tm.logger("No embedded thumb for " + filepath.Base(path) + ", falling back to full decode.")
+
+			// Fallback: Load and decode the entire image.
+			_, imgDecoded, err := tm.imageService.GetImageInfo(path)
+			if err != nil {
+				tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
+				return
+			}
+
+			// Resize the full image.
+			thumbImg = resize.Thumbnail(ThumbnailWidth, ThumbnailHeight, imgDecoded, resize.Lanczos3)
+		} else {
+			// Success! Resize the embedded thumbnail to ensure consistent dimensions.
+			thumbImg = resize.Thumbnail(ThumbnailWidth, ThumbnailHeight, embeddedThumb, resize.Lanczos3)
 		}
 
-		thumbImg := resize.Thumbnail(ThumbnailWidth, ThumbnailHeight, imgDecoded, resize.Lanczos3)
 		thumbBytes := imageToBytes(thumbImg)
 		if thumbBytes == nil {
 			return
