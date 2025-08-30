@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"fyslide/internal/slideshow"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
@@ -405,6 +407,66 @@ func (t *TaggingController) showAddTagDialog() {
 		nil, // No pre-dialog check needed
 		execute,
 	)
+}
+
+// showFilterByTagsDialog displays a dialog to filter images by multiple tags.
+func (t *TaggingController) showFilterByTagsDialog() {
+	allTagsWithCount, err := t.service.ListAllTags()
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("failed to list all tags: %w", err), t.host.GetMainWindow())
+		return
+	}
+
+	if len(allTagsWithCount) == 0 {
+		dialog.ShowInformation("Filter by Tags", "No tags found in the database to filter by.", t.host.GetMainWindow())
+		return
+	}
+
+	// Sort tags alphabetically for display
+	sort.Slice(allTagsWithCount, func(i, j int) bool {
+		return allTagsWithCount[i].Name < allTagsWithCount[j].Name
+	})
+
+	// Map to store the checked state of each tag
+	checkedTags := make(map[string]bool)
+
+	// Create a list of check widgets
+	content := container.NewVBox()
+	for _, tagInfo := range allTagsWithCount {
+		// Capture tag name for the closure
+		tagName := tagInfo.Name
+		check := widget.NewCheck(fmt.Sprintf("%s (%d)", tagName, tagInfo.Count), func(checked bool) {
+			checkedTags[tagName] = checked
+		})
+		content.Add(check)
+	}
+	scrollableContent := container.NewScroll(content)
+
+	// Create and show the dialog
+	d := dialog.NewCustomConfirm(
+		"Filter by Tags",
+		"Apply",
+		"Cancel",
+		scrollableContent,
+		func(confirm bool) {
+			if !confirm {
+				return
+			}
+
+			var selectedTags []string
+			// Iterate over the original sorted list to maintain order
+			for _, tagInfo := range allTagsWithCount {
+				if checkedTags[tagInfo.Name] {
+					selectedTags = append(selectedTags, tagInfo.Name)
+				}
+			}
+			t.ApplyFilter(selectedTags) // ApplyFilter handles empty slice by clearing the filter
+		},
+		t.host.GetMainWindow(),
+	)
+
+	d.Resize(fyne.NewSize(400, 500))
+	d.Show()
 }
 
 // showRemoveTagDialog displays a dialog for removing a tag from the current image or all images in the directory.

@@ -204,6 +204,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Next Image", func() { a.Navigation.Navigate(1) }),
 			fyne.NewMenuItem("Previous Image", a.Navigation.ShowPreviousImage),
 			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Filter by Tags...", a.Tagging.showFilterByTagsDialog),
 			a.UI.clearFilterMenuItem,
 		),
 		fyne.NewMenu("Help",
