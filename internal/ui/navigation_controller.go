@@ -38,7 +38,7 @@ func (nc *NavigationController) NavigateToIndex(newIndex int) {
 		return // Do nothing if the list is empty or the index is out of bounds.
 	}
 
-	nc.imageState.index = newIndex
+	nc.imageState.SetIndex(newIndex)
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
@@ -50,7 +50,7 @@ func (nc *NavigationController) NavigateToImageIndex(targetIndex int) {
 		return // Invalid index
 	}
 
-	nc.imageState.index = targetIndex
+	nc.imageState.SetIndex(targetIndex)
 
 	nc.host.LoadAndDisplayCurrentImage()
 }
@@ -60,12 +60,15 @@ func (nc *NavigationController) FirstImage() {
 	if nc.imageState.GetCurrentImageCount() == 0 {
 		return
 	}
-	nc.imageState.index = 0
+	nc.imageState.SetIndex(0)
 	nc.host.LoadAndDisplayCurrentImage()
 }
 
 // LastImage navigates to the last image in the current list.
 func (nc *NavigationController) LastImage() {
+	if nc.imageState.GetCurrentImageCount() == 0 {
+		return
+	}
 	nc.NavigateToIndex(nc.imageState.GetCurrentImageCount() - 1)
 }
 
@@ -77,7 +80,7 @@ func (nc *NavigationController) Navigate(offset int) {
 		return
 	}
 
-	newIndex := nc.imageState.index + offset
+	newIndex := nc.imageState.GetCurrentIndex() + offset
 
 	if newIndex >= count {
 		newIndex = count - 1
@@ -87,7 +90,7 @@ func (nc *NavigationController) Navigate(offset int) {
 		newIndex = 0 // Wrap to the end
 	}
 
-	nc.imageState.index = newIndex
+	nc.imageState.SetIndex(newIndex)
 	nc.host.LoadAndDisplayCurrentImage()
 }
 

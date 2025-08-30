@@ -415,19 +415,16 @@ func (t *TaggingController) showRemoveTagDialog() {
 		return
 	}
 
-	preDialogCheck := func() bool {
-		if len(currentTags) == 0 {
-			dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.host.GetMainWindow())
-			return false
-		}
-		return true
+	if len(currentTags) == 0 {
+		dialog.ShowInformation("Remove Tag", "This image has no tags to remove.", t.host.GetMainWindow())
+		return
 	}
+
 	var selectedTag string
 	tagSelector := widget.NewSelect(currentTags, func(s string) { selectedTag = s })
 	tagSelector.SetSelected(currentTags[0])
 	selectedTag = currentTags[0]
 	removeFromAllCheck := widget.NewCheck("Remove tag(s) from all images in this directory", nil)
-
 	formItems := []*widget.FormItem{
 		widget.NewFormItem("Select Tag to Remove", tagSelector),
 		widget.NewFormItem("", removeFromAllCheck),
@@ -486,7 +483,7 @@ func (t *TaggingController) showRemoveTagDialog() {
 		"Remove",
 		formItems,
 		tagSelector,
-		preDialogCheck,
+		nil, // Pre-dialog check is now handled at the top of this function.
 		execute,
 	)
 }
