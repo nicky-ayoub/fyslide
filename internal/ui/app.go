@@ -65,7 +65,6 @@ func CreateApplication() {
 	splashWin.Resize(fyne.NewSize(640, 480))
 	splashWin.SetPadded(true)
 	splashWin.CenterOnScreen()
-	//splashWin.SetDecorated(false) // No title bar, etc.
 
 	splashIcon := canvas.NewImageFromResource(resourceFyslidesplash004Png)
 	splashIcon.SetMinSize(fyne.NewSize(480, 480))
