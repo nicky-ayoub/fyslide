@@ -122,7 +122,8 @@ func CreateApplication() {
 		ui.UI.MainWin.SetIcon(resourceIconPng)
 		ui.UI.MainWin.CenterOnScreen()
 
-		ui.UI.MainWin.SetFullScreen(true)
+		//ui.UI.MainWin.SetFullScreen(true)
+		ui.UI.MainWin.Resize(fyne.NewSize(1920, 1024))
 
 		// After the UI is built and logUIManager is initialized, flush any buffered logs.
 		ui.flushLogBuffer()
