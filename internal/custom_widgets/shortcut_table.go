@@ -24,10 +24,8 @@ func NewShortcutTable() *ShortcutTable {
 			{Description: "Quit Application", Shortcut: "Ctrl+Q"},
 			{Description: "Next Image", Shortcut: "Arrow Right"},
 			{Description: "Previous Image", Shortcut: "Arrow Left"},
-			{Description: "Skip Images Back (Page Up)", Shortcut: "Page Up"},
-			{Description: "Skip Images Forward (Page Down)", Shortcut: "Page Down"},
-			{Description: "Skip Images Back (Arrow Up)", Shortcut: "Arrow Up"},
-			{Description: "Skip Images Forward (Arrow Down)", Shortcut: "Arrow Down"},
+			{Description: "Skip Images Back", Shortcut: "Page Up"},
+			{Description: "Skip Images Forward", Shortcut: "Page Down"},
 			{Description: "First Image", Shortcut: "Home"},
 			{Description: "Last Image", Shortcut: "End"},
 			{Description: "Toggle Play/Pause Slideshow", Shortcut: "P or Space"},
@@ -36,6 +34,8 @@ func NewShortcutTable() *ShortcutTable {
 			{Description: "Zoom In Image", Shortcut: "+"},
 			{Description: "Zoom Out Image", Shortcut: "-"},
 			{Description: "Reset Image Zoom/Pan", Shortcut: "0"},
+			{Description: "Pan Image Up", Shortcut: "Arrow Up"},
+			{Description: "Pan Image Down", Shortcut: "Arrow Down"},
 		},
 	}
 	st.ExtendBaseWidget(st)

@@ -8,6 +8,10 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 )
 
+const (
+	keyboardPanStep = 30.0
+)
+
 func (a *App) buildKeyboardShortcuts() {
 	// keyboard shortcuts
 
@@ -28,10 +32,18 @@ func (a *App) buildKeyboardShortcuts() {
 			a.app.Quit()
 		case fyne.KeyP, fyne.KeySpace: // Toggle Play
 			a.TogglePlay()
-		case fyne.KeyPageUp, fyne.KeyUp:
+		case fyne.KeyPageUp:
 			a.Navigation.Navigate(-a.skipCount)
-		case fyne.KeyPageDown, fyne.KeyDown:
+		case fyne.KeyPageDown:
 			a.Navigation.Navigate(a.skipCount)
+		case fyne.KeyUp:
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
+				a.zoomPanArea.Pan(fyne.Delta{DY: -keyboardPanStep}) // Pan image up
+			}
+		case fyne.KeyDown:
+			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
+				a.zoomPanArea.Pan(fyne.Delta{DY: keyboardPanStep}) // Pan image down
+			}
 		case fyne.KeyHome:
 			a.Navigation.FirstImage()
 		case fyne.KeyEnd:

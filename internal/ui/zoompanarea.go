@@ -176,6 +176,37 @@ func (zpa *ZoomPanArea) FitToWidth() {
 	}
 }
 
+// IsFitToWidth returns true if the image is currently zoomed to fit the width of the view.
+// It uses a small epsilon for float comparison.
+func (zpa *ZoomPanArea) IsFitToWidth() bool {
+	if zpa.originalImg == nil || zpa.Size().Width == 0 {
+		return false
+	}
+	imgW := float32(zpa.originalImg.Bounds().Dx())
+	viewW := zpa.Size().Width
+	expectedZoom := viewW / imgW
+
+	// Clamp zoom factor to min/max limits, same as FitToWidth
+	if expectedZoom < zpa.minZoom {
+		expectedZoom = zpa.minZoom
+	}
+	if expectedZoom > zpa.maxZoom {
+		expectedZoom = zpa.maxZoom
+	}
+
+	epsilon := float32(0.001)
+	return math.Abs(float64(zpa.zoomFactor-expectedZoom)) < float64(epsilon)
+}
+
+// ToggleFitWidth either zooms to fit width or resets to fit view.
+func (zpa *ZoomPanArea) ToggleFitWidth() {
+	if zpa.IsFitToWidth() {
+		zpa.Reset() // It's already fit-to-width, so reset to fit-to-view
+	} else {
+		zpa.FitToWidth() // It's not fit-to-width, so make it so
+	}
+}
+
 // IsOriginalLargerThanView returns true if the original image dimensions are greater than the current view size.
 func (zpa *ZoomPanArea) IsOriginalLargerThanView() bool {
 	if zpa.originalImg == nil || zpa.Size().Width == 0 || zpa.Size().Height == 0 {
@@ -386,6 +417,18 @@ func (zpa *ZoomPanArea) DragEnd() {
 func (zpa *ZoomPanArea) DoubleTapped(_ *fyne.PointEvent) {
 	if zpa.OnDoubleTapped != nil {
 		zpa.OnDoubleTapped()
+	}
+}
+
+// Pan moves the image by the given delta, useful for keyboard scrolling.
+func (zpa *ZoomPanArea) Pan(delta fyne.Delta) {
+	if zpa.OnInteraction != nil {
+		zpa.OnInteraction()
+	}
+	zpa.panOffset = zpa.panOffset.Add(delta)
+	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
 	}
 }
 
