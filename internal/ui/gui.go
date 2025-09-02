@@ -224,7 +224,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			a.slideshowManager.Pause(true)
 		},
 		func() { // onDoubleTapped
-			a.app.Quit()
+			a.UI.MainWin.SetFullScreen(!a.UI.MainWin.FullScreen())
+		},
+		func() { // onRightTapped
+			a.zoomPanArea.FitToWidth()
 		},
 	)
 	// Set the callback for zoom/pan changes to update the toolbar action visibility

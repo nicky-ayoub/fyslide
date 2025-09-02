@@ -45,6 +45,7 @@ type ZoomPanArea struct {
 
 	OnInteraction    func() // Callback for when user interacts (scrolls, drags) - e.g., to pause slideshow
 	OnDoubleTapped   func() // Callback for double-tap/double-click events
+	OnRightTapped    func() // Callback for right-click events
 	onZoomPanChange  func() // Callback for when zoom or pan changes - e.g., to update UI elements
 	currentAlgorithm ScaleAlgorithmType
 }
@@ -52,7 +53,7 @@ type ZoomPanArea struct {
 // NewZoomPanArea creates a new ZoomPanArea widget.
 // The onInteraction func will be called when the user zooms or starts panning.
 // The onDoubleTapped func will be called when the user double-clicks.
-func NewZoomPanArea(img image.Image, onInteraction func(), onDoubleTapped func()) *ZoomPanArea {
+func NewZoomPanArea(img image.Image, onInteraction func(), onDoubleTapped func(), onRightTapped func()) *ZoomPanArea {
 	zpa := &ZoomPanArea{
 		originalImg:      img,
 		zoomFactor:       1.0,
@@ -61,6 +62,7 @@ func NewZoomPanArea(img image.Image, onInteraction func(), onDoubleTapped func()
 		maxZoom:          defaultMaxZoom,
 		OnInteraction:    onInteraction,
 		OnDoubleTapped:   onDoubleTapped,
+		OnRightTapped:    onRightTapped,
 		currentAlgorithm: Bilinear, // Default to Bilinear for better quality
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
@@ -118,10 +120,7 @@ func (zpa *ZoomPanArea) Reset() {
 		}
 
 		// Center the scaled image
-		scaledImgW := imgW * zpa.zoomFactor
-		scaledImgH := imgH * zpa.zoomFactor
-		zpa.panOffset.X = (viewW - scaledImgW) / 2
-		zpa.panOffset.Y = (viewH - scaledImgH) / 2
+		zpa.centerImage()
 	} else {
 		// Default if no image or size is not ready (e.g. initial load before layout)
 		zpa.zoomFactor = 1.0
@@ -139,15 +138,37 @@ func (zpa *ZoomPanArea) ShowFullSize() {
 	}
 	zpa.zoomFactor = 1.0
 
+	zpa.centerImage()
+
+	zpa.Refresh()
+	if zpa.onZoomPanChange != nil {
+		zpa.onZoomPanChange()
+	}
+}
+
+// FitToWidth sets the zoom so the image width fits the view width.
+func (zpa *ZoomPanArea) FitToWidth() {
+	if zpa.originalImg == nil || zpa.Size().Width == 0 {
+		return
+	}
+
 	imgBounds := zpa.originalImg.Bounds()
 	imgW := float32(imgBounds.Dx())
-	imgH := float32(imgBounds.Dy())
 	viewW := zpa.Size().Width
-	viewH := zpa.Size().Height
 
-	// Center the 100% zoomed image
-	zpa.panOffset.X = (viewW - imgW) / 2
-	zpa.panOffset.Y = (viewH - imgH) / 2
+	// Calculate zoom factor to fit the image width to the view width.
+	zpa.zoomFactor = viewW / imgW
+
+	// Clamp zoom factor to min/max limits
+	if zpa.zoomFactor < zpa.minZoom {
+		zpa.zoomFactor = zpa.minZoom
+	}
+	if zpa.zoomFactor > zpa.maxZoom {
+		zpa.zoomFactor = zpa.maxZoom
+	}
+
+	// Center the image horizontally and vertically
+	zpa.centerImage()
 
 	zpa.Refresh()
 	if zpa.onZoomPanChange != nil {
@@ -162,6 +183,20 @@ func (zpa *ZoomPanArea) IsOriginalLargerThanView() bool {
 	}
 	imgBounds := zpa.originalImg.Bounds()
 	return float32(imgBounds.Dx()) > zpa.Size().Width || float32(imgBounds.Dy()) > zpa.Size().Height
+}
+
+// centerImage adjusts the panOffset to center the currently scaled image in the view.
+func (zpa *ZoomPanArea) centerImage() {
+	if zpa.originalImg == nil {
+		return
+	}
+	imgBounds := zpa.originalImg.Bounds()
+	scaledImgW := float32(imgBounds.Dx()) * zpa.zoomFactor
+	scaledImgH := float32(imgBounds.Dy()) * zpa.zoomFactor
+	viewW := zpa.Size().Width
+	viewH := zpa.Size().Height
+	zpa.panOffset.X = (viewW - scaledImgW) / 2
+	zpa.panOffset.Y = (viewH - scaledImgH) / 2
 }
 
 // clampInt ensures val is within min and max (inclusive).
@@ -354,6 +389,13 @@ func (zpa *ZoomPanArea) DoubleTapped(_ *fyne.PointEvent) {
 	}
 }
 
+// TappedSecondary handles right-click events.
+func (zpa *ZoomPanArea) TappedSecondary(_ *fyne.PointEvent) {
+	if zpa.OnRightTapped != nil {
+		zpa.OnRightTapped()
+	}
+}
+
 // CurrentZoom returns the current zoom factor.
 func (zpa *ZoomPanArea) CurrentZoom() float32 {
 	return zpa.zoomFactor
@@ -372,3 +414,4 @@ var _ fyne.Widget = (*ZoomPanArea)(nil)
 var _ fyne.Scrollable = (*ZoomPanArea)(nil)
 var _ fyne.Draggable = (*ZoomPanArea)(nil)
 var _ fyne.DoubleTappable = (*ZoomPanArea)(nil)
+var _ fyne.SecondaryTappable = (*ZoomPanArea)(nil)
