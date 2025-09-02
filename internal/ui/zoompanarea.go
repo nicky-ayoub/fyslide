@@ -44,13 +44,15 @@ type ZoomPanArea struct {
 	lastMousePos fyne.Position
 
 	OnInteraction    func() // Callback for when user interacts (scrolls, drags) - e.g., to pause slideshow
+	OnDoubleTapped   func() // Callback for double-tap/double-click events
 	onZoomPanChange  func() // Callback for when zoom or pan changes - e.g., to update UI elements
 	currentAlgorithm ScaleAlgorithmType
 }
 
 // NewZoomPanArea creates a new ZoomPanArea widget.
 // The onInteraction func will be called when the user zooms or starts panning.
-func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
+// The onDoubleTapped func will be called when the user double-clicks.
+func NewZoomPanArea(img image.Image, onInteraction func(), onDoubleTapped func()) *ZoomPanArea {
 	zpa := &ZoomPanArea{
 		originalImg:      img,
 		zoomFactor:       1.0,
@@ -58,6 +60,7 @@ func NewZoomPanArea(img image.Image, onInteraction func()) *ZoomPanArea {
 		minZoom:          defaultMinZoom,
 		maxZoom:          defaultMaxZoom,
 		OnInteraction:    onInteraction,
+		OnDoubleTapped:   onDoubleTapped,
 		currentAlgorithm: Bilinear, // Default to Bilinear for better quality
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
@@ -344,6 +347,13 @@ func (zpa *ZoomPanArea) DragEnd() {
 	zpa.isPanning = false
 }
 
+// DoubleTapped handles double-click events.
+func (zpa *ZoomPanArea) DoubleTapped(_ *fyne.PointEvent) {
+	if zpa.OnDoubleTapped != nil {
+		zpa.OnDoubleTapped()
+	}
+}
+
 // CurrentZoom returns the current zoom factor.
 func (zpa *ZoomPanArea) CurrentZoom() float32 {
 	return zpa.zoomFactor
@@ -361,3 +371,4 @@ func (r *zoomPanAreaRenderer) Destroy()                     {}
 var _ fyne.Widget = (*ZoomPanArea)(nil)
 var _ fyne.Scrollable = (*ZoomPanArea)(nil)
 var _ fyne.Draggable = (*ZoomPanArea)(nil)
+var _ fyne.DoubleTappable = (*ZoomPanArea)(nil)

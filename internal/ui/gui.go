@@ -219,9 +219,14 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.buildKeyboardShortcuts()
 
 	// --- Image View (Canvas and Info Panel) ---
-	a.zoomPanArea = NewZoomPanArea(nil, func() { // Pass the interaction callback
-		a.slideshowManager.Pause(true)
-	})
+	a.zoomPanArea = NewZoomPanArea(nil,
+		func() { // onInteraction
+			a.slideshowManager.Pause(true)
+		},
+		func() { // onDoubleTapped
+			a.app.Quit()
+		},
+	)
 	// Set the callback for zoom/pan changes to update the toolbar action visibility
 	a.zoomPanArea.SetOnZoomPanChange(a.updateShowFullSizeButtonVisibility)
 
