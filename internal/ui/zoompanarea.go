@@ -447,9 +447,11 @@ func (zpa *ZoomPanArea) CurrentZoom() float32 {
 // --- Renderer for ZoomPanArea ---
 type zoomPanAreaRenderer struct{ zpa *ZoomPanArea }
 
-func (r *zoomPanAreaRenderer) Layout(size fyne.Size)        { r.zpa.raster.Resize(size) }
-func (r *zoomPanAreaRenderer) MinSize() fyne.Size           { return fyne.NewSize(100, 100) } // Basic min size
-func (r *zoomPanAreaRenderer) Refresh()                     { canvas.Refresh(r.zpa.raster) }
+func (r *zoomPanAreaRenderer) Layout(size fyne.Size) { r.zpa.raster.Resize(size) }
+func (r *zoomPanAreaRenderer) MinSize() fyne.Size    { return fyne.NewSize(100, 100) } // Basic min size
+func (r *zoomPanAreaRenderer) Refresh() {
+	fyne.Do(func() { canvas.Refresh(r.zpa.raster) }) // Ensure on main thread
+}
 func (r *zoomPanAreaRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.zpa.raster} }
 func (r *zoomPanAreaRenderer) Destroy()                     {}
 

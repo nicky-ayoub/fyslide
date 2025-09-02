@@ -194,7 +194,7 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 		a.UI.showFullSizeAction.Disable()
 	}
 	if a.UI.toolBar != nil {
-		a.UI.toolBar.Refresh()
+		fyne.Do(func() { a.UI.toolBar.Refresh() }) // Ensure toolbar refresh is on main thread
 	}
 }
 

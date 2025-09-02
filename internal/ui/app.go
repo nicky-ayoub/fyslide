@@ -104,7 +104,9 @@ func CreateApplication() {
 		updateSplash("Building main user interface...")
 		// 3. Build the main UI window and its components
 		ui.UI.MainWin = a.NewWindow("FySlide")
-		ui.UI.MainWin.SetContent(ui.buildMainUI())
+		fyne.Do(func() {
+			ui.UI.MainWin.SetContent(ui.buildMainUI())
+		})
 		ui.UI.MainWin.SetCloseIntercept(func() {
 			if ui.Tagging.IsBusy() {
 				dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
