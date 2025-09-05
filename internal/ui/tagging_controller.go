@@ -27,8 +27,8 @@ type TaggingHost interface {
 	GetMainWindow() fyne.Window
 	GetImageFullPath() string
 	GetImageService() *service.ImageService
-	RefreshTags() // Refreshes the list of all tags in the tag view
-	UpdateInfoText(info *service.ImageInfo, tags []string, err error)
+	RefreshTags()                           // Refreshes the list of all tags in the tag view
+	UpdateInfoText(info *service.ImageInfo) // Refreshes the info panel for the current image
 	GetSlideshowManager() *slideshow.SlideshowManager
 	NavigateToIndex(index int)
 }
@@ -162,11 +162,9 @@ func (t *TaggingController) postOperationUpdate(errOp error, statusMessage strin
 
 		// If the currently viewed file was changed, we need to refresh its info panel.
 		if wasCurrentFileAffected {
-			imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath())
-			// Also re-fetch the tags for the current image since they just changed.
-			tags, tagsErr := t.service.ListTagsForImage(t.host.GetImageFullPath())
-			if err == nil && imgInfo != nil { // Check for image load error
-				t.host.UpdateInfoText(imgInfo, tags, tagsErr)
+			imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath()) // Re-fetch image info
+			if err == nil && imgInfo != nil {
+				t.host.UpdateInfoText(imgInfo) // UpdateInfoText will now fetch its own tags
 			} else { // Handle case where image info fails to load
 				t.host.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
 			}

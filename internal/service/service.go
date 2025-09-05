@@ -7,6 +7,7 @@ import (
 	"fyslide/internal/tagging"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -90,6 +91,65 @@ func (s *Service) ListImagesForTag(tag string) ([]string, error) {
 func (s *Service) ListAllTags() ([]tagging.TagWithCount, error) {
 	// Tags are stored in lowercase, so they will be retrieved in lowercase.
 	return s.TagDB.GetAllTags()
+}
+
+// FindImagesByTags finds images that have ALL of the given tags.
+func (s *Service) FindImagesByTags(tags []string) ([]string, error) {
+	if len(tags) == 0 {
+		return []string{}, nil
+	}
+
+	// Normalize all tags to lowercase for the query
+	lowerTags := make([]string, len(tags))
+	for i, tag := range tags {
+		lowerTags[i] = strings.ToLower(tag)
+	}
+
+	// Get initial set of images from the first tag
+	initialPaths, err := s.TagDB.GetImages(lowerTags[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to get images for tag '%s': %w", lowerTags[0], err)
+	}
+
+	if len(initialPaths) == 0 {
+		return []string{}, nil
+	}
+
+	// Create a set for efficient lookups
+	pathSet := make(map[string]struct{}, len(initialPaths))
+	for _, path := range initialPaths {
+		pathSet[path] = struct{}{}
+	}
+
+	// Intersect with images from subsequent tags
+	for i := 1; i < len(lowerTags); i++ {
+		tag := lowerTags[i]
+		nextTagPaths, err := s.TagDB.GetImages(tag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get images for tag '%s': %w", tag, err)
+		}
+
+		intersection := make(map[string]struct{})
+		for _, path := range nextTagPaths {
+			if _, ok := pathSet[path]; ok {
+				intersection[path] = struct{}{}
+			}
+		}
+		pathSet = intersection
+
+		if len(pathSet) == 0 {
+			return []string{}, nil // Early exit if intersection is empty
+		}
+	}
+
+	// Convert the final set back to a slice
+	finalPaths := make([]string, 0, len(pathSet))
+	for path := range pathSet {
+		finalPaths = append(finalPaths, path)
+	}
+	sort.Strings(finalPaths) // For consistent output
+
+	return finalPaths, nil
 }
 
 // BatchAddTagsToDirectory adds tags to all supported images in a directory (recursive).

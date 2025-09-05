@@ -22,28 +22,39 @@ import (
 )
 
 // Command-line flags
-var slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
-var skipCountFlag = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
+var (
+	slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
+	skipCountFlag         = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
+	versionFlag           = flag.Bool("version", false, "Print version and exit")
+	// This can be set during the build process using ldflags
+	version = "dev"
+)
 
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
 	flag.Parse() // Parse command-line flags
-	dir, err := os.Getwd()
-	if err != nil {
-		fmt.Printf("error while opening the directory : %v\n", err)
+	if *versionFlag {
+		fmt.Printf("fyslide version %s\n", version)
 		return
 	}
-	if len(os.Args) > 1 {
-		file, err := os.Open(os.Args[1])
-		if err != nil {
-			fmt.Printf("error while opening the directory '%s': %v\n", file.Name(), err)
-			return
-		}
-		s, _ := file.Stat()
-		if s.IsDir() {
-			dir = s.Name()
-		}
+
+	// The first non-flag argument is the directory. Default to current directory.
+	dir := "."
+	if len(flag.Args()) > 0 {
+		dir = flag.Args()[0]
 	}
+
+	// Check if the directory exists and is valid.
+	info, err := os.Stat(dir)
+	if err != nil {
+		fmt.Printf("Error accessing '%s': %v\n", dir, err)
+		return
+	}
+	if !info.IsDir() {
+		fmt.Printf("Error: '%s' is not a directory.\n", dir)
+		return
+	}
+
 	dir, err = filepath.Abs(dir)
 	if err != nil {
 		fmt.Println("Error getting absolute path:", err)
@@ -151,7 +162,7 @@ func CreateApplication() {
 		} else {
 			// This case is also hit on timeout if no images loaded.
 			ui.updateStatusBar() // Will show "No images available" or similar.
-			ui.UpdateInfoText(nil, nil, nil)
+			ui.UpdateInfoText(nil)
 		}
 
 		// 6. Close splash and show main window
