@@ -4,7 +4,6 @@ package ui
 import (
 	"flag"
 	"fmt"
-	"fyslide/internal/scan"
 	"log"
 	"os"
 	"path/filepath"
@@ -141,8 +140,6 @@ func CreateApplication() {
 		// After the UI is built and logUIManager is initialized, flush any buffered logs.
 		ui.flushLogBuffer()
 
-		// Initialize the permutation manager (for random mode) before the scan starts.
-		ui.imageState.permutationManager = scan.NewPermutationManager(&ui.imageState.images)
 		updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(dir)))
 		// 4. Run the initial file scan and wait for some results
 		ui.runInitialScanAndWait(dir, splashText)

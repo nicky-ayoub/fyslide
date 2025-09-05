@@ -20,6 +20,8 @@ type ImageState struct {
 
 	// The original, full list of images
 	images scan.FileItems
+	// A set of all known paths for quick de-duplication
+	knownPaths map[string]bool
 	// Manages the permutation for the original images for random mode
 	permutationManager *scan.PermutationManager
 
@@ -43,8 +45,9 @@ type ImageState struct {
 // NewImageState creates a new ImageState manager.
 func NewImageState() *ImageState {
 	return &ImageState{
-		images: make(scan.FileItems, 0),
-		random: true, // Default to random on
+		images:     make(scan.FileItems, 0),
+		knownPaths: make(map[string]bool),
+		random:     true, // Default to random on
 	}
 }
 
@@ -52,14 +55,22 @@ func NewImageState() *ImageState {
 func (is *ImageState) AddImage(item scan.FileItem) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
-	is.images = append(is.images, item)
+	if _, exists := is.knownPaths[item.Path]; !exists {
+		is.images = append(is.images, item)
+		is.knownPaths[item.Path] = true
+	}
 }
 
 // AddImages is a thread-safe method to add a batch of images to the main list.
 func (is *ImageState) AddImages(items scan.FileItems) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
-	is.images = append(is.images, items...)
+	for _, item := range items {
+		if _, exists := is.knownPaths[item.Path]; !exists {
+			is.images = append(is.images, item)
+			is.knownPaths[item.Path] = true
+		}
+	}
 }
 
 // SyncPermutationManager ensures the main permutation manager is up-to-date
@@ -68,6 +79,24 @@ func (is *ImageState) SyncPermutationManager() {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 	is.permutationManager.SyncNewData()
+}
+
+// Clear resets the image state, removing all loaded and filtered images.
+func (is *ImageState) Clear() {
+	is.mu.Lock()
+	defer is.mu.Unlock()
+
+	is.images = make(scan.FileItems, 0)
+	is.knownPaths = make(map[string]bool)
+	is.filteredImages = nil
+	is.isFiltered = false
+	is.currentFilterTag = ""
+	is.index = 0
+
+	// The permutation manager holds a pointer to the images slice.
+	// We must create a new one that points to the new, empty slice.
+	is.permutationManager = scan.NewPermutationManager(&is.images)
+	is.filteredPermutationManager = nil
 }
 
 // getCurrentListUnlocked returns the active image list. It is not thread-safe

@@ -93,6 +93,11 @@ func (s *Service) ListAllTags() ([]tagging.TagWithCount, error) {
 	return s.TagDB.GetAllTags()
 }
 
+// GetAllImagePaths retrieves all unique image paths from the database.
+func (s *Service) GetAllImagePaths() ([]string, error) {
+	return s.TagDB.GetAllImagePaths()
+}
+
 // FindImagesByTags finds images that have ALL of the given tags.
 func (s *Service) FindImagesByTags(tags []string) ([]string, error) {
 	if len(tags) == 0 {

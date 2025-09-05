@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"fyslide/internal/scan"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -120,6 +121,34 @@ func (a *App) deleteFile() {
 	a.LoadAndDisplayCurrentImage()
 }
 
+// loadImagesFromDB pre-populates the image list from the tag database.
+// This ensures that all known tagged images are available for filtering immediately.
+func (a *App) loadImagesFromDB() {
+	paths, err := a.Service.GetAllImagePaths()
+	if err != nil {
+		a.AddLogMessage(fmt.Sprintf("Error loading paths from DB: %v", err))
+		return
+	}
+
+	if len(paths) == 0 {
+		a.AddLogMessage("No previously tagged images found in the database.")
+		return
+	}
+
+	a.AddLogMessage(fmt.Sprintf("Pre-loading %d known image paths from database...", len(paths)))
+
+	var itemsToAdd scan.FileItems
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() { // If file exists and is not a directory
+			itemsToAdd = append(itemsToAdd, scan.NewFileItem(path, info))
+		}
+	}
+
+	a.imageState.AddImages(itemsToAdd)
+	a.AddLogMessage(fmt.Sprintf("Pre-loaded %d existing images from database.", len(itemsToAdd)))
+}
+
 // loadImages scans the given root directory for image files in a background goroutine
 // and populates the main image list.
 func (a *App) loadImages(root string) {
@@ -131,7 +160,8 @@ func (a *App) loadImages(root string) {
 		}
 	}()
 
-	a.imageState.images = nil // Clear previous images
+	// The imageState is now cleared in runInitialScanAndWait before this goroutine starts,
+	// to prevent a race condition with loadImagesFromDB.
 
 	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
 

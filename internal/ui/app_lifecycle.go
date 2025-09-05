@@ -71,6 +71,15 @@ func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
 // runInitialScanAndWait starts the background image scan and waits for it to
 // find at least one image or times out.
 func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
+	// Clear any previous state and re-initialize managers before starting new scans.
+	a.imageState.Clear()
+
+	// Start loading from DB. This runs in the background and adds to the
+	// imageState concurrently. We don't need to wait for it to finish.
+	go a.loadImagesFromDB()
+
+	// Start scanning filesystem. This function will signal scanCompleteChan
+	// when it finishes, providing one of the exit conditions for the wait loop.
 	go a.loadImages(dir)
 
 	timeout := time.NewTimer(10 * time.Second)
@@ -81,7 +90,7 @@ func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
 
 	for {
 		select {
-		case <-a.scanCompleteChan:
+		case <-a.scanCompleteChan: // This is now only signaled by loadImages when the filesystem scan is done.
 			a.AddLogMessage("Initial scan completed.")
 			// Update the label one last time
 			if splashLabel != nil {
@@ -92,16 +101,14 @@ func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
 				time.Sleep(250 * time.Millisecond) // Give user a moment to read the final count
 			}
 			return // Exit the wait loop
-		case <-timeout.C:
+		case <-timeout.C: // This timeout now acts as a fallback for the whole process
 			a.AddLogMessage("Timeout waiting for images to load. Please check the directory.")
 			return // Exit the wait loop
 		case <-ticker.C:
 			// This is our polling tick
 			count := a.imageState.GetCurrentImageCount()
 			if splashLabel != nil {
-				fyne.Do(func() {
-					splashLabel.SetText(fmt.Sprintf("Scanning... %d files found", count))
-				})
+				fyne.Do(func() { splashLabel.SetText(fmt.Sprintf("Scanning... %d files found", count)) })
 			}
 			if count >= 100000 {
 				a.AddLogMessage("Sufficient images found. Starting application...")
