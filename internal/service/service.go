@@ -23,6 +23,7 @@ type TagStore interface {
 	DeleteOrphanedTagKey(tag string) error
 	GetAllImagePaths() ([]string, error)
 	Close() error
+	StreamAllImagePaths(pathChan chan<- string)
 }
 
 // FileScanner abstracts file scanning.
@@ -96,6 +97,13 @@ func (s *Service) ListAllTags() ([]tagging.TagWithCount, error) {
 // GetAllImagePaths retrieves all unique image paths from the database.
 func (s *Service) GetAllImagePaths() ([]string, error) {
 	return s.TagDB.GetAllImagePaths()
+}
+
+// StreamAllImagePaths returns a channel that streams all known image paths from the database.
+func (s *Service) StreamAllImagePaths() <-chan string {
+	pathChan := make(chan string, 100) // Buffered channel
+	go s.TagDB.StreamAllImagePaths(pathChan)
+	return pathChan
 }
 
 // FindImagesByTags finds images that have ALL of the given tags.

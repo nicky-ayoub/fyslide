@@ -420,3 +420,28 @@ func (tdb *TagDB) GetAllImagePaths() ([]string, error) {
 	}
 	return paths, nil
 }
+
+// StreamAllImagePaths iterates over all image paths in the database and sends them to a channel.
+// It closes the channel when done. This is more memory-efficient than GetAllImagePaths for large datasets.
+func (tdb *TagDB) StreamAllImagePaths(pathChan chan<- string) {
+	defer close(pathChan)
+	err := tdb.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(imagesToTagsBucket))
+		if bucket == nil {
+			return nil
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			// As we are in a View transaction, we must copy the key `k`
+			// because it's only valid for the life of the transaction.
+			pathCopy := make([]byte, len(k))
+			copy(pathCopy, k)
+
+			// A blocking send is fine here as the transaction is read-only and short-lived per item.
+			pathChan <- string(pathCopy)
+			return nil
+		})
+	})
+	if err != nil {
+		tdb.logMessage("Error streaming image paths from DB: %v", err)
+	}
+}

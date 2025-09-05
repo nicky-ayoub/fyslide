@@ -6,6 +6,8 @@ import (
 	"fyslide/internal/scan"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -122,31 +124,82 @@ func (a *App) deleteFile() {
 }
 
 // loadImagesFromDB pre-populates the image list from the tag database.
-// This ensures that all known tagged images are available for filtering immediately.
+// This version is optimized for large databases by using a worker pool
+// to check for file existence concurrently.
 func (a *App) loadImagesFromDB() {
-	paths, err := a.Service.GetAllImagePaths()
-	if err != nil {
-		a.AddLogMessage(fmt.Sprintf("Error loading paths from DB: %v", err))
-		return
+	a.AddLogMessage("Pre-loading known image paths from database...")
+
+	pathChan := a.Service.StreamAllImagePaths()
+
+	// --- Worker Pool Setup ---
+	// Use a number of workers based on CPU cores for I/O-bound tasks.
+	// This provides a good balance without overwhelming the system.
+	numWorkers := runtime.NumCPU()
+	var wg sync.WaitGroup
+	resultsChan := make(chan scan.FileItem, 100)
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range pathChan {
+				info, err := os.Stat(path)
+				// If os.Stat fails, it's likely the file was moved or deleted, so we just ignore it.
+				if err == nil && !info.IsDir() {
+					resultsChan <- scan.NewFileItem(path, info)
+				}
+			}
+		}()
 	}
 
-	if len(paths) == 0 {
-		a.AddLogMessage("No previously tagged images found in the database.")
-		return
-	}
+	// Goroutine to close the results channel once all workers are done
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
 
-	a.AddLogMessage(fmt.Sprintf("Pre-loading %d known image paths from database...", len(paths)))
+	// --- Process Results ---
+	const batchSize = 1000
+	const batchTimeout = 100 * time.Millisecond
 
-	var itemsToAdd scan.FileItems
-	for _, path := range paths {
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() { // If file exists and is not a directory
-			itemsToAdd = append(itemsToAdd, scan.NewFileItem(path, info))
+	batch := make(scan.FileItems, 0, batchSize)
+	ticker := time.NewTicker(batchTimeout)
+	defer ticker.Stop()
+
+	totalAdded := 0
+	running := true
+	for running {
+		select {
+		case item, ok := <-resultsChan:
+			if !ok { // Channel is closed, all files processed.
+				if len(batch) > 0 {
+					a.imageState.AddImages(batch)
+					totalAdded += len(batch)
+				}
+				running = false // Exit the loop
+				break
+			}
+			batch = append(batch, item)
+			if len(batch) >= batchSize {
+				a.imageState.AddImages(batch)
+				totalAdded += len(batch)
+				batch = make(scan.FileItems, 0, batchSize)
+			}
+		case <-ticker.C:
+			// On a timer, add whatever is in the batch to update the UI count.
+			if len(batch) > 0 {
+				a.imageState.AddImages(batch)
+				totalAdded += len(batch)
+				batch = make(scan.FileItems, 0, batchSize)
+			}
 		}
 	}
 
-	a.imageState.AddImages(itemsToAdd)
-	a.AddLogMessage(fmt.Sprintf("Pre-loaded %d existing images from database.", len(itemsToAdd)))
+	if totalAdded == 0 {
+		a.AddLogMessage("No previously tagged images found on disk.")
+	} else {
+		a.AddLogMessage(fmt.Sprintf("Pre-loaded %d existing images from database.", totalAdded))
+	}
 }
 
 // loadImages scans the given root directory for image files in a background goroutine
@@ -160,8 +213,7 @@ func (a *App) loadImages(root string) {
 		}
 	}()
 
-	// The imageState is now cleared in runInitialScanAndWait before this goroutine starts,
-	// to prevent a race condition with loadImagesFromDB.
+	a.imageState.images = nil // Clear previous images
 
 	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
 
