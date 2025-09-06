@@ -29,6 +29,30 @@ var (
 	version = "dev"
 )
 
+// createSplashScreen creates and returns a new splash screen window and its text label.
+func createSplashScreen(a fyne.App) (fyne.Window, *widget.Label) {
+	win := a.NewWindow("Loading FySlide")
+	win.SetFixedSize(true)
+	win.Resize(fyne.NewSize(640, 480))
+	win.SetPadded(true)
+	win.CenterOnScreen()
+
+	splashIcon := canvas.NewImageFromResource(resourceFyslidesplash004Png)
+	splashIcon.SetMinSize(fyne.NewSize(480, 480))
+	splashText := widget.NewLabel("Initializing...")
+	splashProgress := widget.NewProgressBarInfinite()
+	splashText.Alignment = fyne.TextAlignCenter
+	content := container.NewVBox(
+		layout.NewSpacer(),
+		container.NewHBox(layout.NewSpacer(), splashIcon, layout.NewSpacer()),
+		splashProgress,
+		splashText,
+		layout.NewSpacer(),
+	)
+	win.SetContent(content)
+	return win, splashText
+}
+
 // CreateApplication is the GUI entrypoint
 func CreateApplication() {
 	flag.Parse() // Parse command-line flags
@@ -70,25 +94,7 @@ func CreateApplication() {
 	a.Settings().SetTheme(NewSmallTabsTheme(theme.DarkTheme()))
 
 	// --- Splash Screen ---
-	splashWin := a.NewWindow("Loading FySlide")
-	splashWin.SetFixedSize(true)
-	splashWin.Resize(fyne.NewSize(640, 480))
-	splashWin.SetPadded(true)
-	splashWin.CenterOnScreen()
-
-	splashIcon := canvas.NewImageFromResource(resourceFyslidesplash004Png)
-	splashIcon.SetMinSize(fyne.NewSize(480, 480))
-	splashText := widget.NewLabel("Initializing...")
-	splashProgress := widget.NewProgressBarInfinite()
-	splashText.Alignment = fyne.TextAlignCenter
-	splashContent := container.NewVBox(
-		layout.NewSpacer(),
-		container.NewHBox(layout.NewSpacer(), splashIcon, layout.NewSpacer()),
-		splashProgress,
-		splashText,
-		layout.NewSpacer(),
-	)
-	splashWin.SetContent(splashContent)
+	splashWin, splashText := createSplashScreen(a)
 	splashWin.Show()
 
 	// --- Main Application Setup in Background ---
