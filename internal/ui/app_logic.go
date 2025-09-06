@@ -99,22 +99,32 @@ func (a *App) deleteFileCheck() {
 
 // deleteFile performs the actual file deletion and UI update.
 func (a *App) deleteFile() {
-	deletedPath := a.img.Path
-	if deletedPath == "" {
-		return
-	} // No image loaded
+	// Get the index of the image we are about to delete.
+	viewIndexToDelete := a.imageState.GetCurrentIndex()
+	if viewIndexToDelete < 0 {
+		return // No image is selected.
+	}
 
+	// Remove the image from the state first to get its path.
+	deletedPath, listBecameEmpty := a.imageState.RemoveImageAtViewIndex(viewIndexToDelete)
+	if deletedPath == "" {
+		a.AddLogMessage("Could not delete image: not found in current view.")
+		return // The image wasn't in the state, so nothing to do.
+	}
+
+	// Now, delete the file from disk and the database.
 	err := a.Service.DeleteImageFile(deletedPath)
 	if err != nil {
 		a.AddLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
 		dialog.ShowError(err, a.UI.MainWin)
+		// Note: The file is already removed from the UI state, so we just log the error.
 		return
 	}
 
-	a.imageState.RemoveImage(deletedPath)
-	a.AddLogMessage(fmt.Sprintf("Removed %s from image list.", filepath.Base(deletedPath)))
+	a.AddLogMessage(fmt.Sprintf("Deleted %s.", filepath.Base(deletedPath)))
 
-	if a.imageState.IsFiltered() && a.imageState.GetCurrentImageCount() == 0 {
+	// If the list became empty and was filtered, clear the filter.
+	if listBecameEmpty && a.imageState.IsFiltered() {
 		a.AddLogMessage("Filtered list empty after deletion, clearing filter.")
 		a.Tagging.clearFilter()
 		return

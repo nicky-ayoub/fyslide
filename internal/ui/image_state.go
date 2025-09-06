@@ -330,52 +330,45 @@ func (is *ImageState) ClearFilter(currentPath string) {
 	is.index = newIndex
 }
 
-// RemoveImage removes an image by its path from all relevant lists, adjusts the
-// internal index, and returns true if the active list became empty.
-func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
+// RemoveImageAtViewIndex removes an image by its current view index from all relevant lists,
+// adjusts the internal index, and returns the path of the deleted image and a boolean
+// indicating if the active list became empty.
+func (is *ImageState) RemoveImageAtViewIndex(viewIndex int) (deletedPath string, listBecameEmpty bool) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 
-	// --- Find the view index of the item to be removed BEFORE any changes ---
-	// This is crucial for correctly adjusting the index later.
-	viewIndexOfItemToRemove := -1
-	countBeforeRemoval := is.getCurrentImageCountUnlocked()
-	for i := 0; i < countBeforeRemoval; i++ {
-		item, err := is.getItemByViewIndexUnlocked(i)
-		if err == nil && item != nil && item.Path == path {
-			viewIndexOfItemToRemove = i
-			break
-		}
+	itemToRemove, err := is.getItemByViewIndexUnlocked(viewIndex)
+	if err != nil || itemToRemove == nil {
+		return "", is.getCurrentImageCountUnlocked() == 0
 	}
+	path := itemToRemove.Path
 
 	// --- 1. Remove from the main image list (is.images) ---
 	originalIndexToRemove := -1
 	for i, item := range is.images {
 		if item.Path == path {
 			originalIndexToRemove = i
+			// Remove from the slice
+			is.images = append(is.images[:i], is.images[i+1:]...)
+			// Notify the permutation manager
+			if is.permutationManager != nil {
+				is.permutationManager.DataRemoved(i)
+			}
 			break
-		}
-	}
-	if originalIndexToRemove != -1 {
-		is.images = append(is.images[:originalIndexToRemove], is.images[originalIndexToRemove+1:]...)
-		if is.permutationManager != nil {
-			is.permutationManager.DataRemoved(originalIndexToRemove)
 		}
 	}
 
 	// --- 2. Remove from the filtered list if active ---
-	if is.isFiltered {
-		filteredIndexToRemove := -1
+	if is.isFiltered && originalIndexToRemove != -1 { // Only if it was found in the main list
 		for i, item := range is.filteredImages {
 			if item.Path == path {
-				filteredIndexToRemove = i
+				// Remove from the slice
+				is.filteredImages = append(is.filteredImages[:i], is.filteredImages[i+1:]...)
+				// Notify the permutation manager
+				if is.filteredPermutationManager != nil {
+					is.filteredPermutationManager.DataRemoved(i)
+				}
 				break
-			}
-		}
-		if filteredIndexToRemove != -1 {
-			is.filteredImages = append(is.filteredImages[:filteredIndexToRemove], is.filteredImages[filteredIndexToRemove+1:]...)
-			if is.filteredPermutationManager != nil {
-				is.filteredPermutationManager.DataRemoved(filteredIndexToRemove)
 			}
 		}
 	}
@@ -384,19 +377,14 @@ func (is *ImageState) RemoveImage(path string) (listBecameEmpty bool) {
 	countAfterRemoval := is.getCurrentImageCountUnlocked()
 	if countAfterRemoval == 0 {
 		is.index = -1
-		return true
-	}
-
-	// If the removed item was before the current one in the view, decrement the index.
-	if viewIndexOfItemToRemove != -1 && is.index > viewIndexOfItemToRemove {
-		is.index--
+		return path, true
 	}
 
 	// If the index is now out of bounds (e.g., we deleted the last item), clamp it.
 	if is.index >= countAfterRemoval {
 		is.index = countAfterRemoval - 1
 	}
-	return false
+	return path, false
 }
 
 // GetViewportItems returns a slice of ViewportItems representing the current viewport
