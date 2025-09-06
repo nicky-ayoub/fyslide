@@ -58,11 +58,11 @@ func (a *App) updateStatusBar() {
 			statusText += fmt.Sprintf(" (Filtered: %s)", a.imageState.currentFilterTag)
 		}
 	}
-	if a.slideshowManager.IsPaused() {
-		statusText += " | Paused"
-	} else {
-		statusText += " | Playing"
-	}
+	// if a.slideshowManager.IsPaused() {
+	// 	statusText += " | Paused"
+	// } else {
+	// 	statusText += " | Playing"
+	// }
 	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
 }
 
@@ -146,8 +146,8 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 		formatNumberWithCommas(info.Size),
 		info.Width,
 		info.Height,
-		filepath.Base(a.img.Path),
 		info.ModTime.Format("2006-01-02 15:04:05"),
+		filepath.Base(a.img.Path),
 		tagsString,
 		exifString,
 	)
@@ -272,5 +272,29 @@ func (a *App) toggleTheme() {
 
 	if a.UI.randomAction != nil {
 		a.UI.randomAction.SetIcon(a.getDiceIcon())
+	}
+}
+
+// SetScaleAlgorithm sets the scaling algorithm on the zoomPanArea and updates the menu.
+func (a *App) SetScaleAlgorithm(algo ScaleAlgorithmType) {
+	if a.zoomPanArea != nil {
+		a.zoomPanArea.SetScaleAlgorithm(algo)
+		a.updateScaleAlgorithmMenu()
+	}
+}
+
+// updateScaleAlgorithmMenu updates the check marks on the scaling algorithm menu.
+func (a *App) updateScaleAlgorithmMenu() {
+	if a.UI.scaleNnMenuItem == nil || a.zoomPanArea == nil {
+		return // UI not ready
+	}
+	currentAlgo := a.zoomPanArea.GetScaleAlgorithm()
+	a.UI.scaleNnMenuItem.Checked = (currentAlgo == NearestNeighbor)
+	a.UI.scaleBlMenuItem.Checked = (currentAlgo == Bilinear)
+	a.UI.scaleBcMenuItem.Checked = (currentAlgo == Bicubic)
+
+	// Refresh the main menu to show checkmark changes
+	if a.UI.MainWin.MainMenu() != nil {
+		a.UI.MainWin.MainMenu().Refresh()
 	}
 }

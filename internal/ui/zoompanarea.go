@@ -25,6 +25,8 @@ const (
 	NearestNeighbor ScaleAlgorithmType = iota
 	// Bilinear uses linear interpolation of four nearest pixels, smoother.
 	Bilinear
+	// Bicubic uses cubic interpolation of sixteen nearest pixels, higher quality.
+	Bicubic
 )
 
 // ZoomPanArea is a custom widget for displaying an image with zoom and pan.
@@ -290,6 +292,64 @@ func (zpa *ZoomPanArea) bilinearInterpolate(x, y float32) color.Color {
 	return color.RGBA64{R: finalR, G: finalG, B: finalB, A: finalA}
 }
 
+// cubicKernel is the convolution function for bicubic interpolation.
+// This implementation uses the cubic convolution algorithm with a=-0.5, which is
+// a common choice for good results (Catmull-Rom spline).
+func cubicKernel(x float32) float32 {
+	const a float32 = -0.5
+	x = float32(math.Abs(float64(x)))
+	if x > 2.0 {
+		return 0.0
+	}
+
+	x2 := x * x
+	x3 := x2 * x
+
+	if x <= 1.0 {
+		return (a+2.0)*x3 - (a+3.0)*x2 + 1
+	}
+	return a*x3 - 5.0*a*x2 + 8.0*a*x - 4.0*a
+}
+
+// bicubicInterpolate calculates the color at a floating-point coordinate using bicubic interpolation.
+// This is more computationally expensive than bilinear but produces sharper, higher-quality results.
+func (zpa *ZoomPanArea) bicubicInterpolate(x, y float32) color.Color {
+	img := zpa.originalImg
+	bounds := img.Bounds()
+	xInt, yInt := int(x), int(y)
+
+	// Fallback to bilinear if we are too close to the edge for a 4x4 grid.
+	if xInt < bounds.Min.X+1 || xInt >= bounds.Max.X-2 || yInt < bounds.Min.Y+1 || yInt >= bounds.Max.Y-2 {
+		return zpa.bilinearInterpolate(x, y)
+	}
+
+	xFrac, yFrac := x-float32(xInt), y-float32(yInt)
+
+	var r, g, b, a float32
+	for j := -1; j <= 2; j++ {
+		yKernel := cubicKernel(float32(j) - yFrac)
+		var rRow, gRow, bRow, aRow float32
+		for i := -1; i <= 2; i++ {
+			xKernel := cubicKernel(xFrac - float32(i))
+			cR, cG, cB, cA := img.At(xInt+i, yInt+j).RGBA()
+			rRow, gRow, bRow, aRow = rRow+float32(cR)*xKernel, gRow+float32(cG)*xKernel, bRow+float32(cB)*xKernel, aRow+float32(cA)*xKernel
+		}
+		r, g, b, a = r+rRow*yKernel, g+gRow*yKernel, b+bRow*yKernel, a+aRow*yKernel
+	}
+
+	clamp := func(v float32) uint16 {
+		if v < 0 {
+			return 0
+		}
+		if v > 65535.0 {
+			return 65535
+		}
+		return uint16(v)
+	}
+
+	return color.RGBA64{R: clamp(r), G: clamp(g), B: clamp(b), A: clamp(a)}
+}
+
 // draw is the rendering function for the canvas.Raster.
 // It's called by Fyne whenever the widget needs to be redrawn.
 // For each pixel (dx, dy) in the destination view, it calculates the corresponding
@@ -316,6 +376,8 @@ func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 				sy >= float32(srcBounds.Min.Y) && sy < float32(srcBounds.Max.Y) {
 
 				switch zpa.currentAlgorithm {
+				case Bicubic:
+					dst.Set(dx, dy, zpa.bicubicInterpolate(sx, sy))
 				case Bilinear:
 					dst.Set(dx, dy, zpa.bilinearInterpolate(sx, sy))
 				case NearestNeighbor:

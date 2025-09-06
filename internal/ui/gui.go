@@ -30,6 +30,9 @@ type UI struct {
 	pauseAction         *widget.ToolbarAction // Action for toggling play/pause
 	showFullSizeAction  *widget.ToolbarAction // Action for showing image at full size
 	clearFilterMenuItem *fyne.MenuItem        // For the View > Clear Filter menu item
+	scaleNnMenuItem     *fyne.MenuItem        // Menu item for NearestNeighbor scaling
+	scaleBlMenuItem     *fyne.MenuItem        // Menu item for Bilinear scaling
+	scaleBcMenuItem     *fyne.MenuItem        // Menu item for Bicubic scaling
 
 	contentStack     *fyne.Container   // To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
@@ -190,6 +193,26 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.clearFilterMenuItem = fyne.NewMenuItem("Clear Filter", a.Tagging.clearFilter)
 	a.UI.clearFilterMenuItem.Disabled = true // Start disabled, enabled when a filter is active
 
+	// --- Scale Algorithm Menu Items ---
+	// The Checked state will be managed by updateScaleAlgorithmMenu
+	a.UI.scaleNnMenuItem = fyne.NewMenuItem("Nearest Neighbor", func() { a.SetScaleAlgorithm(NearestNeighbor) })
+	a.UI.scaleBlMenuItem = fyne.NewMenuItem("Bilinear", func() { a.SetScaleAlgorithm(Bilinear) })
+	a.UI.scaleBcMenuItem = fyne.NewMenuItem("Bicubic", func() { a.SetScaleAlgorithm(Bicubic) })
+
+	view := fyne.NewMenu("View",
+		fyne.NewMenuItem("Next Image", func() { a.Navigation.Navigate(1) }),
+		fyne.NewMenuItem("Previous Image", a.Navigation.ShowPreviousImage),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Filter by Tags...", a.Tagging.showFilterByTagsDialog),
+		a.UI.clearFilterMenuItem,
+		fyne.NewMenuItemSeparator(),
+		&fyne.MenuItem{Label: "Scale Algorithm", ChildMenu: fyne.NewMenu("Scale Algorithm",
+			a.UI.scaleNnMenuItem,
+			a.UI.scaleBlMenuItem,
+			a.UI.scaleBcMenuItem,
+		)},
+	)
+
 	// --- Main Menu ---
 	mainMenu := fyne.NewMainMenu(
 		fyne.NewMenu("File"),
@@ -200,13 +223,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
-		fyne.NewMenu("View",
-			fyne.NewMenuItem("Next Image", func() { a.Navigation.Navigate(1) }),
-			fyne.NewMenuItem("Previous Image", a.Navigation.ShowPreviousImage),
-			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Filter by Tags...", a.Tagging.showFilterByTagsDialog),
-			a.UI.clearFilterMenuItem,
-		),
+		view,
 		fyne.NewMenu("Help",
 			fyne.NewMenuItem("Help", a.showHelpDialog),
 			fyne.NewMenuItem("About", func() {
@@ -217,6 +234,9 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	)
 	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
+
+	// Set initial state for the scaling menu
+	a.updateScaleAlgorithmMenu()
 
 	// --- Image View (Canvas and Info Panel) ---
 	a.zoomPanArea = NewZoomPanArea(nil,
