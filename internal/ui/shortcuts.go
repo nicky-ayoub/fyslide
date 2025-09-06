@@ -22,59 +22,53 @@ func (a *App) buildKeyboardShortcuts() {
 	}, func(_ fyne.Shortcut) { a.app.Quit() })
 
 	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
+		// --- Shortcuts that only apply when the image view is active ---
+		if a.isImageViewActive() {
+			switch key.Name {
+			case fyne.KeyUp:
+				a.zoomPanArea.Pan(fyne.Delta{DY: -keyboardPanStep}) // Pan image up
+				return
+			case fyne.KeyDown:
+				a.zoomPanArea.Pan(fyne.Delta{DY: keyboardPanStep}) // Pan image down
+				return
+			case fyne.KeyPlus: // Numpad Add or regular '+' / '='
+				a.slideshowManager.Pause(true)                                         // Pause slideshow
+				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
+				return
+			case fyne.KeyMinus: // Numpad Subtract or regular '-' / '_'
+				a.slideshowManager.Pause(true)                                          // Pause slideshow
+				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
+				return
+			case fyne.Key0, fyne.KeyInsert: // Reset zoom/pan
+				a.zoomPanArea.Reset()
+				return
+			}
+		}
+
+		// --- Global shortcuts that work in any view ---
 		switch key.Name {
-		// --- Image Navigation ---
 		case fyne.KeyRight:
 			a.Navigation.Navigate(1)
 		case fyne.KeyLeft:
 			a.Navigation.ShowPreviousImage()
 		case fyne.KeyQ:
 			a.app.Quit()
-		case fyne.KeyP, fyne.KeySpace: // Toggle Play
+		case fyne.KeyP, fyne.KeySpace:
 			a.TogglePlay()
 		case fyne.KeyPageUp:
 			a.Navigation.Navigate(-a.skipCount)
 		case fyne.KeyPageDown:
 			a.Navigation.Navigate(a.skipCount)
-		case fyne.KeyUp:
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
-				a.zoomPanArea.Pan(fyne.Delta{DY: -keyboardPanStep}) // Pan image up
-			}
-		case fyne.KeyDown:
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
-				a.zoomPanArea.Pan(fyne.Delta{DY: keyboardPanStep}) // Pan image down
-			}
 		case fyne.KeyHome:
 			a.Navigation.FirstImage()
 		case fyne.KeyEnd:
 			a.Navigation.LastImage()
 		case fyne.KeyDelete:
 			a.deleteFileCheck()
-		// close dialogs with esc key
 		case fyne.KeyEscape:
 			if len(a.UI.MainWin.Canvas().Overlays().List()) > 0 {
 				a.UI.MainWin.Canvas().Overlays().Top().Hide()
 			}
-		// Zoom and Pan shortcuts - only if image view is active
-		case fyne.KeyPlus: // Numpad Add or regular '+' / '='
-			a.slideshowManager.Pause(true) // Pause slideshow
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
-				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
-			}
-		case fyne.KeyMinus: // Numpad Subtract or regular '-' / '_'
-			a.slideshowManager.Pause(true) // Pause slideshow
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
-				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
-			}
-		case fyne.Key0, fyne.KeyInsert: // Reset zoom/pan
-			// Resetting zoom/pan might also warrant a pause, depending on desired behavior.
-			// If so, uncomment the line below.
-			// a.slideshowManager.Pause(true) // Pause slideshow
-
-			if a.zoomPanArea != nil && a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible() {
-				a.zoomPanArea.Reset()
-			}
-
 		}
 	})
 }

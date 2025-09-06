@@ -90,6 +90,15 @@ func (a *App) GetSlideshowManager() *slideshow.SlideshowManager {
 	return a.slideshowManager
 }
 
+// isImageViewActive checks if the main image view is currently visible and ready for interaction.
+func (a *App) isImageViewActive() bool {
+	if a.zoomPanArea == nil || a.UI.contentStack == nil {
+		return false
+	}
+	// Check if the image view is the visible one in the stack
+	return a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible()
+}
+
 // GetViewportItems returns a slice of items for the thumbnail browser's viewport.
 // It satisfies the ThumbnailHost interface.
 func (a *App) GetViewportItems(centerIndex, windowSize int) ([]custom_widgets.ViewportItem, int) {
