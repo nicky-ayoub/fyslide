@@ -283,6 +283,10 @@ func (a *App) SetScaleAlgorithm(algo ScaleAlgorithmType) {
 	}
 }
 
+func (a *App) GetScaleAlgorithm() ScaleAlgorithmType {
+	return a.zoomPanArea.GetScaleAlgorithm()
+}
+
 // updateScaleAlgorithmMenu updates the check marks on the scaling algorithm menu.
 func (a *App) updateScaleAlgorithmMenu() {
 	if a.UI.scaleNnMenuItem == nil || a.zoomPanArea == nil {

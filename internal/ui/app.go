@@ -166,6 +166,10 @@ func CreateApplication() {
 		fyne.Do(func() {
 			splashWin.Close()
 			ui.UI.MainWin.Show()
+
+			// Set initial state for the scaling menu
+			ui.SetScaleAlgorithm(ui.GetScaleAlgorithm())
+
 			// Now that the window is visible and all widgets have their final sizes,
 			// we can load the first image. The internal Reset() call within
 			// LoadAndDisplayCurrentImage will now use the correct component size.

@@ -235,9 +235,6 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.MainWin.SetMainMenu(mainMenu)
 	a.buildKeyboardShortcuts()
 
-	// Set initial state for the scaling menu
-	a.updateScaleAlgorithmMenu()
-
 	// --- Image View (Canvas and Info Panel) ---
 	a.zoomPanArea = NewZoomPanArea(nil,
 		func() { // onInteraction
