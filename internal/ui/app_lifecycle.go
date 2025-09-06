@@ -110,7 +110,7 @@ func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
 			if splashLabel != nil {
 				fyne.Do(func() { splashLabel.SetText(fmt.Sprintf("Scanning... %d files found", count)) })
 			}
-			if count >= 100000 {
+			if count >= 50000 {
 				a.AddLogMessage("Sufficient images found. Starting application...")
 				return // Exit the wait loop
 			}
