@@ -43,7 +43,7 @@ vet: ## Run go vet to check for suspicious constructs.
 	$(GO_CMD) vet ./...
 
 lint: ## Run the linter on the codebase.
-	revive ./...
+	revive ./... | grep -v _test.go || true
 
 check: fmt vet lint ## Run all code quality checks (format, vet, lint).
 

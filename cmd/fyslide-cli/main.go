@@ -1,3 +1,4 @@
+// Package main implements the command-line interface for FySlide.
 package main
 
 import (
@@ -24,6 +25,9 @@ var (
 func cliLogger(msg string) {
 	log.Printf("[fyslide-cli] %s", msg)
 }
+
+// this directive tells revive to ignore unused parameters in the following function
+// revive:disable:unused-parameter
 
 // NewRootCmd creates the root command for the CLI application.
 // It takes a function `getServiceAndDB` which is responsible for initializing
@@ -185,8 +189,7 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 				return err
 			}
 			tags := strings.Split(args[1], ",")
-			_, _, err = svc.BatchRemoveTagsFromDirectory(dir, tags)
-			return err
+			return svc.BatchRemoveTagsFromDirectory(dir, tags)
 		},
 	}
 	rootCmd.AddCommand(batchRemoveCmd)

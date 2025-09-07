@@ -5,6 +5,7 @@ package tagging // Or place within your ui package if preferred
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -194,6 +195,36 @@ func (tdb *TagDB) _updateStoredList(tx *bolt.Tx, bucketName []byte, key []byte, 
 	return changed, nil
 }
 
+// _updateTagsForImageList is a private helper to add or remove a list of tags for a list of images.
+func (tdb *TagDB) _updateTagsForImageList(tx *bolt.Tx, imagePaths []string, tags []string, add bool) error {
+	for _, imagePath := range imagePaths {
+		for _, tag := range tags {
+			if tag == "" {
+				continue
+			}
+			// Update Image -> Tags mapping
+			if _, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(imagePath), tag, add); err != nil {
+				return err
+			}
+			// Update Tag -> Images mapping
+			if _, err := tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, add); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// AddTagsToImageList adds a list of tags to a list of images in a single transaction.
+func (tdb *TagDB) AddTagsToImageList(imagePaths []string, tags []string) error {
+	if len(imagePaths) == 0 || len(tags) == 0 {
+		return nil // Nothing to do
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		return tdb._updateTagsForImageList(tx, imagePaths, tags, true)
+	})
+}
+
 // --- Core Tagging Functions ---
 
 // AddTag associates a tag with an image path.
@@ -236,6 +267,29 @@ func (tdb *TagDB) AddTagsToImage(imagePath string, tags []string) error {
 			_, err = tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, true)
 			if err != nil {
 				return fmt.Errorf("updating tag->images for '%s' with image '%s': %w", tag, imagePath, err)
+			}
+		}
+		return nil
+	})
+}
+
+// RemoveTagsFromImage disassociates multiple tags from a single image path within a single transaction.
+func (tdb *TagDB) RemoveTagsFromImage(imagePath string, tags []string) error {
+	if imagePath == "" || len(tags) == 0 {
+		return fmt.Errorf("image path and tags cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		for _, tag := range tags {
+			if tag == "" {
+				continue
+			}
+			// 1. Update Image -> Tags mapping
+			if _, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(imagePath), tag, false); err != nil {
+				return fmt.Errorf("updating image->tags for '%s' removing tag '%s': %w", imagePath, tag, err)
+			}
+			// 2. Update Tag -> Images mapping
+			if _, err := tdb._updateStoredList(tx, []byte(tagsToImagesBucket), []byte(tag), imagePath, false); err != nil {
+				return fmt.Errorf("updating tag->images for '%s' removing image '%s': %w", tag, imagePath, err)
 			}
 		}
 		return nil
@@ -332,6 +386,64 @@ func (tdb *TagDB) GetAllTags() ([]TagWithCount, error) {
 		return allTagsInfo[i].Name < allTagsInfo[j].Name
 	})
 	return allTagsInfo, nil
+}
+
+// ReplaceTag atomically replaces all occurrences of an old tag with a new tag.
+func (tdb *TagDB) ReplaceTag(oldTag, newTag string) error {
+	if oldTag == "" || newTag == "" {
+		return errors.New("old and new tags must not be empty")
+	}
+	if oldTag == newTag {
+		return nil // Nothing to do
+	}
+
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		tagsBucket := tx.Bucket([]byte(tagsToImagesBucket))
+		//imgBucket := tx.Bucket([]byte(imagesToTagsBucket))
+
+		// 1. Get all images for the old tag.
+		oldTagImagesBytes := tagsBucket.Get([]byte(oldTag))
+		if oldTagImagesBytes == nil {
+			return nil // Old tag does not exist.
+		}
+		imagePaths, err := decodeList(oldTagImagesBytes)
+		if err != nil {
+			return fmt.Errorf("failed to decode image list for old tag '%s': %w", oldTag, err)
+		}
+
+		// 2. Get the current list of images for the new tag.
+		newTagImagesBytes := tagsBucket.Get([]byte(newTag))
+		newTagImages, err := decodeList(newTagImagesBytes)
+		if err != nil {
+			return fmt.Errorf("failed to decode image list for new tag '%s': %w", newTag, err)
+		}
+
+		// 3. For each image, update its tag list and add it to the new tag's image list.
+		for _, path := range imagePaths {
+			// a. Update the image's own tag list: remove old, add new.
+			if _, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(path), oldTag, false); err != nil {
+				return err // Error will rollback transaction
+			}
+			if _, err := tdb._updateStoredList(tx, []byte(imagesToTagsBucket), []byte(path), newTag, true); err != nil {
+				return err
+			}
+
+			// b. Add the image path to the new tag's list of images.
+			newTagImages, _ = addToList(newTagImages, path)
+		}
+
+		// 4. Save the updated list for the new tag.
+		updatedNewTagImagesBytes, err := encodeList(newTagImages)
+		if err != nil {
+			return fmt.Errorf("failed to encode image list for new tag '%s': %w", newTag, err)
+		}
+		if err := tagsBucket.Put([]byte(newTag), updatedNewTagImagesBytes); err != nil {
+			return fmt.Errorf("failed to put image list for new tag '%s': %w", newTag, err)
+		}
+
+		// 5. Delete the old tag key.
+		return tagsBucket.Delete([]byte(oldTag))
+	})
 }
 
 // RemoveAllTagsForImage removes all tag associations for a given imagePath
@@ -444,4 +556,14 @@ func (tdb *TagDB) StreamAllImagePaths(pathChan chan<- string) {
 	if err != nil {
 		tdb.logMessage("Error streaming image paths from DB: %v", err)
 	}
+}
+
+// RemoveTagsFromImageList removes a list of tags from a list of images in a single transaction.
+func (tdb *TagDB) RemoveTagsFromImageList(imagePaths []string, tags []string) error {
+	if len(imagePaths) == 0 || len(tags) == 0 {
+		return nil // Nothing to do
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		return tdb._updateTagsForImageList(tx, imagePaths, tags, false)
+	})
 }
