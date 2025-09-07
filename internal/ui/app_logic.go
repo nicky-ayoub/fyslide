@@ -65,6 +65,13 @@ func (a *App) LoadAndDisplayCurrentImage() {
 
 		// Successfully decoded image - perform UI updates on the Fyne thread
 		fyne.Do(func() {
+			// Final check: Has the user navigated away while this image was loading?
+			// If so, the current path in the state will be different from the one
+			// this goroutine was tasked to load. We should discard this stale result.
+			if a.GetImageFullPath() != path {
+				return // Discard stale image load.
+			}
+
 			a.img = Img{
 				OriginalImage: imgDecoded,
 				Path:          path,
@@ -99,29 +106,27 @@ func (a *App) deleteFileCheck() {
 
 // deleteFile performs the actual file deletion and UI update.
 func (a *App) deleteFile() {
-	// Get the index of the image we are about to delete.
+	// Get the path and index of the image to be deleted.
 	viewIndexToDelete := a.imageState.GetCurrentIndex()
-	if viewIndexToDelete < 0 {
+	itemToDelete := a.imageState.GetCurrentItem()
+	if viewIndexToDelete < 0 || itemToDelete == nil {
 		return // No image is selected.
 	}
+	pathToDelete := itemToDelete.Path
 
-	// Remove the image from the state first to get its path.
-	deletedPath, listBecameEmpty := a.imageState.RemoveImageAtViewIndex(viewIndexToDelete)
-	if deletedPath == "" {
-		a.AddLogMessage("Could not delete image: not found in current view.")
-		return // The image wasn't in the state, so nothing to do.
-	}
-
-	// Now, delete the file from disk and the database.
-	err := a.Service.DeleteImageFile(deletedPath)
+	// First, attempt the destructive operation on the backend (disk and DB).
+	err := a.Service.DeleteImageFile(pathToDelete)
 	if err != nil {
 		a.AddLogMessage(fmt.Sprintf("Error deleting file and tags: %v", err))
 		dialog.ShowError(err, a.UI.MainWin)
-		// Note: The file is already removed from the UI state, so we just log the error.
+		// Do not proceed, as the file was not deleted. The UI state remains consistent.
 		return
 	}
 
-	a.AddLogMessage(fmt.Sprintf("Deleted %s.", filepath.Base(deletedPath)))
+	// Deletion was successful, now update the UI state.
+	_, listBecameEmpty := a.imageState.RemoveImageAtViewIndex(viewIndexToDelete)
+
+	a.AddLogMessage(fmt.Sprintf("Deleted %s.", filepath.Base(pathToDelete)))
 
 	// If the list became empty and was filtered, clear the filter.
 	if listBecameEmpty && a.imageState.IsFiltered() {
