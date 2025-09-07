@@ -223,8 +223,6 @@ func (a *App) loadImages(root string) {
 		}
 	}()
 
-	a.imageState.images = nil // Clear previous images
-
 	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
 
 	const batchSize = 1000
