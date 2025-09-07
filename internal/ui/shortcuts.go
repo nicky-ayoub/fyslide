@@ -2,7 +2,7 @@
 package ui
 
 import (
-	"fyslide/internal/custom_widgets"
+	"fyslide/internal/customwidgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
@@ -75,7 +75,7 @@ func (a *App) buildKeyboardShortcuts() {
 
 func (a *App) showShortcuts() {
 	win := a.app.NewWindow("Keyboard Shortcuts")
-	shortcutsWidget := custom_widgets.NewShortcutTable()
+	shortcutsWidget := customwidgets.NewShortcutTable()
 	win.SetContent(shortcutsWidget)
 	win.Resize(fyne.NewSize(520, 500))
 	win.Show()

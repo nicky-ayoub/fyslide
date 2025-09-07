@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"fyslide/internal/custom_widgets"
+	"fyslide/internal/customwidgets"
 	"runtime"
 
 	"fyne.io/fyne/v2"
@@ -44,7 +44,7 @@ type UI struct {
 	statusLogUpBtn   *widget.Button
 	statusLogDownBtn *widget.Button
 
-	thumbnailBrowser *custom_widgets.ThumbnailBrowser
+	thumbnailBrowser *customwidgets.ThumbnailBrowser
 }
 
 // SelectStackView activates the view at the given index (0 or 1) in the main content stack.
@@ -77,7 +77,7 @@ func (a *App) SelectStackView(index int) {
 	a.UI.contentStack.Refresh()
 
 	// Special case: Refresh tags when switching TO the tags view
-	if index == custom_widgets.TagsViewIndex && a.RefreshTagsFunc != nil {
+	if index == customwidgets.TagsViewIndex && a.RefreshTagsFunc != nil {
 		a.RefreshTagsFunc()
 	}
 }
@@ -110,10 +110,10 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 
 		widget.NewToolbarAction(theme.FileImageIcon(), func() { // Button for Image View
-			a.SelectStackView(custom_widgets.ImageViewIndex) // Switch to image view
+			a.SelectStackView(customwidgets.ImageViewIndex) // Switch to image view
 		}),
 		widget.NewToolbarAction(theme.ListIcon(), func() { // Button for Tags View
-			a.SelectStackView(custom_widgets.TagsViewIndex) // Switch to tags view
+			a.SelectStackView(customwidgets.TagsViewIndex) // Switch to tags view
 		}),
 		widget.NewToolbarAction(theme.ColorPaletteIcon(), a.toggleTheme),
 		widget.NewToolbarAction(theme.HelpIcon(), func() {
@@ -126,7 +126,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 
 // buildTagsTab constructs the UI for the "Tags" management view.
 func (a *App) buildTagsTab() (fyne.CanvasObject, func()) {
-	tagsView := custom_widgets.NewTagsView(a)
+	tagsView := customwidgets.NewTagsView(a)
 	return tagsView, tagsView.RefreshData
 }
 
@@ -307,7 +307,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		a.UI.statusLogLabel,  // center (main space for log message)
 	)
 
-	a.UI.thumbnailBrowser = custom_widgets.NewThumbnailBrowser(a)
+	a.UI.thumbnailBrowser = customwidgets.NewThumbnailBrowser(a)
 
 	// Instantiate LogUIManager now that its UI elements are created.
 	// a.maxLogMessages is set in App.init() using DefaultMaxLogMessages from app.go

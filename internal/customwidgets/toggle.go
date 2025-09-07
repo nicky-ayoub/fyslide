@@ -1,5 +1,5 @@
-// Package custom_widgets contains custom Fyne widgets for the application.
-package custom_widgets // import "fyslide/internal/custom_widgets"
+// Package customwidgets contains custom Fyne widgets for the application.
+package customwidgets // import "fyslide/internal/customwidgets"
 
 import (
 	"fmt"

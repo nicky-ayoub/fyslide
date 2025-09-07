@@ -1,4 +1,4 @@
-package custom_widgets
+package customwidgets
 
 import (
 	"fyne.io/fyne/v2"

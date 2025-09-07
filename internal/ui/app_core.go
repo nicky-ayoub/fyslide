@@ -2,7 +2,7 @@
 package ui
 
 import (
-	"fyslide/internal/custom_widgets"
+	"fyslide/internal/customwidgets"
 	"fyslide/internal/service"
 	"fyslide/internal/slideshow"
 	"fyslide/internal/tagging"
@@ -96,17 +96,17 @@ func (a *App) isImageViewActive() bool {
 		return false
 	}
 	// Check if the image view is the visible one in the stack
-	return a.UI.contentStack.Objects[custom_widgets.ImageViewIndex].Visible()
+	return a.UI.contentStack.Objects[customwidgets.ImageViewIndex].Visible()
 }
 
 // GetViewportItems returns a slice of items for the thumbnail browser's viewport.
 // It satisfies the ThumbnailHost interface.
-func (a *App) GetViewportItems(centerIndex, windowSize int) ([]custom_widgets.ViewportItem, int) {
+func (a *App) GetViewportItems(centerIndex, windowSize int) ([]customwidgets.ViewportItem, int) {
 	items, newCenter := a.imageState.GetViewportItems(centerIndex, windowSize)
-	// Convert ui.ViewportItem to custom_widgets.ViewportItem
-	customItems := make([]custom_widgets.ViewportItem, len(items))
+	// Convert ui.ViewportItem to customwidgets.ViewportItem
+	customItems := make([]customwidgets.ViewportItem, len(items))
 	for i, item := range items {
-		customItems[i] = custom_widgets.ViewportItem{
+		customItems[i] = customwidgets.ViewportItem{
 			// Path is used by the thumbnail browser to request a thumbnail.
 			Path: item.Item.Path,
 			// ViewIndex is used to navigate to the image when the thumbnail is clicked.

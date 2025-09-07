@@ -283,6 +283,7 @@ func (a *App) SetScaleAlgorithm(algo ScaleAlgorithmType) {
 	}
 }
 
+// GetScaleAlgorithm returns the current scaling algorithm used by the zoomPanArea.
 func (a *App) GetScaleAlgorithm() ScaleAlgorithmType {
 	return a.zoomPanArea.GetScaleAlgorithm()
 }
