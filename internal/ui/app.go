@@ -25,9 +25,18 @@ var (
 	slideshowIntervalFlag = flag.Float64("slideshow-interval", 3.0, "Slideshow image display interval in seconds. Min: 0.1.")
 	skipCountFlag         = flag.Int("skip-count", 20, "Number of images to skip with PageUp/PageDown. Min: 1.")
 	versionFlag           = flag.Bool("version", false, "Print version and exit")
+	loadDbFlag            = flag.Bool("load-db", false, "Pre-load known image paths from database on startup.")
 	// This can be set during the build process using ldflags
 	version = "dev"
 )
+
+// AppConfig holds the application configuration derived from command-line flags.
+type AppConfig struct {
+	Directory         string
+	SlideshowInterval float64
+	SkipCount         int
+	LoadFromDB        bool
+}
 
 // createSplashScreen creates and returns a new splash screen window and its text label.
 func createSplashScreen(a fyne.App) (fyne.Window, *widget.Label) {
@@ -53,12 +62,14 @@ func createSplashScreen(a fyne.App) (fyne.Window, *widget.Label) {
 	return win, splashText
 }
 
-// CreateApplication is the GUI entrypoint
-func CreateApplication() {
-	flag.Parse() // Parse command-line flags
+// parseConfig handles command-line flags and arguments, validates them,
+// and returns a configuration struct or an error.
+func parseConfig() (*AppConfig, error) {
+	flag.Parse()
+
 	if *versionFlag {
 		fmt.Printf("fyslide version %s\n", version)
-		return
+		return nil, nil // Signal to exit gracefully
 	}
 
 	// The first non-flag argument is the directory. Default to current directory.
@@ -70,20 +81,111 @@ func CreateApplication() {
 	// Check if the directory exists and is valid.
 	info, err := os.Stat(dir)
 	if err != nil {
-		fmt.Printf("Error accessing '%s': %v\n", dir, err)
-		return
+		return nil, fmt.Errorf("error accessing '%s': %w", dir, err)
 	}
 	if !info.IsDir() {
-		fmt.Printf("Error: '%s' is not a directory.\n", dir)
-		return
+		return nil, fmt.Errorf("path '%s' is not a directory", dir)
 	}
 
-	dir, err = filepath.Abs(dir)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		fmt.Println("Error getting absolute path:", err)
-		return
+		return nil, fmt.Errorf("could not determine absolute path for '%s': %w", dir, err)
 	}
 
+	return &AppConfig{
+		Directory:         absDir,
+		SlideshowInterval: *slideshowIntervalFlag,
+		SkipCount:         *skipCountFlag,
+		LoadFromDB:        *loadDbFlag,
+	}, nil
+}
+
+// setupAndLaunch performs the main application setup in a background goroutine.
+func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashText *widget.Label) {
+	// This function will be called from the goroutine to update the splash screen text
+	updateSplash := func(text string) {
+		fyne.Do(func() {
+			splashText.SetText(text)
+		})
+	}
+
+	updateSplash("Initializing services...")
+	// 1. Initialize backend services (DB, etc.)
+	if err := ui.initServices(); err != nil {
+		// In a real app, you might show an error dialog here before quitting.
+		log.Fatalf("Failed to start services: %v", err)
+	}
+
+	updateSplash("Initializing components...")
+	// 2. Initialize controller components (slideshow, navigation, tagging)
+	ui.initComponents(config.SlideshowInterval, config.SkipCount)
+
+	updateSplash("Building main user interface...")
+	// 3. Build the main UI window and its components
+	ui.UI.MainWin = ui.app.NewWindow("FySlide")
+	fyne.Do(func() {
+		ui.UI.MainWin.SetContent(ui.buildMainUI())
+	})
+	ui.UI.MainWin.SetCloseIntercept(func() {
+		if ui.Tagging.IsBusy() {
+			dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
+			return
+		}
+		log.Println("Closing application resources...")
+		if ui.tagDB != nil {
+			if err := ui.tagDB.Close(); err != nil {
+				log.Printf("Error closing tag database: %v", err)
+			}
+		}
+		ui.UI.MainWin.Close() // Proceed with closing the window
+	})
+	ui.UI.MainWin.SetIcon(resourceIconPng)
+	ui.UI.MainWin.CenterOnScreen()
+	//ui.UI.MainWin.SetFullScreen(true)
+	ui.UI.MainWin.Resize(fyne.NewSize(1920, 1024))
+
+	// After the UI is built and logUIManager is initialized, flush any buffered logs.
+	ui.flushLogBuffer()
+
+	updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(config.Directory)))
+	// 4. Run the initial file scan and wait for some results
+	ui.runInitialScanAndWait(config.Directory, splashText, config.LoadFromDB)
+
+	updateSplash("Loading initial image...")
+	// 5. Final setup after initial images are loaded
+	if ui.imageState.GetCurrentImageCount() > 0 {
+		// Now that the initial scan is done, sync the permutation manager for random mode.
+		// This is done once here for performance, instead of on every batch add.
+		ui.imageState.SyncPermutationManager()
+
+		// Start at the beginning of the current view (sequential or random).
+		ui.imageState.SetIndex(0)
+		ui.startBackgroundTasks()
+		// The first image will be loaded after the main window is shown to ensure
+		// correct sizing.
+	} else {
+		// This case is also hit on timeout if no images loaded.
+		ui.updateStatusBar() // Will show "No images available" or similar.
+		ui.UpdateInfoText(nil)
+	}
+
+	// 6. Close splash and show main window
+	fyne.Do(func() {
+		splashWin.Close()
+		ui.UI.MainWin.Show()
+
+		// Set initial state for the scaling menu
+		ui.SetScaleAlgorithm(ui.GetScaleAlgorithm())
+
+		// Now that the window is visible and all widgets have their final sizes,
+		// we can load the first image. The internal Reset() call within
+		// LoadAndDisplayCurrentImage will now use the correct component size.
+		ui.LoadAndDisplayCurrentImage()
+	})
+}
+
+// run initializes and runs the Fyne application.
+func run(config *AppConfig) {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
@@ -98,91 +200,21 @@ func CreateApplication() {
 	splashWin.Show()
 
 	// --- Main Application Setup in Background ---
-	go func() {
-		// This function will be called from the goroutine to update the splash screen text
-		updateSplash := func(text string) {
-			fyne.Do(func() {
-				splashText.SetText(text)
-			})
-		}
-
-		updateSplash("Initializing services...")
-		// 1. Initialize backend services (DB, etc.)
-		if err := ui.initServices(); err != nil {
-			// In a real app, you might show an error dialog here before quitting.
-			log.Fatalf("Failed to start services: %v", err)
-		}
-
-		updateSplash("Initializing components...")
-		// 2. Initialize controller components (slideshow, navigation, tagging)
-		ui.initComponents(*slideshowIntervalFlag, *skipCountFlag)
-
-		updateSplash("Building main user interface...")
-		// 3. Build the main UI window and its components
-		ui.UI.MainWin = a.NewWindow("FySlide")
-		fyne.Do(func() {
-			ui.UI.MainWin.SetContent(ui.buildMainUI())
-		})
-		ui.UI.MainWin.SetCloseIntercept(func() {
-			if ui.Tagging.IsBusy() {
-				dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
-				return
-			}
-
-			log.Println("Closing application resources...")
-			if ui.tagDB != nil {
-				if err := ui.tagDB.Close(); err != nil {
-					log.Printf("Error closing tag database: %v", err)
-				}
-			}
-			ui.UI.MainWin.Close() // Proceed with closing the window
-		})
-		ui.UI.MainWin.SetIcon(resourceIconPng)
-		ui.UI.MainWin.CenterOnScreen()
-
-		//ui.UI.MainWin.SetFullScreen(true)
-		ui.UI.MainWin.Resize(fyne.NewSize(1920, 1024))
-
-		// After the UI is built and logUIManager is initialized, flush any buffered logs.
-		ui.flushLogBuffer()
-
-		updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(dir)))
-		// 4. Run the initial file scan and wait for some results
-		ui.runInitialScanAndWait(dir, splashText)
-
-		updateSplash("Loading initial image...")
-		// 5. Final setup after initial images are loaded
-		if ui.imageState.GetCurrentImageCount() > 0 {
-			// Now that the initial scan is done, sync the permutation manager for random mode.
-			// This is done once here for performance, instead of on every batch add.
-			ui.imageState.SyncPermutationManager()
-
-			// Start at the beginning of the current view (sequential or random).
-			ui.imageState.SetIndex(0)
-			ui.startBackgroundTasks()
-			// The first image will be loaded after the main window is shown to ensure
-			// correct sizing.
-		} else {
-			// This case is also hit on timeout if no images loaded.
-			ui.updateStatusBar() // Will show "No images available" or similar.
-			ui.UpdateInfoText(nil)
-		}
-
-		// 6. Close splash and show main window
-		fyne.Do(func() {
-			splashWin.Close()
-			ui.UI.MainWin.Show()
-
-			// Set initial state for the scaling menu
-			ui.SetScaleAlgorithm(ui.GetScaleAlgorithm())
-
-			// Now that the window is visible and all widgets have their final sizes,
-			// we can load the first image. The internal Reset() call within
-			// LoadAndDisplayCurrentImage will now use the correct component size.
-			ui.LoadAndDisplayCurrentImage()
-		})
-	}()
+	go setupAndLaunch(ui, config, splashWin, splashText)
 
 	// Run the application event loop. This will initially just service the splash screen.
 	a.Run()
+}
+
+// CreateApplication is the GUI entrypoint. It parses configuration and runs the application.
+func CreateApplication() {
+	config, err := parseConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if config == nil { // This happens if --version is used
+		return
+	}
+	run(config)
 }

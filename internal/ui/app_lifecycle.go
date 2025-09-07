@@ -70,13 +70,15 @@ func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
 
 // runInitialScanAndWait starts the background image scan and waits for it to
 // find at least one image or times out.
-func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label) {
+func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label, loadFromDB bool) {
 	// Clear any previous state and re-initialize managers before starting new scans.
 	a.imageState.Clear()
 
 	// Start loading from DB. This runs in the background and adds to the
 	// imageState concurrently. We don't need to wait for it to finish.
-	go a.loadImagesFromDB()
+	if loadFromDB {
+		go a.loadImagesFromDB()
+	}
 
 	// Start scanning filesystem. This function will signal scanCompleteChan
 	// when it finishes, providing one of the exit conditions for the wait loop.

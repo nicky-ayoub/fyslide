@@ -20,8 +20,8 @@ type ImageState struct {
 
 	// The original, full list of images
 	images scan.FileItems
-	// A set of all known paths for quick de-duplication
-	knownPaths map[string]bool
+	// A map of path to index in the main `images` slice for O(1) lookups.
+	pathIndex map[string]int
 	// Manages the permutation for the original images for random mode
 	permutationManager *scan.PermutationManager
 
@@ -45,9 +45,9 @@ type ImageState struct {
 // NewImageState creates a new ImageState manager.
 func NewImageState() *ImageState {
 	return &ImageState{
-		images:     make(scan.FileItems, 0),
-		knownPaths: make(map[string]bool),
-		random:     true, // Default to random on
+		images:    make(scan.FileItems, 0),
+		pathIndex: make(map[string]int),
+		random:    true, // Default to random on
 	}
 }
 
@@ -55,9 +55,10 @@ func NewImageState() *ImageState {
 func (is *ImageState) AddImage(item scan.FileItem) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
-	if _, exists := is.knownPaths[item.Path]; !exists {
+	if _, exists := is.pathIndex[item.Path]; !exists {
+		newIndex := len(is.images)
 		is.images = append(is.images, item)
-		is.knownPaths[item.Path] = true
+		is.pathIndex[item.Path] = newIndex
 	}
 }
 
@@ -66,9 +67,10 @@ func (is *ImageState) AddImages(items scan.FileItems) {
 	is.mu.Lock()
 	defer is.mu.Unlock()
 	for _, item := range items {
-		if _, exists := is.knownPaths[item.Path]; !exists {
+		if _, exists := is.pathIndex[item.Path]; !exists {
+			newIndex := len(is.images)
 			is.images = append(is.images, item)
-			is.knownPaths[item.Path] = true
+			is.pathIndex[item.Path] = newIndex
 		}
 	}
 }
@@ -87,7 +89,7 @@ func (is *ImageState) Clear() {
 	defer is.mu.Unlock()
 
 	is.images = make(scan.FileItems, 0)
-	is.knownPaths = make(map[string]bool)
+	is.pathIndex = make(map[string]int)
 	is.filteredImages = nil
 	is.isFiltered = false
 	is.currentFilterTag = ""
@@ -97,6 +99,15 @@ func (is *ImageState) Clear() {
 	// We must create a new one that points to the new, empty slice.
 	is.permutationManager = scan.NewPermutationManager(&is.images)
 	is.filteredPermutationManager = nil
+}
+
+// rebuildPathIndex recreates the path-to-index map. This is an O(n) operation
+// and should be used after modifications that change multiple indices, like removal.
+func (is *ImageState) rebuildPathIndex() {
+	is.pathIndex = make(map[string]int, len(is.images))
+	for i, item := range is.images {
+		is.pathIndex[item.Path] = i
+	}
 }
 
 // getCurrentListUnlocked returns the active image list. It is not thread-safe
@@ -343,23 +354,24 @@ func (is *ImageState) RemoveImageAtViewIndex(viewIndex int) (deletedPath string,
 	}
 	path := itemToRemove.Path
 
-	// --- 1. Remove from the main image list (is.images) ---
-	originalIndexToRemove := -1
-	for i, item := range is.images {
-		if item.Path == path {
-			originalIndexToRemove = i
-			// Remove from the slice
-			is.images = append(is.images[:i], is.images[i+1:]...)
-			// Notify the permutation manager
-			if is.permutationManager != nil {
-				is.permutationManager.DataRemoved(i)
-			}
-			break
-		}
+	// --- 1. Remove from the main image list (is.images) using the pathIndex for O(1) lookup ---
+	originalIndexToRemove, ok := is.pathIndex[path]
+	if !ok {
+		// This is unexpected if the item was found in a view, but handle defensively.
+		return "", is.getCurrentImageCountUnlocked() == 0
+	}
+
+	// Remove from the slice
+	is.images = append(is.images[:originalIndexToRemove], is.images[originalIndexToRemove+1:]...)
+	// No need to delete from pathIndex, as we are about to rebuild it.
+
+	// Notify the permutation manager
+	if is.permutationManager != nil {
+		is.permutationManager.DataRemoved(originalIndexToRemove)
 	}
 
 	// --- 2. Remove from the filtered list if active ---
-	if is.isFiltered && originalIndexToRemove != -1 { // Only if it was found in the main list
+	if is.isFiltered { // Only if it was found in the main list
 		for i, item := range is.filteredImages {
 			if item.Path == path {
 				// Remove from the slice
@@ -373,7 +385,12 @@ func (is *ImageState) RemoveImageAtViewIndex(viewIndex int) (deletedPath string,
 		}
 	}
 
-	// --- 3. Adjust index and determine return values ---
+	// --- 3. Rebuild the path index map ---
+	// This is an O(n) operation, but it's necessary because all subsequent indices have shifted.
+	// The overall operation remains O(n) due to slice removal, but we've eliminated one O(n) scan.
+	is.rebuildPathIndex()
+
+	// --- 4. Adjust index and determine return values ---
 	countAfterRemoval := is.getCurrentImageCountUnlocked()
 	if countAfterRemoval == 0 {
 		is.index = -1

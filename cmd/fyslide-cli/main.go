@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	dbPathFlag string
+	dbDirFlag  string
 	tagDB      *tagging.TagDB
 	svc        *service.Service
 	dryRunFlag bool
@@ -36,7 +36,7 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			// Use the provided function to get/initialize svc and tagDB
-			svc, tagDB, err = getServiceAndDB(dbPathFlag, cliLogger)
+			svc, tagDB, err = getServiceAndDB(dbDirFlag, cliLogger)
 			if err != nil {
 				return fmt.Errorf("failed to initialize service and tagDB: %w", err)
 			}
@@ -301,15 +301,19 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 				cmd.Println("WARNING: --force specified. Deleting files immediately.")
 			}
 
+			var firstErr error
 			for _, img := range images {
 				err := svc.DeleteImageFile(img)
 				if err != nil {
 					cmd.Printf("Error deleting %s: %v\n", img, err)
+					if firstErr == nil {
+						firstErr = fmt.Errorf("one or more files could not be deleted")
+					}
 				} else {
 					cmd.Printf("Deleted: %s\n", img)
 				}
 			}
-			return nil
+			return firstErr
 		},
 	}
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Bypass confirmation prompt and delete files immediately")
@@ -318,7 +322,7 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 
 	// Define persistent flags on the rootCmd returned by NewRootCmd
 	// This ensures flags are available when NewRootCmd is called from main or tests.
-	rootCmd.PersistentFlags().StringVar(&dbPathFlag, "dbpath", "", "Path to tag database")
+	rootCmd.PersistentFlags().StringVar(&dbDirFlag, "db-dir", "", "Directory to store the tag database file in (defaults to user config dir)")
 
 	return rootCmd
 }
