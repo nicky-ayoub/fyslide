@@ -3,10 +3,11 @@ package scan
 // AugmentedBSTNode represents a node in an Order-Statistic Tree (a type of Augmented BST).
 // It includes a 'Size' field to enable efficient index-based lookups.
 type AugmentedBSTNode struct {
-	Item  FileItem
-	Left  *AugmentedBSTNode
-	Right *AugmentedBSTNode
-	Size  int // The number of nodes in the subtree rooted at this node (including itself)
+	Item   FileItem
+	Left   *AugmentedBSTNode
+	Right  *AugmentedBSTNode
+	Size   int // The number of nodes in the subtree rooted at this node (including itself)
+	Height int // The height of the subtree rooted at this node
 }
 
 // FileItemAugmentedBST represents the Augmented Binary Search Tree for FileItems.
@@ -27,9 +28,29 @@ func size(n *AugmentedBSTNode) int {
 	return n.Size
 }
 
+// height is a helper function to safely get the height of a node's subtree.
+func height(n *AugmentedBSTNode) int {
+	if n == nil {
+		return 0
+	}
+	return n.Height
+}
+
+// max returns the greater of two integers.
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // updateSize recalculates the size of a node based on its children.
 func (n *AugmentedBSTNode) updateSize() {
 	n.Size = 1 + size(n.Left) + size(n.Right)
+}
+
+func (n *AugmentedBSTNode) updateHeight() {
+	n.Height = 1 + max(height(n.Left), height(n.Right))
 }
 
 // Insert adds a new FileItem to the BST, maintaining sorted order by path.
@@ -38,11 +59,19 @@ func (t *FileItemAugmentedBST) Insert(item FileItem) {
 	t.Root = t.insert(t.Root, item)
 }
 
+// getBalance calculates the balance factor of a node.
+func (t *FileItemAugmentedBST) getBalance(n *AugmentedBSTNode) int {
+	if n == nil {
+		return 0
+	}
+	return height(n.Left) - height(n.Right)
+}
+
 // insert is a recursive helper function for Insert.
 func (t *FileItemAugmentedBST) insert(node *AugmentedBSTNode, item FileItem) *AugmentedBSTNode {
 	// If the current node is nil, we've found the insertion point.
 	if node == nil {
-		return &AugmentedBSTNode{Item: item, Size: 1}
+		return &AugmentedBSTNode{Item: item, Size: 1, Height: 1}
 	}
 
 	// Compare paths to decide whether to go left or right.
@@ -51,10 +80,36 @@ func (t *FileItemAugmentedBST) insert(node *AugmentedBSTNode, item FileItem) *Au
 	} else if item.Path > node.Item.Path {
 		// We only insert if the path is not a duplicate.
 		node.Right = t.insert(node.Right, item)
+	} else {
+		return node // Duplicate path, do not insert.
 	}
 
-	// After insertion in a subtree, update the size of the current node.
+	// After insertion in a subtree, update the size and height of the current node.
 	node.updateSize()
+	node.updateHeight()
+
+	// Get the balance factor and rebalance if necessary.
+	balance := t.getBalance(node)
+
+	// Left Left Case
+	if balance > 1 && item.Path < node.Left.Item.Path {
+		return t.rightRotate(node)
+	}
+	// Right Right Case
+	if balance < -1 && item.Path > node.Right.Item.Path {
+		return t.leftRotate(node)
+	}
+	// Left Right Case
+	if balance > 1 && item.Path > node.Left.Item.Path {
+		node.Left = t.leftRotate(node.Left)
+		return t.rightRotate(node)
+	}
+	// Right Left Case
+	if balance < -1 && item.Path < node.Right.Item.Path {
+		node.Right = t.rightRotate(node.Right)
+		return t.leftRotate(node)
+	}
+
 	return node
 }
 
@@ -70,7 +125,9 @@ func (t *FileItemAugmentedBST) rightRotate(y *AugmentedBSTNode) *AugmentedBSTNod
 
 	// Update sizes. Order is important: y's size must be updated before x's.
 	y.updateSize()
+	y.updateHeight()
 	x.updateSize()
+	x.updateHeight()
 
 	// Return new root
 	return x
@@ -85,7 +142,9 @@ func (t *FileItemAugmentedBST) leftRotate(x *AugmentedBSTNode) *AugmentedBSTNode
 	x.Right = T2
 
 	x.updateSize()
+	x.updateHeight()
 	y.updateSize()
+	y.updateHeight()
 
 	return y
 }
@@ -127,6 +186,30 @@ func (t *FileItemAugmentedBST) remove(node *AugmentedBSTNode, path string) *Augm
 	}
 
 	node.updateSize()
+	node.updateHeight()
+
+	// Get the balance factor and rebalance if necessary.
+	balance := t.getBalance(node)
+
+	// Left Left Case
+	if balance > 1 && t.getBalance(node.Left) >= 0 {
+		return t.rightRotate(node)
+	}
+	// Left Right Case
+	if balance > 1 && t.getBalance(node.Left) < 0 {
+		node.Left = t.leftRotate(node.Left)
+		return t.rightRotate(node)
+	}
+	// Right Right Case
+	if balance < -1 && t.getBalance(node.Right) <= 0 {
+		return t.leftRotate(node)
+	}
+	// Right Left Case
+	if balance < -1 && t.getBalance(node.Right) > 0 {
+		node.Right = t.rightRotate(node.Right)
+		return t.leftRotate(node)
+	}
+
 	return node
 }
 
