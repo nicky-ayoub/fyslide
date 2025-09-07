@@ -29,7 +29,7 @@ type TaggingHost interface {
 	GetImageService() *service.ImageService
 	RefreshTags()                           // Refreshes the list of all tags in the tag view
 	UpdateInfoText(info *service.ImageInfo) // Refreshes the info panel for the current image
-	GetSlideshowManager() *slideshow.SlideshowManager
+	GetSlideshowManager() *slideshow.Manager
 	NavigateToIndex(index int)
 }
 

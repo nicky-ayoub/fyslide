@@ -31,7 +31,7 @@ type App struct {
 	img         Img
 	zoomPanArea *ZoomPanArea
 
-	slideshowManager *slideshow.SlideshowManager
+	slideshowManager *slideshow.Manager
 
 	tagDB *tagging.TagDB
 
@@ -86,7 +86,7 @@ func (a *App) GetImageFullPath() string {
 }
 
 // GetSlideshowManager returns the application's slideshow manager.
-func (a *App) GetSlideshowManager() *slideshow.SlideshowManager {
+func (a *App) GetSlideshowManager() *slideshow.Manager {
 	return a.slideshowManager
 }
 

@@ -14,8 +14,8 @@ const (
 // LoggerFunc defines a function signature for logging messages.
 type LoggerFunc func(message string)
 
-// SlideshowManager handles the slideshow functionality.
-type SlideshowManager struct {
+// Manager handles the slideshow functionality.
+type Manager struct {
 	mu                 sync.Mutex
 	isPaused           bool
 	wasPlayingBeforeOp bool // Tracks if slideshow was playing before a temp pause
@@ -26,11 +26,11 @@ type SlideshowManager struct {
 // NewSlideshowManager creates a new SlideshowManager.
 // interval is the time between automatic transitions.
 // logger is an optional logging function.
-func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *SlideshowManager {
+func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *Manager {
 	if interval <= 0 {
 		interval = defaultSlideshowInterval // Default interval if invalid
 	}
-	sm := &SlideshowManager{
+	sm := &Manager{
 		isPaused:           true, // Start paused by default
 		wasPlayingBeforeOp: false,
 		interval:           interval,
@@ -41,14 +41,14 @@ func NewSlideshowManager(interval time.Duration, logger LoggerFunc) *SlideshowMa
 }
 
 // logMsg is a helper to use the configured logger.
-func (sm *SlideshowManager) logMsg(format string, args ...interface{}) {
+func (sm *Manager) logMsg(format string, args ...interface{}) {
 	if sm.logger != nil {
 		sm.logger(fmt.Sprintf(format, args...))
 	}
 }
 
 // TogglePlayPause toggles the play/pause state.
-func (sm *SlideshowManager) TogglePlayPause() {
+func (sm *Manager) TogglePlayPause() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.isPaused = !sm.isPaused
@@ -62,7 +62,7 @@ func (sm *SlideshowManager) TogglePlayPause() {
 
 // Pause forces the slideshow to pause.
 // If forOperation is true, it remembers if the slideshow was playing.
-func (sm *SlideshowManager) Pause(forOperation bool) {
+func (sm *Manager) Pause(forOperation bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if forOperation {
@@ -75,7 +75,7 @@ func (sm *SlideshowManager) Pause(forOperation bool) {
 }
 
 // ResumeAfterOperation resumes the slideshow only if it was playing before Pause(true) was called.
-func (sm *SlideshowManager) ResumeAfterOperation() {
+func (sm *Manager) ResumeAfterOperation() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.wasPlayingBeforeOp {
@@ -88,14 +88,14 @@ func (sm *SlideshowManager) ResumeAfterOperation() {
 }
 
 // IsPaused returns true if the slideshow is currently paused.
-func (sm *SlideshowManager) IsPaused() bool {
+func (sm *Manager) IsPaused() bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	return sm.isPaused
 }
 
 // Interval returns the configured slideshow interval.
-func (sm *SlideshowManager) Interval() time.Duration {
+func (sm *Manager) Interval() time.Duration {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	return sm.interval
