@@ -6,7 +6,6 @@ import (
 	"fyslide/internal/scan"
 	"fyslide/internal/tagging"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -33,19 +32,17 @@ type FileScanner interface {
 
 // Service is the main entry point for business logic.
 type Service struct {
-	TagDB      TagStore
-	FileScan   FileScanner
-	Logger     func(string)
-	Extensions map[string]bool // Supported image extensions
+	TagDB    TagStore
+	FileScan FileScanner
+	Logger   func(string)
 }
 
 // NewService constructs a new Service.
 func NewService(tagDB TagStore, fileScan FileScanner, logger func(string)) *Service {
 	return &Service{
-		TagDB:      tagDB,
-		FileScan:   fileScan,
-		Logger:     logger,
-		Extensions: map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true},
+		TagDB:    tagDB,
+		FileScan: fileScan,
+		Logger:   logger,
 	}
 }
 
@@ -192,10 +189,7 @@ func (s *Service) scanDirectoryForImages(dir string) ([]string, error) {
 	// Use s.FileScan for testability and s.Logger for logging
 	items := s.FileScan.Run(dir, func(msg string) { s.Logger(fmt.Sprintf("scanDirectoryForImages: %s", msg)) })
 	for item := range items {
-		ext := filepath.Ext(item.Path)
-		if s.Extensions[ext] { // Use s.Extensions
-			files = append(files, item.Path)
-		}
+		files = append(files, item.Path)
 	}
 	return files, nil
 }
