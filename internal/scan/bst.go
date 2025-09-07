@@ -58,6 +58,38 @@ func (t *FileItemAugmentedBST) insert(node *AugmentedBSTNode, item FileItem) *Au
 	return node
 }
 
+// rightRotate performs a right rotation on the subtree rooted at y.
+// It is a fundamental operation for self-balancing trees like AVL or Red-Black trees.
+func (t *FileItemAugmentedBST) rightRotate(y *AugmentedBSTNode) *AugmentedBSTNode {
+	x := y.Left
+	T2 := x.Right
+
+	// Perform rotation
+	x.Right = y
+	y.Left = T2
+
+	// Update sizes. Order is important: y's size must be updated before x's.
+	y.updateSize()
+	x.updateSize()
+
+	// Return new root
+	return x
+}
+
+// leftRotate performs a left rotation on the subtree rooted at x.
+func (t *FileItemAugmentedBST) leftRotate(x *AugmentedBSTNode) *AugmentedBSTNode {
+	y := x.Right
+	T2 := y.Left
+
+	y.Left = x
+	x.Right = T2
+
+	x.updateSize()
+	y.updateSize()
+
+	return y
+}
+
 // Remove deletes an item from the BST based on its path.
 func (t *FileItemAugmentedBST) Remove(path string) {
 	t.Root = t.remove(t.Root, path)
