@@ -214,7 +214,7 @@ func (t *Toggle) TypedRune(r rune) {
 }
 
 // TypedKey is called when a key is typed.
-func (t *Toggle) TypedKey(key *fyne.KeyEvent) {}
+func (t *Toggle) TypedKey(_ *fyne.KeyEvent) {}
 
 // Unbind disconnects the toggle from a data binding.
 func (t *Toggle) Unbind() {

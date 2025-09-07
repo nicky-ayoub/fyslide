@@ -15,8 +15,10 @@ import (
 )
 
 const (
+	// ImageViewIndex must match the index used in the main app for the image view.
 	ImageViewIndex = 0
-	TagsViewIndex  = 1
+	// TagsViewIndex must match the index used in the main app for the tags view.
+	TagsViewIndex = 1
 
 	noTagsFoundMsg       = "No tags found."
 	noTagsMatchSearchMsg = "No tags match search."

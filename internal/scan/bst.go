@@ -36,8 +36,8 @@ func height(n *AugmentedBSTNode) int {
 	return n.Height
 }
 
-// max returns the greater of two integers.
-func max(a, b int) int {
+// bstMax returns the greater of two integers.
+func bstMax(a, b int) int {
 	if a > b {
 		return a
 	}
@@ -50,7 +50,7 @@ func (n *AugmentedBSTNode) updateSize() {
 }
 
 func (n *AugmentedBSTNode) updateHeight() {
-	n.Height = 1 + max(height(n.Left), height(n.Right))
+	n.Height = 1 + bstMax(height(n.Left), height(n.Right))
 }
 
 // Insert adds a new FileItem to the BST, maintaining sorted order by path.

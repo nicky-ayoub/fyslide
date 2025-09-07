@@ -430,7 +430,7 @@ func (tdb *TagDB) StreamAllImagePaths(pathChan chan<- string) {
 		if bucket == nil {
 			return nil
 		}
-		return bucket.ForEach(func(k, v []byte) error {
+		return bucket.ForEach(func(k, _ []byte) error {
 			// As we are in a View transaction, we must copy the key `k`
 			// because it's only valid for the life of the transaction.
 			pathCopy := make([]byte, len(k))
