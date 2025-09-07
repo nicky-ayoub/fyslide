@@ -251,6 +251,34 @@ func (t *FileItemAugmentedBST) selectNode(node *AugmentedBSTNode, index int) *Fi
 	return &node.Item
 }
 
+// GetIndexOfItem finds the 0-based index of an item with a given path.
+// Returns the index and true if found, or -1 and false if not found.
+func (t *FileItemAugmentedBST) GetIndexOfItem(path string) (int, bool) {
+	return t.rank(t.Root, path)
+}
+
+// rank is the recursive helper to find the index of a given path.
+func (t *FileItemAugmentedBST) rank(node *AugmentedBSTNode, path string) (int, bool) {
+	if node == nil {
+		return -1, false // Not found
+	}
+
+	if path < node.Item.Path {
+		return t.rank(node.Left, path)
+	} else if path > node.Item.Path {
+		// The index in the right subtree is relative, so we add the size of the
+		// left subtree and the root (1) to it.
+		rightRank, found := t.rank(node.Right, path)
+		if !found {
+			return -1, false
+		}
+		return size(node.Left) + 1 + rightRank, true
+	}
+
+	// Found the node. Its index is the size of its left subtree.
+	return size(node.Left), true
+}
+
 // ToSlice performs an in-order traversal of the tree to return all items
 // as a perfectly sorted slice of FileItems.
 func (t *FileItemAugmentedBST) ToSlice() FileItems {
