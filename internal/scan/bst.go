@@ -1,33 +1,48 @@
 package scan
 
-// BSTNode represents a node in the Binary Search Tree.
-type BSTNode struct {
+// AugmentedBSTNode represents a node in an Order-Statistic Tree (a type of Augmented BST).
+// It includes a 'Size' field to enable efficient index-based lookups.
+type AugmentedBSTNode struct {
 	Item  FileItem
-	Left  *BSTNode
-	Right *BSTNode
+	Left  *AugmentedBSTNode
+	Right *AugmentedBSTNode
+	Size  int // The number of nodes in the subtree rooted at this node (including itself)
 }
 
-// FileItemBST represents the Binary Search Tree for FileItems.
-type FileItemBST struct {
-	Root *BSTNode
+// FileItemAugmentedBST represents the Augmented Binary Search Tree for FileItems.
+type FileItemAugmentedBST struct {
+	Root *AugmentedBSTNode
 }
 
-// NewFileItemBST creates a new, empty BST.
-func NewFileItemBST() *FileItemBST {
-	return &FileItemBST{}
+// NewFileItemAugmentedBST creates a new, empty Augmented BST.
+func NewFileItemAugmentedBST() *FileItemAugmentedBST {
+	return &FileItemAugmentedBST{}
+}
+
+// size is a helper function to safely get the size of a node's subtree.
+func size(n *AugmentedBSTNode) int {
+	if n == nil {
+		return 0
+	}
+	return n.Size
+}
+
+// updateSize recalculates the size of a node based on its children.
+func (n *AugmentedBSTNode) updateSize() {
+	n.Size = 1 + size(n.Left) + size(n.Right)
 }
 
 // Insert adds a new FileItem to the BST, maintaining sorted order by path.
 // It recursively finds the correct position for the new item.
-func (t *FileItemBST) Insert(item FileItem) {
+func (t *FileItemAugmentedBST) Insert(item FileItem) {
 	t.Root = t.insert(t.Root, item)
 }
 
 // insert is a recursive helper function for Insert.
-func (t *FileItemBST) insert(node *BSTNode, item FileItem) *BSTNode {
+func (t *FileItemAugmentedBST) insert(node *AugmentedBSTNode, item FileItem) *AugmentedBSTNode {
 	// If the current node is nil, we've found the insertion point.
 	if node == nil {
-		return &BSTNode{Item: item}
+		return &AugmentedBSTNode{Item: item, Size: 1}
 	}
 
 	// Compare paths to decide whether to go left or right.
@@ -38,19 +53,56 @@ func (t *FileItemBST) insert(node *BSTNode, item FileItem) *BSTNode {
 		node.Right = t.insert(node.Right, item)
 	}
 
+	// After insertion in a subtree, update the size of the current node.
+	node.updateSize()
 	return node
+}
+
+// GetItemByIndex finds the k-th smallest item in the tree (0-indexed).
+// This is the core advantage of an augmented tree, providing O(log n) access.
+func (t *FileItemAugmentedBST) GetItemByIndex(index int) (*FileItem, bool) {
+	if t.Root == nil || index < 0 || index >= t.Root.Size {
+		return nil, false
+	}
+	return t.selectNode(t.Root, index), true
+}
+
+// selectNode is the recursive helper to find the node at a specific index.
+func (t *FileItemAugmentedBST) selectNode(node *AugmentedBSTNode, index int) *FileItem {
+	if node == nil {
+		return nil // Should not happen if bounds are checked
+	}
+
+	// The rank of the current node is the number of items in its left subtree.
+	leftSize := size(node.Left)
+
+	if index < leftSize {
+		// The target is in the left subtree.
+		return t.selectNode(node.Left, index)
+	} else if index > leftSize {
+		// The target is in the right subtree. We adjust the index accordingly.
+		return t.selectNode(node.Right, index-leftSize-1)
+	}
+
+	// If index == leftSize, we've found our node.
+	return &node.Item
 }
 
 // ToSlice performs an in-order traversal of the tree to return all items
 // as a perfectly sorted slice of FileItems.
-func (t *FileItemBST) ToSlice() FileItems {
+func (t *FileItemAugmentedBST) ToSlice() FileItems {
 	var items FileItems
+	if t.Root == nil {
+		return items
+	}
+	// Pre-allocate the slice for efficiency since we know the final size.
+	items = make(FileItems, 0, t.Root.Size)
 	t.inOrder(t.Root, &items)
 	return items
 }
 
 // inOrder is the recursive helper for the in-order traversal.
-func (t *FileItemBST) inOrder(node *BSTNode, items *FileItems) {
+func (t *FileItemAugmentedBST) inOrder(node *AugmentedBSTNode, items *FileItems) {
 	if node == nil {
 		return
 	}
