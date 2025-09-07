@@ -58,6 +58,54 @@ func (t *FileItemAugmentedBST) insert(node *AugmentedBSTNode, item FileItem) *Au
 	return node
 }
 
+// Remove deletes an item from the BST based on its path.
+func (t *FileItemAugmentedBST) Remove(path string) {
+	t.Root = t.remove(t.Root, path)
+}
+
+// remove is the recursive helper for deletion.
+func (t *FileItemAugmentedBST) remove(node *AugmentedBSTNode, path string) *AugmentedBSTNode {
+	if node == nil {
+		return nil // Item not found, nothing to do.
+	}
+
+	// Find the node to remove.
+	if path < node.Item.Path {
+		node.Left = t.remove(node.Left, path)
+	} else if path > node.Item.Path {
+		node.Right = t.remove(node.Right, path)
+	} else {
+		// Node found. Handle the three cases for deletion.
+		// Case 1: Node has no left child.
+		if node.Left == nil {
+			return node.Right
+		}
+		// Case 2: Node has no right child.
+		if node.Right == nil {
+			return node.Left
+		}
+
+		// Case 3: Node has two children.
+		// Find the in-order successor (smallest node in the right subtree).
+		temp := t.findMin(node.Right)
+		// Copy the successor's data to this node.
+		node.Item = temp.Item
+		// Delete the in-order successor from the right subtree.
+		node.Right = t.remove(node.Right, temp.Item.Path)
+	}
+
+	node.updateSize()
+	return node
+}
+
+// findMin finds the node with the minimum value (path) in a given subtree.
+func (t *FileItemAugmentedBST) findMin(node *AugmentedBSTNode) *AugmentedBSTNode {
+	for node != nil && node.Left != nil {
+		node = node.Left
+	}
+	return node
+}
+
 // GetItemByIndex finds the k-th smallest item in the tree (0-indexed).
 // This is the core advantage of an augmented tree, providing O(log n) access.
 func (t *FileItemAugmentedBST) GetItemByIndex(index int) (*FileItem, bool) {
