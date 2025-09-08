@@ -89,15 +89,18 @@ func (lm *LogUIManager) updateLogDisplay() {
 	msg := lm.logMessages[lm.currentLogIndex]
 	idx := lm.currentLogIndex
 	count := len(lm.logMessages)
+	upDisabled := idx <= 0
+	downDisabled := idx >= count-1
+
 	fyne.Do(func() {
 		lm.statusLogLabel.SetText(fmt.Sprintf("[%d/%d] %s", idx+1, count, msg))
 
-		if lm.currentLogIndex <= 0 {
+		if upDisabled {
 			lm.statusLogUpBtn.Disable()
 		} else {
 			lm.statusLogUpBtn.Enable()
 		}
-		if lm.currentLogIndex >= len(lm.logMessages)-1 {
+		if downDisabled {
 			lm.statusLogDownBtn.Disable()
 		} else {
 			lm.statusLogDownBtn.Enable()
@@ -114,7 +117,7 @@ func (lm *LogUIManager) ShowPreviousLogMessage() {
 		return
 	}
 	lm.currentLogIndex--
-	lm.UpdateLogDisplay()
+	lm.updateLogDisplay()
 }
 
 // ShowNextLogMessage allows navigation through the log messages.
@@ -126,5 +129,5 @@ func (lm *LogUIManager) ShowNextLogMessage() {
 		return
 	}
 	lm.currentLogIndex++
-	lm.UpdateLogDisplay()
+	lm.updateLogDisplay()
 }
