@@ -303,3 +303,26 @@ func (a *App) updateScaleAlgorithmMenu() {
 		a.UI.MainWin.MainMenu().Refresh()
 	}
 }
+
+// SetThumbnailFormat sets the thumbnail encoding format and updates the menu.
+func (a *App) SetThumbnailFormat(format ThumbnailFormat) {
+	if a.thumbnailManager != nil {
+		a.thumbnailManager.SetFormat(format)
+		a.updateThumbnailFormatMenu()
+	}
+}
+
+// updateThumbnailFormatMenu updates the check marks on the thumbnail format menu.
+func (a *App) updateThumbnailFormatMenu() {
+	if a.UI.thumbPngMenuItem == nil || a.thumbnailManager == nil {
+		return // UI not ready
+	}
+	currentFormat := a.thumbnailManager.format
+	a.UI.thumbPngMenuItem.Checked = (currentFormat == PNG)
+	a.UI.thumbJpegMenuItem.Checked = (currentFormat == JPEG)
+
+	// Refresh the main menu to show checkmark changes
+	if a.UI.MainWin != nil && a.UI.MainWin.MainMenu() != nil {
+		a.UI.MainWin.MainMenu().Refresh()
+	}
+}

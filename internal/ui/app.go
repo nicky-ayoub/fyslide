@@ -176,6 +176,8 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 
 		// Set initial state for the scaling menu
 		ui.SetScaleAlgorithm(ui.GetScaleAlgorithm())
+		// Set initial state for the thumbnail format menu
+		ui.updateThumbnailFormatMenu()
 
 		// Now that the window is visible and all widgets have their final sizes,
 		// we can load the first image. The internal Reset() call within

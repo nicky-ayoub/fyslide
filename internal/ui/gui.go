@@ -33,6 +33,8 @@ type UI struct {
 	scaleNnMenuItem     *fyne.MenuItem        // Menu item for NearestNeighbor scaling
 	scaleBlMenuItem     *fyne.MenuItem        // Menu item for Bilinear scaling
 	scaleBcMenuItem     *fyne.MenuItem        // Menu item for Bicubic scaling
+	thumbPngMenuItem    *fyne.MenuItem        // Menu item for PNG thumbnails
+	thumbJpegMenuItem   *fyne.MenuItem        // Menu item for JPEG thumbnails
 
 	contentStack     *fyne.Container   // To hold the main views
 	imageContentView fyne.CanvasObject // ADDED: Holds the image view (split)
@@ -199,6 +201,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 	a.UI.scaleBlMenuItem = fyne.NewMenuItem("Bilinear", func() { a.SetScaleAlgorithm(Bilinear) })
 	a.UI.scaleBcMenuItem = fyne.NewMenuItem("Bicubic", func() { a.SetScaleAlgorithm(Bicubic) })
 
+	// --- Thumbnail Format Menu Items ---
+	a.UI.thumbPngMenuItem = fyne.NewMenuItem("PNG (Lossless)", func() { a.SetThumbnailFormat(PNG) })
+	a.UI.thumbJpegMenuItem = fyne.NewMenuItem("JPEG (Faster)", func() { a.SetThumbnailFormat(JPEG) })
+
 	view := fyne.NewMenu("View",
 		fyne.NewMenuItem("Next Image", func() { a.Navigation.Navigate(1) }),
 		fyne.NewMenuItem("Previous Image", a.Navigation.ShowPreviousImage),
@@ -210,6 +216,10 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			a.UI.scaleNnMenuItem,
 			a.UI.scaleBlMenuItem,
 			a.UI.scaleBcMenuItem,
+		)},
+		&fyne.MenuItem{Label: "Thumbnail Format", ChildMenu: fyne.NewMenu("Thumbnail Format",
+			a.UI.thumbPngMenuItem,
+			a.UI.thumbJpegMenuItem,
 		)},
 	)
 

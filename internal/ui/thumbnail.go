@@ -2,14 +2,17 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"fyslide/internal/service"
 	"image"
-	"image/png"
+	"image/jpeg"
 	"path/filepath"
 	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
+
+	"image/png"
 
 	"github.com/nfnt/resize"
 )
@@ -21,12 +24,23 @@ const (
 	ThumbnailHeight = 100
 )
 
+// ThumbnailFormat defines the encoding format for thumbnails.
+type ThumbnailFormat int
+
+const (
+	// PNG uses the PNG encoder (lossless, slower).
+	PNG ThumbnailFormat = iota
+	// JPEG uses the JPEG encoder (lossy, faster).
+	JPEG
+)
+
 // ThumbnailManager handles generation and caching of image thumbnails.
 type ThumbnailManager struct {
 	cache        map[string]fyne.Resource
 	cacheMutex   sync.RWMutex
 	imageService *service.ImageService
 	logger       func(string)
+	format       ThumbnailFormat
 }
 
 // NewThumbnailManager creates a new thumbnail manager.
@@ -35,14 +49,32 @@ func NewThumbnailManager(imageService *service.ImageService, logger func(string)
 		cache:        make(map[string]fyne.Resource),
 		imageService: imageService,
 		logger:       logger,
+		format:       PNG, // Default to PNG
 	}
 }
 
-// imageToBytes is a helper to convert image.Image to []byte for Fyne resources.
-func imageToBytes(img image.Image) []byte {
+// SetFormat sets the encoding format for new thumbnails and clears the cache.
+func (tm *ThumbnailManager) SetFormat(format ThumbnailFormat) {
+	tm.cacheMutex.Lock()
+	defer tm.cacheMutex.Unlock()
+	if tm.format != format {
+		tm.format = format
+		tm.cache = make(map[string]fyne.Resource) // Clear cache as format has changed
+		tm.logger(fmt.Sprintf("Thumbnail format changed, cache cleared."))
+	}
+}
+
+// imageToBytes converts an image.Image to a byte slice using the configured format.
+func (tm *ThumbnailManager) imageToBytes(img image.Image) []byte {
 	buf := new(bytes.Buffer)
-	err := png.Encode(buf, img)
+	var err error
+	if tm.format == JPEG {
+		err = jpeg.Encode(buf, img, &jpeg.Options{Quality: 80})
+	} else {
+		err = png.Encode(buf, img)
+	}
 	if err != nil {
+		tm.logger(fmt.Sprintf("Error encoding thumbnail: %v", err))
 		return nil
 	}
 	return buf.Bytes()
@@ -82,7 +114,7 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 			thumbImg = resize.Thumbnail(ThumbnailWidth, ThumbnailHeight, embeddedThumb, resize.Lanczos3)
 		}
 
-		thumbBytes := imageToBytes(thumbImg)
+		thumbBytes := tm.imageToBytes(thumbImg)
 		if thumbBytes == nil {
 			return
 		}
