@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"fyslide/internal/service"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -17,6 +18,7 @@ type NavigationHost interface {
 	IsSlideshowPaused() bool
 	TogglePlay()
 	GetWindow() fyne.Window
+	GetService() *service.Service
 }
 
 // NavigationController manages image navigation logic.
@@ -150,4 +152,58 @@ func (nc *NavigationController) ShowJumpToImageDialog() {
 
 	formDialog.Show()
 	nc.host.GetWindow().Canvas().Focus(entry)
+}
+
+// NextUntaggedImage finds and navigates to the next image that has no tags.
+func (nc *NavigationController) NextUntaggedImage() {
+	nc.findUntaggedImage(1)
+}
+
+// PreviousUntaggedImage finds and navigates to the previous image that has no tags.
+func (nc *NavigationController) PreviousUntaggedImage() {
+	nc.findUntaggedImage(-1)
+}
+
+// findUntaggedImage searches for an untagged image in the given direction.
+// A direction of 1 searches forward, and -1 searches backward.
+func (nc *NavigationController) findUntaggedImage(direction int) {
+	count := nc.imageState.GetCurrentImageCount()
+	if count < 2 { // No need to search if there's 0 or 1 image
+		return
+	}
+
+	currentIndex := nc.imageState.GetCurrentIndex()
+	searchIndex := currentIndex
+
+	// We'll check up to 'count' images. This prevents an infinite loop
+	// if no untagged images exist.
+	for i := 0; i < count; i++ {
+		searchIndex += direction
+
+		// Wrap around the list
+		if searchIndex >= count {
+			searchIndex = 0
+		}
+		if searchIndex < 0 {
+			searchIndex = count - 1
+		}
+
+		// If we've looped all the way back, stop.
+		if searchIndex == currentIndex {
+			return
+		}
+
+		item, err := nc.imageState.GetItemByViewIndex(searchIndex)
+		if err != nil || item == nil {
+			continue // Skip invalid items
+		}
+
+		tags, err := nc.host.GetService().ListTagsForImage(item.Path)
+		if err == nil && len(tags) == 0 {
+			// Found an untagged image
+			nc.NavigateToIndex(searchIndex)
+			return
+		}
+	}
+	// If the loop completes, no untagged images were found.
 }

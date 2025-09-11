@@ -28,6 +28,8 @@ func NewShortcutTable() *ShortcutTable {
 			{Description: "Skip Images Forward", Shortcut: "Page Down"},
 			{Description: "First Image", Shortcut: "Home"},
 			{Description: "Last Image", Shortcut: "End"},
+			{Description: "Next Untagged Image", Shortcut: "Ctrl+Arrow Right"},
+			{Description: "Previous Untagged Image", Shortcut: "Ctrl+Arrow Left"},
 			{Description: "Toggle Play/Pause Slideshow", Shortcut: "P or Space"},
 			{Description: "Delete Current Image", Shortcut: "Delete"},
 			{Description: "Close Dialog/Overlay", Shortcut: "Esc"},

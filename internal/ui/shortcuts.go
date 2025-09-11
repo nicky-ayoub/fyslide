@@ -21,6 +21,18 @@ func (a *App) buildKeyboardShortcuts() {
 		Modifier: a.UI.mainModKey,
 	}, func(_ fyne.Shortcut) { a.app.Quit() })
 
+	// ctrl+right to go to next untagged image
+	a.UI.MainWin.Canvas().AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyRight,
+		Modifier: a.UI.mainModKey,
+	}, func(_ fyne.Shortcut) { a.Navigation.NextUntaggedImage() })
+
+	// ctrl+left to go to previous untagged image
+	a.UI.MainWin.Canvas().AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyLeft,
+		Modifier: a.UI.mainModKey,
+	}, func(_ fyne.Shortcut) { a.Navigation.PreviousUntaggedImage() })
+
 	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
 		// --- Shortcuts that only apply when the image view is active ---
 		if a.isImageViewActive() {

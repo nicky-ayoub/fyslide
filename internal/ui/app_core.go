@@ -52,6 +52,11 @@ type App struct {
 
 // --- Host Interface Implementations ---
 
+// GetService returns the application's core service layer.
+func (a *App) GetService() *service.Service {
+	return a.Service
+}
+
 // GetImageService returns the application's image service.
 func (a *App) GetImageService() *service.ImageService {
 	return a.ImageService
