@@ -60,7 +60,7 @@ func (tm *ThumbnailManager) SetFormat(format ThumbnailFormat) {
 	if tm.format != format {
 		tm.format = format
 		tm.cache = make(map[string]fyne.Resource) // Clear cache as format has changed
-		tm.logger(fmt.Sprintf("Thumbnail format changed, cache cleared."))
+		tm.logger("Thumbnail format changed, cache cleared.")
 	}
 }
 
