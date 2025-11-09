@@ -103,8 +103,11 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.MediaSkipNextIcon(), func() { a.Navigation.Navigate(1) }),
 		widget.NewToolbarAction(theme.MediaFastForwardIcon(), a.Navigation.LastImage),
 		widget.NewToolbarAction(theme.ContentRedoIcon(), a.Navigation.ShowJumpToImageDialog),
-		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.showAddTagDialog),         // Changed from a.tagFile
-		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.showRemoveTagDialog), // Changed from a.removeTag
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.NavigateBackIcon(), a.Navigation.PreviousUntaggedImage), // Find Previous Untagged
+		widget.NewToolbarAction(theme.NavigateNextIcon(), a.Navigation.NextUntaggedImage),     // Find Next Untagged
+		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.showAddTagDialog),             // Changed from a.tagFile
+		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.showRemoveTagDialog),     // Changed from a.removeTag
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSeparator(),
