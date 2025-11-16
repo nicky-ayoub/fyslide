@@ -6,18 +6,21 @@ import (
 )
 
 // shortcutDetail holds the data for a single row in the shortcuts table.
+// It contains the description of the shortcut and the key combination.
 type shortcutDetail struct {
 	Description string
 	Shortcut    string
 }
 
 // ShortcutTable is a custom widget that displays a table of keyboard shortcuts.
+// It is a read-only table that is not interactive.
 type ShortcutTable struct {
 	widget.BaseWidget
 	shortcutData []shortcutDetail
 }
 
 // NewShortcutTable creates a new ShortcutTable widget.
+// It initializes the shortcut data and extends the base widget.
 func NewShortcutTable() *ShortcutTable {
 	st := &ShortcutTable{
 		shortcutData: []shortcutDetail{
@@ -31,11 +34,12 @@ func NewShortcutTable() *ShortcutTable {
 			{Description: "Next Untagged Image", Shortcut: "Ctrl+Arrow Right"},
 			{Description: "Previous Untagged Image", Shortcut: "Ctrl+Arrow Left"},
 			{Description: "Toggle Play/Pause Slideshow", Shortcut: "P or Space"},
+			{Description: "Rotate Image Clockwise", Shortcut: "R"},
 			{Description: "Delete Current Image", Shortcut: "Delete"},
 			{Description: "Close Dialog/Overlay", Shortcut: "Esc"},
 			{Description: "Zoom In Image", Shortcut: "+"},
 			{Description: "Zoom Out Image", Shortcut: "-"},
-			{Description: "Reset Image Zoom/Pan", Shortcut: "0"},
+			{Description: "Reset Image Zoom/Pan", Shortcut: "0 or Insert"},
 			{Description: "Pan Image Up", Shortcut: "Arrow Up"},
 			{Description: "Pan Image Down", Shortcut: "Arrow Down"},
 		},
@@ -44,7 +48,10 @@ func NewShortcutTable() *ShortcutTable {
 	return st
 }
 
-// CreateRenderer implements fyne.Widget.
+// CreateRenderer is a custom renderer for the ShortcutTable widget.
+// It creates a table with two columns: "Description" and "Shortcut".
+// The first row of the table is a header, and the rest of the rows
+// contain the shortcut data.
 func (st *ShortcutTable) CreateRenderer() fyne.WidgetRenderer {
 	table := widget.NewTable(
 		func() (int, int) { return len(st.shortcutData) + 1, 2 }, // +1 for header row

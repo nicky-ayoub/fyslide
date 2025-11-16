@@ -137,6 +137,7 @@ func (tv *TagsView) RefreshData() {
 	tv.loadAndFilterTagData()
 }
 
+// sortTagList sorts the internal list of all tags based on the current sortMode.
 func (tv *TagsView) sortTagList() {
 	sort.Slice(tv.allTags, func(i, j int) bool {
 		tagI := tv.allTags[i]
