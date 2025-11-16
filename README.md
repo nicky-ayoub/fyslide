@@ -4,12 +4,24 @@ A Fyne-based Image Browser and Slideshow application with powerful tagging and f
 
 ## Features
 
-*   **Image Browsing**: Navigate through images with standard controls (next, previous, first, last) and keyboard shortcuts.
+*   **Image Browsing**: Navigate through images with keyboard shortcuts (arrows, home, end, etc.) or UI buttons.
 *   **Slideshow**: View images in an automated slideshow with configurable timing.
 *   **Random Mode**: Shuffle the image viewing order.
+*   **Zoom & Pan**: Zoom in and out of images with the mouse wheel or keys, and pan by dragging.
+*   **Image Manipulation**: Rotate the current image clockwise.
+*   **Advanced Scaling**: Choose between Nearest Neighbor, Bilinear, and Bicubic scaling algorithms for optimal image quality.
+*   **Thumbnail Browser**: A collapsible thumbnail strip for quick visual navigation.
 *   **Tagging**: Add and remove tags for individual images or entire directories.
 *   **Filtering**: Filter the image list by one or more tags.
+*   **Tag Management**: A dedicated view to see all tags, their usage counts, and remove tags globally.
 *   **Persistent Database**: Tags are stored in a local BoltDB database.
+*   **Theming**: Supports both light and dark themes.
+
+## Screenshots
+
+![FySlide Screenshot](./assets/screenshot.png)
+
+*The main window of FySlide showing an image, the thumbnail browser, and the information panel.*
 
 ## Building from Source
 
@@ -29,18 +41,41 @@ go build -ldflags="-s -w" -o fyslide main.go
 
 ## Command-line Flags
 
-The application's behavior can be modified with the following flags:
+The application's behavior can be modified with the following flags. The final argument should be the directory to scan.
 
 | Flag                 | Default | Description                                            |
 | -------------------- | ------- | ------------------------------------------------------ |
-| `-history-size`      | `10`    | Number of last viewed images to remember.              |
+| `-load-db`           | `false` | Pre-load known image paths from database on startup.   |
 | `-slideshow-interval`| `3.0`   | Slideshow image display interval in seconds.           |
 | `-skip-count`        | `20`    | Number of images to skip with PageUp/PageDown.         |
 
 Example:
 ```bash
-./fyslide -slideshow-interval=5.0
+./fyslide -slideshow-interval=5.0 /path/to/your/images
 ```
+
+## Keyboard Shortcuts
+
+| Description                   | Shortcut                |
+| ----------------------------- | ----------------------- |
+| Quit Application              | `Ctrl+Q` or `Q`         |
+| Next Image                    | `Arrow Right`           |
+| Previous Image                | `Arrow Left`            |
+| Skip Images Forward           | `Page Down`             |
+| Skip Images Back              | `Page Up`               |
+| First Image                   | `Home`                  |
+| Last Image                    | `End`                   |
+| Next Untagged Image           | `Ctrl+Arrow Right`      |
+| Previous Untagged Image       | `Ctrl+Arrow Left`       |
+| Toggle Play/Pause Slideshow   | `P` or `Space`          |
+| Rotate Image Clockwise        | `R`                     |
+| Delete Current Image          | `Delete`                |
+| Close Dialog/Overlay          | `Esc`                   |
+| Zoom In Image                 | `+`                     |
+| Zoom Out Image                | `-`                     |
+| Reset Image Zoom/Pan          | `0` or `Insert`         |
+| Pan Image Up                  | `Arrow Up`              |
+| Pan Image Down                | `Arrow Down`            |
 
 ## Command-line Interface (CLI)
 
