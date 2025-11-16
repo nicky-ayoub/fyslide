@@ -111,6 +111,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.ViewRefreshIcon(), a.RotateImage), // Rotate button
 		a.UI.showFullSizeAction,
 		widget.NewToolbarSpacer(),
 

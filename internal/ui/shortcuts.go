@@ -63,6 +63,8 @@ func (a *App) buildKeyboardShortcuts() {
 			a.Navigation.Navigate(1)
 		case fyne.KeyLeft:
 			a.Navigation.ShowPreviousImage()
+		case fyne.KeyR:
+			a.RotateImage()
 		case fyne.KeyQ:
 			a.app.Quit()
 		case fyne.KeyP, fyne.KeySpace:

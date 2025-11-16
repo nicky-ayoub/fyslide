@@ -261,6 +261,14 @@ func (a *App) toggleRandom() {
 	a.LoadAndDisplayCurrentImage()
 }
 
+// RotateImage rotates the currently displayed image clockwise.
+func (a *App) RotateImage() {
+	if a.zoomPanArea != nil {
+		a.slideshowManager.Pause(true) // Pause slideshow on user interaction
+		a.zoomPanArea.Rotate()
+	}
+}
+
 // toggleTheme switches between the light and dark application themes.
 func (a *App) toggleTheme() {
 	a.isDarkTheme = !a.isDarkTheme

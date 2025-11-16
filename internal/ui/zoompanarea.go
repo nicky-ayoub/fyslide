@@ -50,6 +50,7 @@ type ZoomPanArea struct {
 	OnRightTapped    func() // Callback for right-click events
 	onZoomPanChange  func() // Callback for when zoom or pan changes - e.g., to update UI elements
 	currentAlgorithm ScaleAlgorithmType
+	rotation         float32 // Added to track rotation in degrees
 }
 
 // NewZoomPanArea creates a new ZoomPanArea widget.
@@ -66,6 +67,7 @@ func NewZoomPanArea(img image.Image, onInteraction func(), onDoubleTapped func()
 		OnDoubleTapped:   onDoubleTapped,
 		OnRightTapped:    onRightTapped,
 		currentAlgorithm: Bilinear, // Default to Bilinear for better quality
+		rotation:         0,
 	}
 	zpa.raster = canvas.NewRaster(zpa.draw)
 	zpa.ExtendBaseWidget(zpa)
@@ -91,7 +93,8 @@ func (zpa *ZoomPanArea) GetScaleAlgorithm() ScaleAlgorithmType {
 // SetImage updates the image displayed by the widget.
 func (zpa *ZoomPanArea) SetImage(img image.Image) {
 	zpa.originalImg = img
-	zpa.Reset() // Reset zoom/pan for the new image, this will also call onZoomPanChange
+	zpa.rotation = 0 // Reset rotation for new image
+	zpa.Reset()      // Reset zoom/pan for the new image, this will also call onZoomPanChange
 }
 
 // SetOnZoomPanChange sets a callback function to be invoked when zoom or pan changes.
@@ -101,6 +104,7 @@ func (zpa *ZoomPanArea) SetOnZoomPanChange(callback func()) {
 
 // Reset centers the image and resets zoom to 1.0 or a fit-to-view.
 func (zpa *ZoomPanArea) Reset() {
+	zpa.rotation = 0
 	zpa.panOffset = fyne.Position{} // Reset pan first
 
 	if zpa.originalImg != nil && zpa.Size().Width > 0 && zpa.Size().Height > 0 {
@@ -131,6 +135,19 @@ func (zpa *ZoomPanArea) Reset() {
 	if zpa.onZoomPanChange != nil {
 		zpa.onZoomPanChange()
 	}
+}
+
+// Rotate increments the image rotation by 90 degrees clockwise.
+func (zpa *ZoomPanArea) Rotate() {
+	if zpa.originalImg == nil {
+		return
+	}
+	zpa.rotation += 90
+	if zpa.rotation >= 360 {
+		zpa.rotation = 0
+	}
+	zpa.Refresh()
+	// You might want a callback here if other UI elements need to know about rotation.
 }
 
 // ShowFullSize sets the zoom to 100% (1.0) and centers the image.
@@ -365,11 +382,32 @@ func (zpa *ZoomPanArea) draw(w, h int) image.Image {
 
 	invZoomFactor := float32(1.0) / zpa.zoomFactor
 
+	// Pre-calculate for rotation
+	rad := zpa.rotation * (math.Pi / 180)
+	sin, cos := float32(math.Sin(float64(rad))), float32(math.Cos(float64(rad)))
+
+	// Center of the original image
+	imgCenterX := float32(srcBounds.Min.X + srcBounds.Dx()/2)
+	imgCenterY := float32(srcBounds.Min.Y + srcBounds.Dy()/2)
+
 	for dy := 0; dy < h; dy++ {
 		for dx := 0; dx < w; dx++ {
-			// Calculate the corresponding source pixel coordinates in the original image.
-			sx := (float32(dx) - zpa.panOffset.X) * invZoomFactor
-			sy := (float32(dy) - zpa.panOffset.Y) * invZoomFactor
+			// 1. Translate destination pixel to be relative to the view center, then scale and pan.
+			// This gives us the coordinate in the unrotated source image space.
+			sxUnrotated := (float32(dx) - zpa.panOffset.X) * invZoomFactor
+			syUnrotated := (float32(dy) - zpa.panOffset.Y) * invZoomFactor
+
+			// 2. Translate to be relative to the image's center.
+			sxCentered := sxUnrotated - imgCenterX
+			syCentered := syUnrotated - imgCenterY
+
+			// 3. Apply the inverse rotation.
+			sxRotated := sxCentered*cos + syCentered*sin
+			syRotated := -sxCentered*sin + syCentered*cos
+
+			// 4. Translate back from the image's center to get the final source coordinate.
+			sx := sxRotated + imgCenterX
+			sy := syRotated + imgCenterY
 
 			// Check if the source point is within the original image bounds
 			if sx >= float32(srcBounds.Min.X) && sx < float32(srcBounds.Max.X) &&
