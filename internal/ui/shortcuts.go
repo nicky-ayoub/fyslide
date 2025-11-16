@@ -12,6 +12,9 @@ const (
 	keyboardPanStep = 30.0
 )
 
+// keyHandler defines a function type for handling simple key presses.
+type keyHandler func()
+
 func (a *App) buildKeyboardShortcuts() {
 	// keyboard shortcuts
 
@@ -33,56 +36,56 @@ func (a *App) buildKeyboardShortcuts() {
 		Modifier: a.UI.mainModKey,
 	}, func(_ fyne.Shortcut) { a.Navigation.PreviousUntaggedImage() })
 
+	// --- Define handlers for OnTypedKey ---
+
+	// imageViewKeyHandlers maps keys to functions that should only run when the image view is active.
+	imageViewKeyHandlers := map[fyne.KeyName]keyHandler{
+		fyne.KeyUp:   func() { a.zoomPanArea.Pan(fyne.Delta{DY: -keyboardPanStep}) }, // Pan image up
+		fyne.KeyDown: func() { a.zoomPanArea.Pan(fyne.Delta{DY: keyboardPanStep}) },  // Pan image down
+		fyne.KeyPlus: func() { // Numpad Add or regular '+' / '='
+			a.slideshowManager.Pause(true)                                         // Pause slideshow
+			a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
+		},
+		fyne.KeyMinus: func() { // Numpad Subtract or regular '-' / '_'
+			a.slideshowManager.Pause(true)                                          // Pause slideshow
+			a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
+		},
+		fyne.Key0:      func() { a.zoomPanArea.Reset() },
+		fyne.KeyInsert: func() { a.zoomPanArea.Reset() },
+	}
+
+	// globalKeyHandlers maps keys to functions that run in any view.
+	globalKeyHandlers := map[fyne.KeyName]keyHandler{
+		fyne.KeyRight:    func() { a.Navigation.Navigate(1) },
+		fyne.KeyLeft:     func() { a.Navigation.ShowPreviousImage() },
+		fyne.KeyR:        func() { a.RotateImage() },
+		fyne.KeyQ:        func() { a.app.Quit() },
+		fyne.KeyP:        func() { a.TogglePlay() },
+		fyne.KeySpace:    func() { a.TogglePlay() },
+		fyne.KeyPageUp:   func() { a.Navigation.Navigate(-a.skipCount) },
+		fyne.KeyPageDown: func() { a.Navigation.Navigate(a.skipCount) },
+		fyne.KeyHome:     func() { a.Navigation.FirstImage() },
+		fyne.KeyEnd:      func() { a.Navigation.LastImage() },
+		fyne.KeyDelete:   func() { a.deleteFileCheck() },
+		fyne.KeyEscape: func() {
+			if len(a.UI.MainWin.Canvas().Overlays().List()) > 0 {
+				a.UI.MainWin.Canvas().Overlays().Top().Hide()
+			}
+		},
+	}
+
 	a.UI.MainWin.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
-		// --- Shortcuts that only apply when the image view is active ---
+		// First, check for image-view-specific shortcuts if the view is active.
 		if a.isImageViewActive() {
-			switch key.Name {
-			case fyne.KeyUp:
-				a.zoomPanArea.Pan(fyne.Delta{DY: -keyboardPanStep}) // Pan image up
-				return
-			case fyne.KeyDown:
-				a.zoomPanArea.Pan(fyne.Delta{DY: keyboardPanStep}) // Pan image down
-				return
-			case fyne.KeyPlus: // Numpad Add or regular '+' / '='
-				a.slideshowManager.Pause(true)                                         // Pause slideshow
-				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Positive DY for zoom in
-				return
-			case fyne.KeyMinus: // Numpad Subtract or regular '-' / '_'
-				a.slideshowManager.Pause(true)                                          // Pause slideshow
-				a.zoomPanArea.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: -1}}) // Negative DY for zoom out
-				return
-			case fyne.Key0, fyne.KeyInsert: // Reset zoom/pan
-				a.zoomPanArea.Reset()
+			if handler, ok := imageViewKeyHandlers[key.Name]; ok {
+				handler()
 				return
 			}
 		}
 
-		// --- Global shortcuts that work in any view ---
-		switch key.Name {
-		case fyne.KeyRight:
-			a.Navigation.Navigate(1)
-		case fyne.KeyLeft:
-			a.Navigation.ShowPreviousImage()
-		case fyne.KeyR:
-			a.RotateImage()
-		case fyne.KeyQ:
-			a.app.Quit()
-		case fyne.KeyP, fyne.KeySpace:
-			a.TogglePlay()
-		case fyne.KeyPageUp:
-			a.Navigation.Navigate(-a.skipCount)
-		case fyne.KeyPageDown:
-			a.Navigation.Navigate(a.skipCount)
-		case fyne.KeyHome:
-			a.Navigation.FirstImage()
-		case fyne.KeyEnd:
-			a.Navigation.LastImage()
-		case fyne.KeyDelete:
-			a.deleteFileCheck()
-		case fyne.KeyEscape:
-			if len(a.UI.MainWin.Canvas().Overlays().List()) > 0 {
-				a.UI.MainWin.Canvas().Overlays().Top().Hide()
-			}
+		// If no specific handler was found or the view wasn't active, check global shortcuts.
+		if handler, ok := globalKeyHandlers[key.Name]; ok {
+			handler()
 		}
 	})
 }
