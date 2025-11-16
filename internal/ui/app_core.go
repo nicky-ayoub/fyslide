@@ -11,6 +11,15 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+const (
+	// prefThumbnailFormat is the key for storing the thumbnail format preference.
+	prefThumbnailFormat = "thumbnailFormat"
+	// prefScaleAlgorithm is the key for storing the image scaling algorithm.
+	prefScaleAlgorithm = "scaleAlgorithm"
+	// prefSplitterOffset is the key for storing the main splitter's offset.
+	prefSplitterOffset = "splitterOffset"
+)
+
 // Img struct holds data for the currently displayed image.
 type Img struct {
 	OriginalImage image.Image

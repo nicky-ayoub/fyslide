@@ -287,6 +287,17 @@ func (a *App) toggleTheme() {
 func (a *App) SetScaleAlgorithm(algo ScaleAlgorithmType) {
 	if a.zoomPanArea != nil {
 		a.zoomPanArea.SetScaleAlgorithm(algo)
+
+		// Persist the setting
+		algoStr := "bilinear"
+		if algo == NearestNeighbor {
+			algoStr = "nearest"
+		} else if algo == Bicubic {
+			algoStr = "bicubic"
+		}
+		if a.app != nil {
+			a.app.Preferences().SetString(prefScaleAlgorithm, algoStr)
+		}
 		a.updateScaleAlgorithmMenu()
 	}
 }
@@ -316,6 +327,16 @@ func (a *App) updateScaleAlgorithmMenu() {
 func (a *App) SetThumbnailFormat(format ThumbnailFormat) {
 	if a.thumbnailManager != nil {
 		a.thumbnailManager.SetFormat(format)
+
+		// Persist the setting
+		formatStr := "jpeg"
+		if format == PNG {
+			formatStr = "png"
+		}
+		if a.app != nil {
+			a.app.Preferences().SetString(prefThumbnailFormat, formatStr)
+		}
+
 		a.updateThumbnailFormatMenu()
 	}
 }

@@ -131,6 +131,11 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 			dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
 			return
 		}
+		// Save the splitter offset before closing
+		if ui.UI.split != nil {
+			ui.app.Preferences().SetFloat(prefSplitterOffset, ui.UI.split.Offset)
+		}
+
 		log.Println("Closing application resources...")
 		if ui.tagDB != nil {
 			if err := ui.tagDB.Close(); err != nil {
@@ -174,10 +179,28 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 		splashWin.Close()
 		ui.UI.MainWin.Show()
 
-		// Set initial state for the scaling menu
-		ui.SetScaleAlgorithm(ui.GetScaleAlgorithm())
-		// Set initial state for the thumbnail format menu
+		// --- Load and apply persistent settings ---
+		// Load scaling algorithm preference, defaulting to Bilinear.
+		algoStr := ui.app.Preferences().StringWithFallback(prefScaleAlgorithm, "bilinear")
+		initialAlgo := Bilinear
+		if algoStr == "nearest" {
+			initialAlgo = NearestNeighbor
+		} else if algoStr == "bicubic" {
+			initialAlgo = Bicubic
+		}
+		ui.SetScaleAlgorithm(initialAlgo)
+
+		// Load thumbnail format preference, defaulting to JPEG.
+		formatStr := ui.app.Preferences().StringWithFallback(prefThumbnailFormat, "jpeg")
+		initialFormat := JPEG
+		if formatStr == "png" {
+			initialFormat = PNG
+		}
+		ui.SetThumbnailFormat(initialFormat)
 		ui.updateThumbnailFormatMenu()
+
+		// Load and apply splitter offset
+		ui.UI.split.SetOffset(ui.app.Preferences().FloatWithFallback(prefSplitterOffset, initialSplitOffset))
 
 		// Now that the window is visible and all widgets have their final sizes,
 		// we can load the first image. The internal Reset() call within
