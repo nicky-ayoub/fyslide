@@ -365,7 +365,7 @@ func (t *TaggingController) showAddTagDialog() {
 		rawInput := tagEntry.Text
 		applyToAll := applyToAllCheck.Checked
 
-		potentialTags := regexp.MustCompile(`[,.]`).Split(rawInput, -1)
+		potentialTags := regexp.MustCompile(`[,.':;+]`).Split(rawInput, -1)
 		var tagsToAdd []string
 		uniqueTags := make(map[string]bool)
 		for _, pt := range potentialTags {

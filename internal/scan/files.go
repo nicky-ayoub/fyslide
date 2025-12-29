@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"log"
 	"path/filepath"
-	"strings"
 )
 
 // FileScanner defines the interface for scanning files.
@@ -43,9 +42,13 @@ func NewFileItem(path string, fi fs.FileInfo) FileItem {
 
 }
 
+func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
+	findFiles(dir, IsImage, out, logger)
+}
+
 // findImageFiles recursively scans dir for supported image files and sends them to the out channel.
 // It closes the out channel when done.
-func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
+func findFiles(dir string, predicate Predicate, out chan<- FileItem, logger LoggerFunc) {
 	defer close(out) // Ensure channel is closed when WalkDir finishes or panics
 
 	logMsg := func(format string, args ...interface{}) {
@@ -65,7 +68,7 @@ func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
 			return nil // Continue if possible, or return err to stop
 		}
 
-		if !d.IsDir() && isImage(d.Name()) {
+		if !d.IsDir() && predicate(d.Name()) {
 			// Get FileInfo. d.Info() is efficient.
 			info, infoErr := d.Info()
 			if infoErr != nil {
@@ -110,13 +113,4 @@ func Run(dir string, logger LoggerFunc) <-chan FileItem {
 	}()
 
 	return out
-}
-
-func isImage(fileName string) bool {
-	switch strings.ToLower(filepath.Ext(fileName)) {
-	case ".png", ".jpg", ".jpeg", ".gif":
-		return true
-	default:
-		return false
-	}
 }

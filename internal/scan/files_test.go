@@ -40,7 +40,7 @@ func TestIsImage(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := isImage(test.name)
+		result := IsImage(test.name)
 		if result != test.expected {
 			t.Errorf("isImage(%s) = %v; want %v", test.name, result, test.expected)
 		}
