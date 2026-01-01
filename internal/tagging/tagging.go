@@ -10,7 +10,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -20,6 +22,9 @@ const (
 	imagesToTagsBucket = "ImagesToTags" // Bucket name for image path to tags mapping.
 	tagsToImagesBucket = "TagsToImages" // Bucket name for tag to image paths mapping.
 )
+
+// tagSplitter is a regex to split input strings by common delimiters.
+var tagSplitter = regexp.MustCompile(`[,.':;+]`)
 
 // LoggerFunc defines a function signature for logging messages.
 // This allows the ui package to provide its logging mechanism.
@@ -113,6 +118,23 @@ func (tdb *TagDB) Close() error {
 }
 
 // --- Helper Functions ---
+
+// ParseTagInput parses a raw input string into a slice of normalized tags.
+// It splits by common delimiters (comma, dot, quotes, semicolon, plus),
+// trims whitespace, lowercases, and removes duplicates.
+func NormalizeTags(rawInput string) []string {
+	potentialTags := tagSplitter.Split(rawInput, -1)
+	var normalized []string
+	unique := make(map[string]bool)
+	for _, pt := range potentialTags {
+		tag := strings.ToLower(strings.TrimSpace(pt))
+		if tag != "" && !unique[tag] {
+			normalized = append(normalized, tag)
+			unique[tag] = true
+		}
+	}
+	return normalized
+}
 
 // encodeList marshals a list of strings into a JSON byte slice.
 func encodeList(list []string) ([]byte, error) {

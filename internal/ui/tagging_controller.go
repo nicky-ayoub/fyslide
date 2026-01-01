@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
 	"fyslide/internal/slideshow"
+	"fyslide/internal/tagging"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -365,16 +365,7 @@ func (t *TaggingController) showAddTagDialog() {
 		rawInput := tagEntry.Text
 		applyToAll := applyToAllCheck.Checked
 
-		potentialTags := regexp.MustCompile(`[,.':;+]`).Split(rawInput, -1)
-		var tagsToAdd []string
-		uniqueTags := make(map[string]bool)
-		for _, pt := range potentialTags {
-			tag := strings.ToLower(strings.TrimSpace(pt))
-			if tag != "" && !uniqueTags[tag] {
-				tagsToAdd = append(tagsToAdd, tag)
-				uniqueTags[tag] = true
-			}
-		}
+		tagsToAdd := tagging.NormalizeTags(rawInput)
 
 		if len(tagsToAdd) == 0 {
 			dialog.ShowInformation("Add Tags", "No valid tags entered.", t.host.GetMainWindow())
