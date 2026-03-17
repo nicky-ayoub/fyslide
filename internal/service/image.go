@@ -3,14 +3,16 @@ package service
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"  // Register GIF decoder
 	_ "image/jpeg" // Register JPEG decoder
 	_ "image/png"  // Register PNG decoder
 	"os"
+	"path/filepath"
 	"time"
+
+	"log"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -85,7 +87,18 @@ func (is *ImageService) GetImageInfo(path string) (*ImageInfo, image.Image, erro
 
 // GetEmbeddedThumbnail attempts to read an embedded EXIF thumbnail from an image file.
 // It returns the decoded thumbnail image or an error if one is not found or cannot be decoded.
-func (is *ImageService) GetEmbeddedThumbnail(path string) (image.Image, error) {
+func (is *ImageService) GetEmbeddedThumbnail(path string) (img image.Image, err error) {
+	// Defer a function to recover from panics that might occur, e.g., from the goexif library
+	// with corrupted files. This prevents the entire application from crashing.
+	defer func() {
+		if r := recover(); r != nil {
+			// A panic occurred. Log it and set a descriptive error to be returned.
+			log.Printf("PANIC recovered in GetEmbeddedThumbnail for path %s: %v", path, r)
+			err = fmt.Errorf("recovered from panic processing EXIF for %s: %v", filepath.Base(path), r)
+			img = nil
+		}
+	}()
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening file for thumbnail: %w", err)
@@ -94,14 +107,15 @@ func (is *ImageService) GetEmbeddedThumbnail(path string) (image.Image, error) {
 
 	x, err := exif.Decode(file)
 	if err != nil {
-		return nil, errors.New("no EXIF data found")
+		return nil, fmt.Errorf("no EXIF data found in %s", filepath.Base(path))
 	}
 
+	// This is the call that can panic with corrupted files. The defer/recover block will catch it.
 	thumbBytes, err := x.JpegThumbnail()
 	if err != nil {
 		return nil, fmt.Errorf("no JPEG thumbnail in EXIF: %w", err)
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(thumbBytes))
+	img, _, err = image.Decode(bytes.NewReader(thumbBytes))
 	return img, err
 }
