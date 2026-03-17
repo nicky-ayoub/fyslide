@@ -35,14 +35,23 @@ func NewImageService() *ImageService {
 }
 
 // GetImageInfo reads an image file, decodes it, and extracts metadata.
-func (is *ImageService) GetImageInfo(path string) (*ImageInfo, image.Image, error) {
+func (is *ImageService) GetImageInfo(path string) (info *ImageInfo, img image.Image, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC recovered in GetImageInfo for path %s: %v", path, r)
+			info = nil
+			img = nil
+			err = fmt.Errorf("recovered from panic processing image file %s: %v", filepath.Base(path), r)
+		}
+	}()
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening file: %w", err)
 	}
 	defer file.Close()
 
-	img, _, err := image.Decode(file)
+	img, _, err = image.Decode(file)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoding image: %w", err)
 	}
@@ -59,7 +68,7 @@ func (is *ImageService) GetImageInfo(path string) (*ImageInfo, image.Image, erro
 		return nil, nil, fmt.Errorf("getting file stats: %w", err)
 	}
 
-	info := &ImageInfo{
+	info = &ImageInfo{
 		Width:    img.Bounds().Dx(),
 		Height:   img.Bounds().Dy(),
 		Size:     fileInfo.Size(),
