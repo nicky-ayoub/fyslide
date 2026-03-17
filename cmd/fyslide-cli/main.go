@@ -340,7 +340,7 @@ WARNING: This operation is irreversible. There is NO recovery from deletion. Use
 				cmd.Printf("WARNING: This operation is IRREVERSIBLE. There is NO recovery from deletion.\n")
 				cmd.Printf("Type 'delete' to confirm and proceed: ")
 				var response string
-				fmt.Scanln(&response)
+				fmt.Fscanln(cmd.InOrStdin(), &response)
 				if strings.ToLower(strings.TrimSpace(response)) != "delete" {
 					cmd.Println("Aborted.")
 					return nil

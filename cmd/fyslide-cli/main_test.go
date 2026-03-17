@@ -21,7 +21,7 @@ import (
 func setupTestDB(t *testing.T) (string, func()) {
 	tmpDir := t.TempDir()
 	// NewTagDB will create the actual db file inside this directory
-	return tmpDir, func() { os.RemoveAll(tmpDir) }
+	return tmpDir, func() {} // t.TempDir automatically cleans up
 }
 
 // executeCommandC executes a cobra command and captures its output.
@@ -31,6 +31,18 @@ func executeCommandC(root *cobra.Command, args ...string) (output string, err er
 	buf := new(bytes.Buffer)
 	root.SetOut(buf)
 	root.SetErr(buf)
+	root.SetArgs(args)
+	_, err = root.ExecuteC()
+	return buf.String(), err
+}
+
+// executeCommandWithInput executes a cobra command with provided input and captures its output.
+func executeCommandWithInput(root *cobra.Command, input string, args ...string) (output string, err error) {
+	buf := new(bytes.Buffer)
+	inBuf := bytes.NewBufferString(input)
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetIn(inBuf)
 	root.SetArgs(args)
 	_, err = root.ExecuteC()
 	return buf.String(), err
@@ -236,14 +248,24 @@ func TestListAllTags(t *testing.T) {
 
 	// Normalize output for consistent checking (order might vary)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var tagLines []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Filter out empty lines and the summary line added in main.go
+		if line == "" || strings.HasPrefix(line, "Total unique tags:") {
+			continue
+		}
+		tagLines = append(tagLines, line)
+	}
+
 	expectedTagsWithCounts := map[string]string{
 		"alpha":  "alpha (1)",
 		"beta":   "beta (1)",
 		"shared": "shared (2)",
 	}
 
-	assert.Len(t, lines, len(expectedTagsWithCounts), "Number of tags listed should match")
-	for _, line := range lines {
+	assert.Len(t, tagLines, len(expectedTagsWithCounts), "Number of tags listed should match")
+	for _, line := range tagLines {
 		found := false
 		for _, expectedLine := range expectedTagsWithCounts {
 			if line == expectedLine {
@@ -449,4 +471,74 @@ func TestAddToTagged(t *testing.T) {
 	assert.Contains(t, outY, "othertag")
 	assert.NotContains(t, outY, "newtag1")
 	assert.NotContains(t, outY, "newtag2")
+}
+
+func TestDeleteCmd(t *testing.T) {
+	finalTestDir, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	newTestRootCmd := func() *cobra.Command {
+		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
+			tdb, err := tagging.NewTagDB(finalTestDir, logger)
+			if err != nil {
+				return nil, nil, err
+			}
+			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
+			return s, tdb, nil
+		})
+	}
+
+	imgDir := t.TempDir()
+	imgToDelete := filepath.Join(imgDir, "delete_me.jpg")
+	imgKeep := filepath.Join(imgDir, "keep_me.jpg")
+	require.NoError(t, os.WriteFile(imgToDelete, []byte("delete"), 0644))
+	require.NoError(t, os.WriteFile(imgKeep, []byte("keep"), 0644))
+
+	// Setup tags
+	cmdAdd1 := newTestRootCmd()
+	_, err := executeCommandC(cmdAdd1, "add", imgToDelete, "trash")
+	require.NoError(t, err)
+	cmdAdd2 := newTestRootCmd()
+	_, err = executeCommandC(cmdAdd2, "add", imgKeep, "treasure")
+	require.NoError(t, err)
+
+	// 1. Test Dry Run (Should not delete)
+	cmdDryRun := newTestRootCmd()
+	outDry, err := executeCommandC(cmdDryRun, "delete", "trash", "--dryrun")
+	assert.NoError(t, err)
+	assert.Contains(t, outDry, "[DRY RUN]")
+	assert.FileExists(t, imgToDelete, "File should exist after dry run")
+
+	// 2. Test Interactive Abort
+	cmdAbort := newTestRootCmd()
+	outAbort, err := executeCommandWithInput(cmdAbort, "no\n", "delete", "trash")
+	assert.NoError(t, err)
+	assert.Contains(t, outAbort, "Aborted")
+	assert.FileExists(t, imgToDelete, "File should exist after abort")
+
+	// 3. Test Interactive Confirm
+	cmdConfirm := newTestRootCmd()
+	outConfirm, err := executeCommandWithInput(cmdConfirm, "delete\n", "delete", "trash")
+	assert.NoError(t, err)
+	assert.Contains(t, outConfirm, "Deletion complete")
+	assert.NoFileExists(t, imgToDelete, "File should be deleted after confirmation")
+
+	// 4. Test Force Delete (Should delete)
+	// Re-create file and tag for force delete test, as previous step deleted them
+	require.NoError(t, os.WriteFile(imgToDelete, []byte("delete"), 0644))
+	cmdReAdd := newTestRootCmd()
+	_, err = executeCommandC(cmdReAdd, "add", imgToDelete, "trash")
+	require.NoError(t, err)
+
+	cmdForce := newTestRootCmd()
+	outForce, err := executeCommandC(cmdForce, "delete", "trash", "--force")
+	assert.NoError(t, err)
+	assert.Contains(t, outForce, "Deletion complete")
+	assert.NoFileExists(t, imgToDelete, "File should be deleted after force delete")
+	assert.FileExists(t, imgKeep, "Other files should remain")
+
+	// Verify tag is gone from DB
+	cmdList := newTestRootCmd()
+	outList, _ := executeCommandC(cmdList, "list-all-tags")
+	assert.NotContains(t, outList, "trash", "Tag should be removed from DB")
 }

@@ -121,13 +121,26 @@ func (tdb *TagDB) Close() error {
 
 // ParseTagInput parses a raw input string into a slice of normalized tags.
 // It splits by common delimiters (comma, dot, quotes, semicolon, plus),
-// trims whitespace, lowercases, and removes duplicates.
+// trims whitespace, removes surrounding quotes, lowercases, and removes duplicates.
 func NormalizeTags(rawInput string) []string {
+	// The splitter regex is kept as is, assuming multi-word tags are desired
+	// and are separated by punctuation, not spaces.
 	potentialTags := tagSplitter.Split(rawInput, -1)
-	var normalized []string
+
+	// Pre-allocating slice capacity can improve performance by reducing reallocations.
+	normalized := make([]string, 0, len(potentialTags))
 	unique := make(map[string]bool)
+
 	for _, pt := range potentialTags {
-		tag := strings.ToLower(strings.TrimSpace(pt))
+		// 1. Trim whitespace from the raw split part.
+		tag := strings.TrimSpace(pt)
+		// 2. Remove any surrounding single or double quotes.
+		tag = strings.Trim(tag, `"'`)
+		// 3. Trim whitespace again, in case there was space between quotes and the tag.
+		tag = strings.TrimSpace(tag)
+		// 4. Convert to lowercase for consistency.
+		tag = strings.ToLower(tag)
+
 		if tag != "" && !unique[tag] {
 			normalized = append(normalized, tag)
 			unique[tag] = true

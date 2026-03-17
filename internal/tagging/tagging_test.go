@@ -39,19 +39,47 @@ func TestNormalizeTags(t *testing.T) {
 		{
 			name:     "Empty input",
 			input:    "",
-			expected: nil,
+			expected: []string{},
 		},
 		{
 			name:     "Only delimiters",
 			input:    ",,,",
-			expected: nil,
+			expected: []string{},
+		},
+		{
+			name:     "Multi-word tags",
+			input:    "new york, big apple",
+			expected: []string{"new york", "big apple"},
+		},
+		{
+			name:     "Tags with quotes",
+			input:    `"tag1", 'tag2'`,
+			expected: []string{"tag1", "tag2"},
+		},
+		{
+			name:     "Tags with quotes and spaces",
+			input:    `  " spaced tag " , 'another'  `,
+			expected: []string{"spaced tag", "another"},
+		},
+		{
+			name:     "Empty quoted tags",
+			input:    `"tag1", '', ""`,
+			expected: []string{"tag1"},
+		},
+		{
+			name:     "Mixed multi-word and single",
+			input:    "photo, summer vacation, beach",
+			expected: []string{"photo", "summer vacation", "beach"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := NormalizeTags(tt.input)
-			// We use DeepEqual to compare slices, which handles order and values.
+			// An empty slice is the desired outcome for no tags, not nil.
+			if len(got) == 0 && len(tt.expected) == 0 {
+				return // Both are empty, treat as equal.
+			}
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("NormalizeTags(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
