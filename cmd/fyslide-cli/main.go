@@ -173,17 +173,17 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 	listAllTagsCmd.GroupID = "query"
 	rootCmd.AddCommand(listAllTagsCmd)
 
-	// Normalize all tags
-	normalizeCmd := &cobra.Command{
-		Use:     "normalize",
-		Short:   "Normalize all tags to lowercase",
-		Aliases: []string{"norm"},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return svc.NormalizeAllTags()
-		},
-	}
-	normalizeCmd.GroupID = "maintenance"
-	rootCmd.AddCommand(normalizeCmd)
+	// // Normalize all tags
+	// normalizeCmd := &cobra.Command{
+	// 	Use:     "normalize",
+	// 	Short:   "Normalize all tags to lowercase",
+	// 	Aliases: []string{"norm"},
+	// 	RunE: func(cmd *cobra.Command, args []string) error {
+	// 		return svc.NormalizeAllTags()
+	// 	},
+	// }
+	// normalizeCmd.GroupID = "maintenance"
+	// rootCmd.AddCommand(normalizeCmd)
 
 	// Replace tag
 	replaceTagCmd := &cobra.Command{
