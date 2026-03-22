@@ -2,8 +2,8 @@
 
 # Variables
 GO_CMD := go
-GUI_OUTPUT := fyslide
-CLI_OUTPUT := fyslide-cli
+GUI_OUTPUT := bin/fyslide
+CLI_OUTPUT := bin/fyslide-cli
 GUI_MAIN_DIR := ./cmd/fyslide
 CLI_MAIN_DIR := ./cmd/fyslide-cli
 GENERATED_ASSETS := internal/ui/bundle*.go
