@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -36,6 +38,11 @@ type TagDB struct {
 	logger LoggerFunc
 }
 
+var (
+	globalTagDBMu sync.Mutex
+	globalTagDB   *TagDB
+)
+
 // TagWithCount holds a tag name and the number of images associated with it.
 type TagWithCount struct {
 	Name  string
@@ -46,6 +53,18 @@ type TagWithCount struct {
 // dbDir specifies the directory where the db file should be stored.
 // logger is a function that will be used for logging messages.
 func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
+	// Reuse a single long-lived DB instance per process to avoid repeated opens.
+	globalTagDBMu.Lock()
+	if globalTagDB != nil {
+		// update logger if provided
+		if logger != nil {
+			globalTagDB.logger = logger
+		}
+		defer globalTagDBMu.Unlock()
+		return globalTagDB, nil
+	}
+	globalTagDBMu.Unlock()
+
 	if dbDir == "" {
 		// Default to user config directory or current directory if needed
 		configDir, err := os.UserConfigDir()
@@ -74,9 +93,9 @@ func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
 		log.Printf("Using tag database at: %s (logger not provided at init)", dbPath)
 	}
 
-	db, err := bolt.Open(dbPath, 0600, nil) // 0600 permissions: user read/write
+	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second}) // 0600 permissions: user read/write
 	if err != nil {
-		return nil, fmt.Errorf("failed to open tag database %s: %w", dbPath, err)
+		return nil, fmt.Errorf("failed to open tag database %s (possible lock or another process using it): %w", dbPath, err)
 	}
 
 	// Ensure buckets exist
@@ -97,7 +116,12 @@ func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
 		return nil, err
 	}
 
-	return &TagDB{db: db, logger: logger}, nil
+	tdb := &TagDB{db: db, logger: logger}
+	globalTagDBMu.Lock()
+	// store singleton reference
+	globalTagDB = tdb
+	globalTagDBMu.Unlock()
+	return tdb, nil
 }
 
 // logMessage is a helper to use the configured logger or fallback to standard log.
@@ -111,10 +135,17 @@ func (tdb *TagDB) logMessage(format string, args ...interface{}) {
 
 // Close closes the database connection.
 func (tdb *TagDB) Close() error {
-	if tdb.db != nil {
-		return tdb.db.Close()
+	if tdb.db == nil {
+		return nil
 	}
-	return nil
+	err := tdb.db.Close()
+	// clear global reference if this is the global DB
+	globalTagDBMu.Lock()
+	if globalTagDB == tdb {
+		globalTagDB = nil
+	}
+	globalTagDBMu.Unlock()
+	return err
 }
 
 // --- Helper Functions ---

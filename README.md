@@ -134,3 +134,22 @@ from the project root folder. Note that assets can be added to the bundle with t
 ```
 fyne bundle --package ui --output internal/ui/bundle.go --append anotherimage.png
 ```
+
+## BoltDB / Testing Notes
+
+- **Single-writer rule**: FySlide uses BoltDB (bbolt) for tag persistence. BoltDB supports one writer per database file; the application is designed around a single writer model. The codebase reuses a single long-lived `TagDB` instance per process to avoid repeated opens and writer contention.
+
+- **Local-only test runs**: Integration tests that exercise the real BoltDB are marked with the build tag `integration` and will not run by default. Run integration tests locally with:
+
+```bash
+go test -tags=integration ./... -v
+```
+
+- **Unit tests**: Unit tests run normally and avoid opening a separate BoltDB file where possible. Run unit tests with:
+
+```bash
+go test ./... -v
+```
+
+- **Test DB usage**: When tests need a real DB instance they should use `t.TempDir()` to create an isolated directory for the DB file or reuse the single long-lived DB instance per process as appropriate. This avoids accidental file locking and keeps tests stable.
+
