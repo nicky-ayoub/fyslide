@@ -153,6 +153,8 @@ func (tdb *TagDB) Close() error {
 // ParseTagInput parses a raw input string into a slice of normalized tags.
 // It splits by common delimiters (comma, dot, quotes, semicolon, plus),
 // trims whitespace, removes surrounding quotes, lowercases, and removes duplicates.
+
+// NormalizeTags takes a raw input string and returns a slice of normalized tags.
 func NormalizeTags(rawInput string) []string {
 	// The splitter regex is kept as is, assuming multi-word tags are desired
 	// and are separated by punctuation, not spaces.
