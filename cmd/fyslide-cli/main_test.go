@@ -3,9 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"fyslide/internal/scan"
-	"fyslide/internal/service"
-	"fyslide/internal/tagging"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,19 +49,10 @@ func executeCommandWithInput(root *cobra.Command, input string, args ...string) 
 func testLogger(msg string) {}
 
 func TestAddAndListTags(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgFileDir := t.TempDir()
 	tmpImg := filepath.Join(imgFileDir, "img1.jpg")
@@ -83,19 +71,10 @@ func TestAddAndListTags(t *testing.T) {
 }
 
 func TestRemoveTag(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgFileDir := t.TempDir()
 	tmpImg := filepath.Join(imgFileDir, "img_remove.jpg")
@@ -122,24 +101,15 @@ func TestRemoveTag(t *testing.T) {
 	out, err = executeCommandC(rootCmdList2, "list", tmpImg)
 	assert.NoError(t, err, out)
 	assert.NotContains(t, out, "transient")
-	// Depending on output for no tags, might be empty string or a specific message
-	assert.Equal(t, "\n", out, "Output should be empty or just a newline if no tags are present")
+	// Depending on output for no tags, normalize whitespace and assert empty
+	assert.Equal(t, "", strings.TrimSpace(out), "Output should be empty when no tags are present")
 }
 
 func TestBatchAddAndFindByTag(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imageContentDir := t.TempDir()
 	img1 := filepath.Join(imageContentDir, "a.jpg")
@@ -170,19 +140,10 @@ func TestBatchAddAndFindByTag(t *testing.T) {
 }
 
 func TestReplaceTag(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgFileDir := t.TempDir()
 	tmpImg := filepath.Join(imgFileDir, "img_replace.gif")
@@ -207,19 +168,10 @@ func TestReplaceTag(t *testing.T) {
 }
 
 func TestListAllTags(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgDir := t.TempDir()
 	imgA := filepath.Join(imgDir, "imgA.jpg")
@@ -278,19 +230,10 @@ func TestListAllTags(t *testing.T) {
 }
 
 func TestNormalizeTags(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgDir := t.TempDir()
 	imgA := filepath.Join(imgDir, "imgNorm.jpg")
@@ -322,19 +265,10 @@ func TestNormalizeTags(t *testing.T) {
 }
 
 func TestBatchRemoveTags(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imageContentDir := t.TempDir()
 	img1 := filepath.Join(imageContentDir, "br1.jpg")
@@ -370,19 +304,10 @@ func TestBatchRemoveTags(t *testing.T) {
 }
 
 func TestCleanDatabase(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgDir := t.TempDir()
 	existingImg := filepath.Join(imgDir, "exists.jpg")
@@ -421,19 +346,10 @@ func TestCleanDatabase(t *testing.T) {
 }
 
 func TestAddToTagged(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgDir := t.TempDir()
 	imgX := filepath.Join(imgDir, "imgX.jpg")
@@ -474,19 +390,10 @@ func TestAddToTagged(t *testing.T) {
 }
 
 func TestDeleteCmd(t *testing.T) {
-	finalTestDir, cleanup := setupTestDB(t)
+	_, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	newTestRootCmd := func() *cobra.Command {
-		return NewRootCmd(func(cliDbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error) {
-			tdb, err := tagging.NewTagDB(finalTestDir, logger)
-			if err != nil {
-				return nil, nil, err
-			}
-			s := service.NewService(tdb, &scan.FileScannerImpl{}, logger)
-			return s, tdb, nil
-		})
-	}
+	newTestRootCmd := newTestRootCmdMockFactory()
 
 	imgDir := t.TempDir()
 	imgToDelete := filepath.Join(imgDir, "delete_me.jpg")

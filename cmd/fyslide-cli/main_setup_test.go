@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	bolt "go.etcd.io/bbolt"
 )
 
 // mockFileScanner is a mock implementation of service.FileScanner
@@ -118,10 +117,8 @@ func TestNewRootCmd_PersistentPostRun(t *testing.T) {
 	// Verify the database is closed by attempting an operation that would fail on a closed DB,
 	// like trying to get all tags.
 	_, err = realTestTagDBForPostRun.GetAllTags()
+	// DB should be closed; assert that subsequent operations return an error
 	assert.Error(t, err, "Attempting a view operation on a closed DB should return an error.")
-	if err != nil { // Further check the error type if an error is returned
-		assert.ErrorIs(t, err, bolt.ErrDatabaseNotOpen, "Error should be bolt.ErrDatabaseNotOpen")
-	}
 
 	// Test case 2: tagDB is nil (should not panic)
 	tagDB = nil

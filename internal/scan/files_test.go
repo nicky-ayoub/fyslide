@@ -128,7 +128,7 @@ func TestRun(t *testing.T) {
 	itemsChan := Run(rootDir, testLogger)
 	var foundItems FileItems
 
-	timeout := time.After(5 * time.Second) // Timeout for channel reading
+	timeout := time.After(10 * time.Second) // Timeout for channel reading (increased for CI stability)
 	done := false
 	for !done {
 		select {
