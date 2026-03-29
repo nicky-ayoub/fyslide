@@ -329,11 +329,3 @@ func (s *Service) scanDirectoryForImages(dir string) ([]string, error) {
 	}
 	return files, nil
 }
-
-// // NormalizeAllTags lowercases all tags in the DB.
-// func (s *Service) NormalizeAllTags() error {
-// 	// This logic is complex and involves multiple steps. It's best handled
-// 	// by a dedicated method in the tagging package to ensure atomicity.
-// 	// The current implementation is inefficient and not atomic.
-// 	return errors.New("normalize all tags not implemented efficiently")
-// }
