@@ -167,3 +167,34 @@ This test avoids the GUI entirely and exercises core interactions.
 
 - I saved this architecture document as [docs/architecture.md](docs/architecture.md).
 - I can implement a small pilot refactor for `ImageStateManager` or add the integration test scaffold—tell me which to implement next.
+
+## Actionability Additions (concrete details to make follow-up work easier)
+
+The following concrete details were added to make it straightforward to pick up the work later without extra discovery.
+
+- **`ImageState` concrete fields and key mutating methods** (from `internal/ui/image_state.go`):
+  - Fields: `mu sync.RWMutex`, `images scan.FileItems`, `pathIndex map[string]int`, `permutationManager *scan.PermutationManager`, `filteredImages scan.FileItems`, `filteredPermutationManager *scan.PermutationManager`, `index int`, `isFiltered bool`, `currentFilterTag string`, `random bool`.
+  - Key mutating methods: `AddImage`, `AddImages`, `SyncPermutationManager`, `Clear`, `SetIndex`, `ToggleRandomMode`, `ApplyFilter`, `ClearFilter`, `RemoveImageAtViewIndex`.
+
+- **Current mutation call-sites (where `ImageState` is written to or mutated)**
+  - `internal/ui/app_logic.go`
+    - `loadImages()` and `loadImagesFromDB()` call `a.imageState.AddImages(...)` to populate the state (batching logic).
+    - `deleteFile()` calls `a.imageState.RemoveImageAtViewIndex(...)` after backend deletion.
+    - `slideshowAdvancer()` triggers `a.Navigation.Navigate(1)` which results in `SetIndex(...)` via navigation controller.
+  - `internal/ui/display.go`
+    - Calls `a.imageState.ToggleRandomMode(currentPath)` when user toggles random mode.
+  - `internal/ui/navigation_controller.go` and `internal/ui/app.go`
+    - Callers use `imageState.SetIndex(...)` to change current index (navigation actions).
+  - `internal/ui/tagging_controller.go`
+    - Calls `t.imageState.ApplyFilter(newFilteredImages, filterTag)` and `t.imageState.ClearFilter(currentPath)` during filter operations.
+
+- **Suggested one-line acceptance test for `ImageStateManager` pilot**
+  - "Commands sent to `ImageStateManager` are applied in FIFO order, subscribers receive matching snapshots, and no data races are reported (`go test -race`)."
+
+- **Recommended first conversion target (pilot)**
+  - Convert the slideshow advance path first: adapt `slideshowAdvancer()` (in `internal/ui/app_logic.go`) and the `Navigation`→`NavigationController` flow so slideshow advances send `AdvanceIndex` commands to the manager instead of mutating `ImageState` directly. This keeps UI interactions intact while exercising the manager on a focused path.
+
+- **CLI/test to validate the pilot**
+  - Add an integration test that runs the `FileScanner` against a temp directory while the `ImageStateManager` is running. The test should send an `AdvanceIndex` command (or simulate ticker) and assert that snapshots progress as expected and that no races occur.
+
+These additions are included here to reduce discovery overhead when implementing the `ImageStateManager` or adding integration tests.
