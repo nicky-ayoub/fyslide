@@ -19,24 +19,32 @@ A Fyne-based Image Browser and Slideshow application with powerful tagging and f
 
 ## Screenshots
 
-![FySlide Screenshot](./assets/screenshot.png)
-
-*The main window of FySlide showing an image, the thumbnail browser, and the information panel.*
+Note: no screenshot is bundled in the repository at this time.
 
 ## Building from Source
 
 ### Prerequisites
 
-*   Go (version 1.18 or later)
+*   Go (version 1.23 or later)
 *   Fyne CLI tool (`go install fyne.io/fyne/v2/cmd/fyne@latest`)
 *   A C compiler (like GCC) for Fyne dependencies.
 
 ### Build Command
 
-From the project root directory, run:
+Preferred (Makefile):
 
 ```bash
-go build -ldflags="-s -w" -o fyslide main.go
+make build
+```
+
+Or build manually from the project root:
+
+```bash
+# GUI
+go build -ldflags="-s -w" -o bin/fyslide ./cmd/fyslide
+
+# CLI
+go build -ldflags="-s -w" -o bin/fyslide-cli ./cmd/fyslide-cli
 ```
 
 ## Command-line Flags
@@ -81,9 +89,9 @@ Example:
 
 A companion CLI tool is available for managing tags from the terminal. Build it with:
 ```bash
-go build -o fyslide-cli ./cmd/fyslide-cli
+go build -o bin/fyslide-cli ./cmd/fyslide-cli
 ```
-Run `./fyslide-cli --help` for a full list of commands, such as adding, removing, and listing tags.
+Run `./bin/fyslide-cli --help` for a full list of commands, such as adding, removing, and listing tags.
 
 ## Database
 
@@ -126,7 +134,7 @@ fyne bundle --package ui --output internal/ui/bundle.go assets/icon.png
 This process has been automated using **go:generate** headers in main.go for this application. To regenerate the bundle.go file if an asset changes, use:
 
 ```
-go generate
+go generate ./...
 ```
 
 from the project root folder. Note that assets can be added to the bundle with the --append parameter:
@@ -152,4 +160,3 @@ go test ./... -v
 ```
 
 - **Test DB usage**: When tests need a real DB instance they should use `t.TempDir()` to create an isolated directory for the DB file or reuse the single long-lived DB instance per process as appropriate. This avoids accidental file locking and keeps tests stable.
-
