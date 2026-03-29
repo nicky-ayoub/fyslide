@@ -178,7 +178,7 @@ func (a *App) updateShowFullSizeButtonVisibility() {
 		if a.UI.showFullSizeAction != nil {
 			a.UI.showFullSizeAction.Disable()
 			if a.UI.toolBar != nil {
-				a.UI.toolBar.Refresh()
+				fyne.Do(func() { a.UI.toolBar.Refresh() })
 			}
 		}
 		return
@@ -205,29 +205,33 @@ func (a *App) UpdateClearFilterMenuVisibility() {
 	if a.UI.clearFilterMenuItem == nil {
 		return
 	}
-	a.UI.clearFilterMenuItem.Disabled = !a.imageState.IsFiltered()
-	// Refresh the main menu to reflect the change in the item's disabled state.
-	if a.UI.MainWin.MainMenu() != nil {
-		a.UI.MainWin.MainMenu().Refresh()
-	}
+	fyne.Do(func() {
+		a.UI.clearFilterMenuItem.Disabled = !a.imageState.IsFiltered()
+		// Refresh the main menu to reflect the change in the item's disabled state.
+		if a.UI.MainWin.MainMenu() != nil {
+			a.UI.MainWin.MainMenu().Refresh()
+		}
+	})
 }
 
 // TogglePlay handles toggling the slideshow state and updating the UI icon.
 func (a *App) TogglePlay() {
-	a.slideshowManager.TogglePlayPause()
-	if a.slideshowManager.IsPaused() {
-		if a.UI.pauseAction != nil {
-			a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
+	fyne.Do(func() {
+		a.slideshowManager.TogglePlayPause()
+		if a.slideshowManager.IsPaused() {
+			if a.UI.pauseAction != nil {
+				a.UI.pauseAction.SetIcon(theme.MediaPlayIcon())
+			}
+		} else {
+			if a.UI.pauseAction != nil {
+				a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+			}
 		}
-	} else {
-		if a.UI.pauseAction != nil {
-			a.UI.pauseAction.SetIcon(theme.MediaPauseIcon())
+		if a.UI.toolBar != nil {
+			a.UI.toolBar.Refresh()
 		}
-	}
-	if a.UI.toolBar != nil {
-		a.UI.toolBar.Refresh()
-	}
-	a.updateStatusBar()
+		a.updateStatusBar()
+	})
 }
 
 // getDiceIcon returns the appropriate dice icon resource based on random mode and current theme.
