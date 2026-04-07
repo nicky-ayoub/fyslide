@@ -21,12 +21,14 @@ func (a *App) LoadAndDisplayCurrentImage() {
 	// Handle empty list (either full or filtered)
 
 	if count == 0 { // Handle empty list (either full or filtered)
-		a.zoomPanArea.SetImage(nil)
-		a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
-		a.UI.MainWin.SetTitle("FySlide")
-		a.updateStatusBar()
-		a.UpdateInfoText(nil)
-		a.AddLogMessage("No images available.")
+		fyne.Do(func() {
+			a.zoomPanArea.SetImage(nil)
+			a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
+			a.UI.MainWin.SetTitle("FySlide")
+			a.updateStatusBar()
+			a.UpdateInfoText(nil)
+			a.AddLogMessage("No images available.")
+		})
 		return // Exit the function, no image to load
 	}
 

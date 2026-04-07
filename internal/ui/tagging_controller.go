@@ -149,7 +149,9 @@ func (t *TaggingController) RemoveTagGlobally(tag string) error {
 // postOperationUpdate handles common UI feedback after a tag operation completes.
 func (t *TaggingController) postOperationUpdate(errOp error, statusMessage string, filesAffectedCount int, wasCurrentFileAffected bool) {
 	if errOp != nil {
-		dialog.ShowError(errOp, t.host.GetMainWindow())
+		fyne.Do(func() {
+			dialog.ShowError(errOp, t.host.GetMainWindow())
+		})
 		t.host.AddLogMessage(fmt.Sprintf("Error during tag operation: %v", errOp))
 	} else {
 		if statusMessage != "" {
@@ -158,17 +160,19 @@ func (t *TaggingController) postOperationUpdate(errOp error, statusMessage strin
 	}
 
 	if filesAffectedCount > 0 {
-		t.host.RefreshTags()
+		fyne.Do(func() {
+			t.host.RefreshTags()
 
-		// If the currently viewed file was changed, we need to refresh its info panel.
-		if wasCurrentFileAffected {
-			imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath()) // Re-fetch image info
-			if err == nil && imgInfo != nil {
-				t.host.UpdateInfoText(imgInfo) // UpdateInfoText will now fetch its own tags
-			} else { // Handle case where image info fails to load
-				t.host.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
+			// If the currently viewed file was changed, we need to refresh its info panel.
+			if wasCurrentFileAffected {
+				imgInfo, _, err := t.host.GetImageService().GetImageInfo(t.host.GetImageFullPath()) // Re-fetch image info
+				if err == nil && imgInfo != nil {
+					t.host.UpdateInfoText(imgInfo) // UpdateInfoText will now fetch its own tags
+				} else { // Handle case where image info fails to load
+					t.host.AddLogMessage(fmt.Sprintf("Error reloading info for current image after tag op: %v", err))
+				}
 			}
-		}
+		})
 	}
 }
 
