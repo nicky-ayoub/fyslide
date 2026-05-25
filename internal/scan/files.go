@@ -2,6 +2,7 @@
 package scan
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log"
@@ -10,15 +11,15 @@ import (
 
 // FileScanner defines the interface for scanning files.
 type FileScanner interface {
-	Run(dir string, logger LoggerFunc) <-chan FileItem
+	Run(ctx context.Context, dir string, logger LoggerFunc) <-chan FileItem
 }
 
 // FileScannerImpl is a concrete implementation of FileScanner.
 type FileScannerImpl struct{}
 
 // Run delegates to the package-level Run function.
-func (f *FileScannerImpl) Run(dir string, logger LoggerFunc) <-chan FileItem {
-	return Run(dir, logger)
+func (f *FileScannerImpl) Run(ctx context.Context, dir string, logger LoggerFunc) <-chan FileItem {
+	return Run(ctx, dir, logger)
 }
 
 // FileItem represents a file item. Just a path for now
@@ -91,7 +92,7 @@ func findFiles(dir string, predicate Predicate, out chan<- FileItem, logger Logg
 
 // Run is the entry point for the package. It now returns a channel
 // from which FileItems can be read. The scanning happens in a new goroutine.
-func Run(dir string, logger LoggerFunc) <-chan FileItem {
+func Run(ctx context.Context, dir string, logger LoggerFunc) <-chan FileItem {
 	out := make(chan FileItem, 100) // Buffered channel for some decoupling
 
 	logMsg := func(format string, args ...interface{}) {
@@ -103,13 +104,21 @@ func Run(dir string, logger LoggerFunc) <-chan FileItem {
 	}
 
 	go func() {
+		// Check if context is already cancelled before starting
+		select {
+		case <-ctx.Done():
+			close(out)
+			return
+		default:
+		}
+
 		absDir, err := filepath.Abs(dir)
 		if err != nil {
 			logMsg("Scan: Error getting absolute path for %s: %v. Aborting scan.", dir, err)
 			close(out) // Close channel to signal error and stop processing
 			return     // Do not proceed with findImageFiles
 		}
-		findImageFiles(absDir, out, logger)
+		findImageFiles(ctx, absDir, out, logger)
 	}()
 
 	return out

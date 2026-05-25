@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fyslide/internal/customwidgets"
 	"fyslide/internal/service"
 	"fyslide/internal/slideshow"
@@ -48,6 +49,10 @@ type App struct {
 	thumbnailManager *ThumbnailManager
 	scanCompleteChan chan bool
 	ImageService     *service.ImageService
+
+	// Lifecycle management
+	appCtx    context.Context
+	appCancel context.CancelFunc
 }
 
 // --- Host Interface Implementations ---

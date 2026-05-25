@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"fyslide/internal/scan"
@@ -31,7 +32,7 @@ type TagStore interface {
 
 // FileScanner abstracts file scanning.
 type FileScanner interface {
-	Run(dir string, logger scan.LoggerFunc) <-chan scan.FileItem
+	Run(ctx context.Context, dir string, logger scan.LoggerFunc) <-chan scan.FileItem
 }
 
 // Service is the main entry point for business logic.

@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -137,6 +138,10 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 		}
 
 		log.Println("Closing application resources...")
+		// Cancel background workers before closing DB
+		if ui.appCancel != nil {
+			ui.appCancel()
+		}
 		if ui.tagDB != nil {
 			if err := ui.tagDB.Close(); err != nil {
 				log.Printf("Error closing tag database: %v", err)
@@ -214,7 +219,8 @@ func run(config *AppConfig) {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
-	ui := &App{app: a, imageState: NewImageState(), scanCompleteChan: make(chan bool, 1)}
+	appCtx, appCancel := context.WithCancel(context.Background())
+	ui := &App{app: a, imageState: NewImageState(), scanCompleteChan: make(chan bool, 1), appCtx: appCtx, appCancel: appCancel}
 
 	// Set initial theme
 	ui.isDarkTheme = true // Default to dark theme
