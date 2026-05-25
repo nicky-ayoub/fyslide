@@ -64,6 +64,7 @@ clean: ## Clean up build artifacts and generated files.
 	@echo "Cleaning up..."
 	@rm -f $(GUI_OUTPUT) $(CLI_OUTPUT)
 	@rm -f $(GENERATED_ASSETS)
+	@go clean -testcache
 
 deps: ## Tidy Go module dependencies.
 	$(GO_CMD) mod tidy

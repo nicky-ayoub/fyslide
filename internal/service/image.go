@@ -34,6 +34,7 @@ func NewImageService() *ImageService {
 	return &ImageService{}
 }
 
+// TestGetImageInfoHook is a hook function that can be set by tests to simulate delays or specific behavior during GetImageInfo calls.
 // Test hook used by unit tests to simulate delays or behavior during GetImageInfo.
 // Tests may set this to introduce artificial delays; production code should not set it.
 var TestGetImageInfoHook func(path string)
