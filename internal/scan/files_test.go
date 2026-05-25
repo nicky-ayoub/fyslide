@@ -2,6 +2,7 @@
 package scan
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,6 +49,7 @@ func TestIsImage(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
+	ctx := context.Background()
 	rootDir, err := os.MkdirTemp("", "testRunDir")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -125,7 +127,7 @@ func TestRun(t *testing.T) {
 		t.Logf("ScanTestLogger: %s", message)
 	}
 
-	itemsChan := Run(rootDir, testLogger)
+	itemsChan := Run(ctx, rootDir, testLogger)
 	var foundItems FileItems
 
 	timeout := time.After(10 * time.Second) // Timeout for channel reading (increased for CI stability)

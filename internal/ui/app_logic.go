@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"fyslide/internal/scan"
 	"os"
@@ -18,75 +19,165 @@ import (
 // in a background goroutine and updates the UI on the main Fyne thread.
 func (a *App) LoadAndDisplayCurrentImage() {
 	count := a.imageState.GetCurrentImageCount()
-	// Handle empty list (either full or filtered)
 
-	if count == 0 { // Handle empty list (either full or filtered)
-		fyne.Do(func() {
-			a.zoomPanArea.SetImage(nil)
-			a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
-			a.UI.MainWin.SetTitle("FySlide")
+	// If no images, clear UI and return.
+	if count == 0 {
+		if fyne.CurrentApp() != nil {
+			fyne.Do(func() {
+				if a.zoomPanArea != nil {
+					a.zoomPanArea.SetImage(nil)
+				}
+				a.SetImg(Img{EXIFData: make(map[string]string)})
+				if a.UI.MainWin != nil {
+					a.UI.MainWin.SetTitle("FySlide")
+				}
+				a.updateStatusBar()
+				a.UpdateInfoText(nil)
+				a.AddLogMessage("No images available.")
+			})
+		} else {
+			if a.zoomPanArea != nil {
+				a.zoomPanArea.SetImage(nil)
+			}
+			a.SetImg(Img{EXIFData: make(map[string]string)})
+			if a.UI.MainWin != nil {
+				a.UI.MainWin.SetTitle("FySlide")
+			}
 			a.updateStatusBar()
 			a.UpdateInfoText(nil)
 			a.AddLogMessage("No images available.")
-		})
-		return // Exit the function, no image to load
+		}
+		return
 	}
 
-	imagePath := a.GetImageFullPath() // Get the full path of the current image
+	imagePath := a.GetImageFullPath()
 
 	// Check index bounds again after potential random selection or if not random
-	if a.imageState.GetCurrentIndex() < 0 || a.imageState.GetCurrentIndex() >= count { // Use current count
-		// This might happen if images were deleted; try to reset index or handle error
-		a.imageState.SetIndex(0)                      // Reset to first image
-		if a.imageState.GetCurrentImageCount() == 0 { // Double check after reset attempt
-			fyne.Do(func() {
-				a.zoomPanArea.SetImage(nil)                    // Clear the image display
-				a.img = Img{EXIFData: make(map[string]string)} // Clear EXIF
-				a.UI.MainWin.SetTitle("FySlide")
+	if a.imageState.GetCurrentIndex() < 0 || a.imageState.GetCurrentIndex() >= count {
+		a.imageState.SetIndex(0)
+		if a.imageState.GetCurrentImageCount() == 0 {
+			if fyne.CurrentApp() != nil {
+				fyne.Do(func() {
+					if a.zoomPanArea != nil {
+						a.zoomPanArea.SetImage(nil)
+					}
+					a.SetImg(Img{EXIFData: make(map[string]string)})
+					if a.UI.MainWin != nil {
+						a.UI.MainWin.SetTitle("FySlide")
+					}
+					a.updateStatusBar()
+					a.UpdateInfoText(nil)
+					a.AddLogMessage("No images available after index reset.")
+				})
+			} else {
+				if a.zoomPanArea != nil {
+					a.zoomPanArea.SetImage(nil)
+				}
+				a.img = Img{EXIFData: make(map[string]string)}
+				if a.UI.MainWin != nil {
+					a.UI.MainWin.SetTitle("FySlide")
+				}
 				a.updateStatusBar()
 				a.UpdateInfoText(nil)
 				a.AddLogMessage("No images available after index reset.")
-			})
+			}
 			return
 		}
-		// If count > 0 after reset, update imagePath as index changed
 		imagePath = a.GetImageFullPath()
 	}
 
-	// Launch goroutine for loading and decoding
-	go func(path string) {
+	// Cancel any previous per-image load, then create a new cancellable context
+	a.loadMu.Lock()
+	if a.loadCancel != nil {
+		a.loadCancel()
+	}
+	parent := a.appCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	loadCtx, loadCancel := context.WithCancel(parent)
+	a.loadCancel = loadCancel
+	a.loadMu.Unlock()
+
+	// Launch goroutine for loading and decoding. The decode itself cannot be cancelled
+	// because the standard library does not support cancellable image decode, but
+	// we use the per-load context to avoid applying stale results and to signal intent.
+	go func(ctx context.Context, path string) {
 		// Load all image info at once, including the decoded image
 		imgInfo, imgDecoded, err := a.ImageService.GetImageInfo(path) // This can be slow (disk I/O, decoding)
 
+		// If the load was cancelled, drop the result
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if err != nil {
-			fyne.Do(func() {
-				a.handleImageDisplayError(path, "loading/decoding", err, "")
-			})
+			if fyne.CurrentApp() != nil {
+				fyne.Do(func() {
+					if a.GetImageFullPath() == path {
+						a.handleImageDisplayError(path, "loading/decoding", err, "")
+					}
+				})
+			} else {
+				if a.GetImageFullPath() == path {
+					a.handleImageDisplayError(path, "loading/decoding", err, "")
+				}
+			}
 			return
 		}
 
 		// Successfully decoded image - perform UI updates on the Fyne thread
-		fyne.Do(func() {
-			// Final check: Has the user navigated away while this image was loading?
-			// If so, the current path in the state will be different from the one
-			// this goroutine was tasked to load. We should discard this stale result.
-			if a.GetImageFullPath() != path {
-				return // Discard stale image load.
-			}
+		if fyne.CurrentApp() != nil {
+			fyne.Do(func() {
+				// Final check: Has the user navigated away while this image was loading?
+				if a.GetImageFullPath() != path {
+					return // Discard stale image load.
+				}
 
-			a.img = Img{
+				newImg := Img{
+					OriginalImage: imgDecoded,
+					Path:          path,
+					EXIFData:      imgInfo.EXIFData,
+				}
+				a.SetImg(newImg)
+				if a.zoomPanArea != nil {
+					a.zoomPanArea.SetImage(newImg.OriginalImage) // This will also call Reset and Refresh
+				}
+
+				// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
+				a.updateStatusBar()
+				if a.UI.infoText != nil && a.Service != nil {
+					a.UpdateInfoText(imgInfo)
+				}
+				if a.UI.thumbnailBrowser != nil {
+					a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
+				}
+			})
+		} else {
+			// Non-Fyne test environment: apply synchronously but only if still current
+			if a.GetImageFullPath() != path {
+				return
+			}
+			newImg := Img{
 				OriginalImage: imgDecoded,
 				Path:          path,
 				EXIFData:      imgInfo.EXIFData,
 			}
-			a.zoomPanArea.SetImage(a.img.OriginalImage) // This will also call Reset and Refresh
-
-			// Update Title, Status Bar, and Info Text (pass the loaded imgInfo)
+			a.SetImg(newImg)
+			if a.zoomPanArea != nil {
+				a.zoomPanArea.SetImage(newImg.OriginalImage)
+			}
 			a.updateStatusBar()
-			a.UpdateInfoText(imgInfo)
-			a.UI.thumbnailBrowser.Refresh() // Update the thumbnail strip
-		})
-	}(imagePath) // Pass the path and flag to the goroutine
+			if a.UI.infoText != nil && a.Service != nil {
+				a.UpdateInfoText(imgInfo)
+			}
+			if a.UI.thumbnailBrowser != nil {
+				a.UI.thumbnailBrowser.Refresh()
+			}
+		}
+	}(loadCtx, imagePath) // Pass the path and per-load ctx to the goroutine
 }
 
 // handleShowFullSizeBtn is called when the "Show Full Size" toolbar action is triggered.
@@ -143,7 +234,7 @@ func (a *App) deleteFile() {
 // loadImagesFromDB pre-populates the image list from the tag database.
 // This version is optimized for large databases by using a worker pool
 // to check for file existence concurrently.
-func (a *App) loadImagesFromDB() {
+func (a *App) loadImagesFromDB(ctx context.Context) {
 	a.AddLogMessage("Pre-loading known image paths from database...")
 
 	pathChan := a.Service.StreamAllImagePaths()
@@ -159,11 +250,23 @@ func (a *App) loadImagesFromDB() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for path := range pathChan {
-				info, err := os.Stat(path)
-				// If os.Stat fails, it's likely the file was moved or deleted, so we just ignore it.
-				if err == nil && !info.IsDir() {
-					resultsChan <- scan.NewFileItem(path, info)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case path, ok := <-pathChan:
+					if !ok {
+						return
+					}
+					info, err := os.Stat(path)
+					// If os.Stat fails, it's likely the file was moved or deleted, so we just ignore it.
+					if err == nil && !info.IsDir() {
+						select {
+						case <-ctx.Done():
+							return
+						case resultsChan <- scan.NewFileItem(path, info):
+						}
+					}
 				}
 			}
 		}()
@@ -221,7 +324,7 @@ func (a *App) loadImagesFromDB() {
 
 // loadImages scans the given root directory for image files in a background goroutine
 // and populates the main image list.
-func (a *App) loadImages(root string) {
+func (a *App) loadImages(ctx context.Context, root string) {
 	// Signal completion when this function exits, no matter how.
 	defer func() {
 		select {
@@ -230,7 +333,7 @@ func (a *App) loadImages(root string) {
 		}
 	}()
 
-	imageChan := a.Service.FileScan.Run(root, a.AddLogMessage)
+	imageChan := a.Service.FileScan.Run(ctx, root, a.AddLogMessage)
 
 	const batchSize = 1000
 	const batchTimeout = 100 * time.Millisecond
@@ -271,27 +374,39 @@ func (a *App) loadImages(root string) {
 }
 
 // updateTimer updates the clock in the UI.
-func (a *App) updateTimer() {
-	for range time.Tick(time.Second) {
-		if a.UI.MainWin == nil || a.UI.clockLabel == nil { // Check if UI elements are still valid
-			return // Exit goroutine if window is closed
+func (a *App) updateTimer(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if a.UI.MainWin == nil || a.UI.clockLabel == nil {
+				return
+			}
+			formatted := time.Now().Format("Time: 03:04:05")
+			fyne.Do(func() { a.UI.clockLabel.SetText(formatted) })
 		}
-		formatted := time.Now().Format("Time: 03:04:05")
-		fyne.Do(func() { a.UI.clockLabel.SetText(formatted) })
 	}
 }
 
 // slideshowAdvancer advances the slideshow based on a ticker.
-func (a *App) slideshowAdvancer(ticker *time.Ticker) {
-	for range ticker.C {
-		if a.UI.MainWin == nil { // Check if window is still valid
-			ticker.Stop() // Stop the ticker
-			return        // Exit goroutine
-		}
-		if !a.slideshowManager.IsPaused() {
-			fyne.Do(func() {
-				a.Navigation.Navigate(1)
-			})
+func (a *App) slideshowAdvancer(ctx context.Context, ticker *time.Ticker) {
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if a.UI.MainWin == nil {
+				return
+			}
+			if !a.slideshowManager.IsPaused() {
+				fyne.Do(func() {
+					a.Navigation.Navigate(1)
+				})
+			}
 		}
 	}
 }

@@ -34,8 +34,16 @@ func NewImageService() *ImageService {
 	return &ImageService{}
 }
 
+// Test hook used by unit tests to simulate delays or behavior during GetImageInfo.
+// Tests may set this to introduce artificial delays; production code should not set it.
+var TestGetImageInfoHook func(path string)
+
 // GetImageInfo reads an image file, decodes it, and extracts metadata.
 func (is *ImageService) GetImageInfo(path string) (info *ImageInfo, img image.Image, err error) {
+	// Allow tests to inject delays or other behavior
+	if TestGetImageInfoHook != nil {
+		TestGetImageInfoHook(path)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC recovered in GetImageInfo for path %s: %v", path, r)

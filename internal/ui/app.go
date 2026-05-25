@@ -102,7 +102,7 @@ func parseConfig() (*AppConfig, error) {
 }
 
 // setupAndLaunch performs the main application setup in a background goroutine.
-func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashText *widget.Label) {
+func setupAndLaunch(ctx context.Context, ui *App, config *AppConfig, splashWin fyne.Window, splashText *widget.Label) {
 	// This function will be called from the goroutine to update the splash screen text
 	updateSplash := func(text string) {
 		fyne.Do(func() {
@@ -159,7 +159,7 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 
 	updateSplash(fmt.Sprintf("Scanning for images in %s...", filepath.Base(config.Directory)))
 	// 4. Run the initial file scan and wait for some results
-	ui.runInitialScanAndWait(config.Directory, splashText, config.LoadFromDB)
+	ui.runInitialScanAndWait(ctx, config.Directory, splashText, config.LoadFromDB)
 
 	updateSplash("Loading initial image...")
 	// 5. Final setup after initial images are loaded
@@ -170,7 +170,7 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 
 		// Start at the beginning of the current view (sequential or random).
 		ui.imageState.SetIndex(0)
-		ui.startBackgroundTasks()
+		ui.startBackgroundTasks(ui.appCtx)
 		// The first image will be loaded after the main window is shown to ensure
 		// correct sizing.
 	} else {
@@ -215,11 +215,11 @@ func setupAndLaunch(ui *App, config *AppConfig, splashWin fyne.Window, splashTex
 }
 
 // run initializes and runs the Fyne application.
-func run(config *AppConfig) {
+func run(ctx context.Context, config *AppConfig) {
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
-	appCtx, appCancel := context.WithCancel(context.Background())
+	appCtx, appCancel := context.WithCancel(ctx)
 	ui := &App{app: a, imageState: NewImageState(), scanCompleteChan: make(chan bool, 1), appCtx: appCtx, appCancel: appCancel}
 
 	// Set initial theme
@@ -231,14 +231,14 @@ func run(config *AppConfig) {
 	splashWin.Show()
 
 	// --- Main Application Setup in Background ---
-	go setupAndLaunch(ui, config, splashWin, splashText)
+	go setupAndLaunch(ctx, ui, config, splashWin, splashText)
 
 	// Run the application event loop. This will initially just service the splash screen.
 	a.Run()
 }
 
 // CreateApplication is the GUI entrypoint. It parses configuration and runs the application.
-func CreateApplication() {
+func CreateApplication(ctx context.Context) {
 	config, err := parseConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -247,5 +247,5 @@ func CreateApplication() {
 	if config == nil { // This happens if --version is used
 		return
 	}
-	run(config)
+	run(ctx, config)
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"fyslide/internal/service"
 	"image"
@@ -41,15 +42,17 @@ type ThumbnailManager struct {
 	imageService *service.ImageService
 	logger       func(string)
 	format       ThumbnailFormat
+	ctx          context.Context
 }
 
 // NewThumbnailManager creates a new thumbnail manager.
-func NewThumbnailManager(imageService *service.ImageService, logger func(string)) *ThumbnailManager {
+func NewThumbnailManager(ctx context.Context, imageService *service.ImageService, logger func(string)) *ThumbnailManager {
 	return &ThumbnailManager{
 		cache:        make(map[string]fyne.Resource),
 		imageService: imageService,
 		logger:       logger,
 		format:       PNG, // Default to PNG
+		ctx:          ctx,
 	}
 }
 
@@ -95,12 +98,24 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 		var thumbImg image.Image
 
 		// First, try to get the fast, embedded EXIF thumbnail.
+		select {
+		case <-tm.ctx.Done():
+			return
+		default:
+		}
+
 		embeddedThumb, err := tm.imageService.GetEmbeddedThumbnail(path)
 		if err != nil {
 			// This is not a fatal error, just means no embedded thumb. Fall back to full decode.
 			tm.logger("No embedded thumb for " + filepath.Base(path) + ", falling back to full decode.")
 
 			// Fallback: Load and decode the entire image.
+			select {
+			case <-tm.ctx.Done():
+				return
+			default:
+			}
+
 			_, imgDecoded, err := tm.imageService.GetImageInfo(path)
 			if err != nil {
 				tm.logger("Thumbnail error for " + filepath.Base(path) + ": " + err.Error())
@@ -112,6 +127,13 @@ func (tm *ThumbnailManager) GetThumbnail(path string, onComplete func(fyne.Resou
 		} else {
 			// Success! Resize the embedded thumbnail to ensure consistent dimensions.
 			thumbImg = resize.Thumbnail(ThumbnailWidth, ThumbnailHeight, embeddedThumb, resize.Lanczos3)
+		}
+
+		// Check cancellation before encoding/allocating
+		select {
+		case <-tm.ctx.Done():
+			return
+		default:
 		}
 
 		thumbBytes := tm.imageToBytes(thumbImg)

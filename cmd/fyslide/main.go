@@ -9,10 +9,11 @@ package main
 //go:generate fyne bundle --package ui -output ../../internal/ui/bundle5.go ../../assets/fyslidesplash004.png
 
 import (
+	"context"
 	"fyslide/internal/ui"
 )
 
 func main() {
-
-	ui.CreateApplication()
+	ctx := context.Background()
+	ui.CreateApplication(ctx)
 }

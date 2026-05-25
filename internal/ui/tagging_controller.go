@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -31,6 +32,7 @@ type TaggingHost interface {
 	UpdateInfoText(info *service.ImageInfo) // Refreshes the info panel for the current image
 	GetSlideshowManager() *slideshow.Manager
 	NavigateToIndex(index int)
+	AppContext() context.Context
 }
 
 // TaggingController manages tagging operations and interactions with the tagging service.
@@ -244,6 +246,7 @@ type batchTagResult struct {
 
 // processBatchTagOperation handles batch tag operations (add/remove) for a list of image paths.
 func (t *TaggingController) processBatchTagOperation(
+	ctx context.Context,
 	imagePaths []string,
 	tags []string,
 	operation tagOperationFunc,
@@ -260,11 +263,28 @@ func (t *TaggingController) processBatchTagOperation(
 	var wg sync.WaitGroup
 
 	for _, path := range imagePaths {
+		select {
+		case <-ctx.Done():
+			// Stop launching more goroutines when cancelled
+			break
+		default:
+		}
 		wg.Add(1)
 		go func(p string) {
 			defer wg.Done()
+			// Check for cancellation before executing heavy work
+			select {
+			case <-ctx.Done():
+				resultsChan <- result{path: p, err: ctx.Err()}
+				return
+			default:
+			}
 			err := operation(p, tags)
-			resultsChan <- result{path: p, err: err}
+			select {
+			case <-ctx.Done():
+				resultsChan <- result{path: p, err: ctx.Err()}
+			case resultsChan <- result{path: p, err: err}:
+			}
 		}(path)
 	}
 
@@ -305,6 +325,8 @@ func (t *TaggingController) executeTagOperation(
 		t.activeOps.Add(1)
 		defer t.activeOps.Add(-1)
 
+		ctx := t.host.AppContext()
+
 		var imagePaths []string
 		if applyToAll {
 			currentDir := filepath.Dir(t.host.GetImageFullPath())
@@ -324,7 +346,7 @@ func (t *TaggingController) executeTagOperation(
 
 		t.host.AddLogMessage(fmt.Sprintf("Starting background task: %s %d image(s) with tags: [%s]", operationVerb, len(imagePaths), strings.Join(tags, ", ")))
 
-		result := t.processBatchTagOperation(imagePaths, tags, operation, operationVerb)
+		result := t.processBatchTagOperation(ctx, imagePaths, tags, operation, operationVerb)
 
 		var statusMessage string
 		if result.ErroredImages > 0 {

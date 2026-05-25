@@ -79,7 +79,7 @@ func (a *App) AddLogMessage(message string) {
 // UpdateInfoText generates and displays the markdown-formatted metadata for the
 // current image in the info panel, including stats, tags, and EXIF data.
 func (a *App) UpdateInfoText(info *service.ImageInfo) {
-	if a.img.Path == "" {
+	if a.GetLoadedImagePath() == "" {
 		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
 		return
 	}
@@ -90,7 +90,7 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 	}
 
 	// --- Get Tags ---
-	currentTags, tagsErr := a.Service.ListTagsForImage(a.img.Path)
+	currentTags, tagsErr := a.Service.ListTagsForImage(a.GetLoadedImagePath())
 	tagsString := "(none)" // Default if no tags or error occurred
 	if tagsErr != nil {
 		tagsString = "(error loading tags)"
@@ -147,7 +147,7 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 		info.Width,
 		info.Height,
 		info.ModTime.Format("2006-01-02 15:04:05"),
-		filepath.Base(a.img.Path),
+		filepath.Base(a.GetLoadedImagePath()),
 		tagsString,
 		exifString,
 	)
@@ -158,10 +158,16 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 // handleImageDisplayError sets the UI state when an image fails to load or decode.
 // formatName is optional and only used if errorType is "Decoding".
 func (a *App) handleImageDisplayError(imagePath, errorType string, originalError error, formatName string) {
-	a.img = Img{Path: imagePath, EXIFData: make(map[string]string)} // Keep path, clear EXIF
-	a.zoomPanArea.SetImage(nil)
-	a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
-	a.UpdateInfoText(nil)
+	a.SetImg(Img{Path: imagePath, EXIFData: make(map[string]string)}) // Keep path, clear EXIF
+	if a.zoomPanArea != nil {
+		a.zoomPanArea.SetImage(nil)
+	}
+	if a.UI.MainWin != nil {
+		a.UI.MainWin.SetTitle(fmt.Sprintf("FySlide - Error %s %s", errorType, filepath.Base(imagePath)))
+	}
+	if a.UI.infoText != nil {
+		a.UpdateInfoText(nil)
+	}
 	if errorType == "Decoding" && formatName != "" {
 		msg := fmt.Sprintf("Error %s %s (format: %s): %v", errorType, filepath.Base(imagePath), formatName, originalError)
 		a.AddLogMessage(msg)

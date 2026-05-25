@@ -8,6 +8,7 @@ import (
 	"fyslide/internal/slideshow"
 	"fyslide/internal/tagging"
 	"image"
+	"sync"
 
 	"fyne.io/fyne/v2"
 )
@@ -53,6 +54,12 @@ type App struct {
 	// Lifecycle management
 	appCtx    context.Context
 	appCancel context.CancelFunc
+	// Per-image load cancellation
+	loadMu     sync.Mutex
+	loadCancel context.CancelFunc
+
+	// Protects access to `img` when read/written from multiple goroutines.
+	imgMu sync.RWMutex
 }
 
 // --- Host Interface Implementations ---
@@ -183,4 +190,24 @@ func (a *App) IsSlideshowPaused() bool {
 // It satisfies the ThumbnailHost interface.
 func (a *App) ToggleSlideshow() {
 	a.TogglePlay()
+}
+
+// AppContext returns the application's root context for background operations.
+func (a *App) AppContext() context.Context {
+	return a.appCtx
+}
+
+// SetImg safely sets the currently loaded image.
+func (a *App) SetImg(img Img) {
+	a.imgMu.Lock()
+	a.img = img
+	a.imgMu.Unlock()
+}
+
+// GetLoadedImagePath returns the path of the currently loaded image in a thread-safe way.
+func (a *App) GetLoadedImagePath() string {
+	a.imgMu.RLock()
+	p := a.img.Path
+	a.imgMu.RUnlock()
+	return p
 }

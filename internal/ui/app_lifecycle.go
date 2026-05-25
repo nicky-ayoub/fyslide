@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
@@ -21,7 +22,7 @@ const (
 // init initializes the application's core components, including the slideshow
 // manager and other configuration settings based on provided flags.
 func (a *App) init(slideshowIntervalSec float64, skipNum int) {
-	a.img = Img{EXIFData: make(map[string]string)} // Initialize EXIFData
+	a.SetImg(Img{EXIFData: make(map[string]string)}) // Initialize EXIFData
 
 	// a.AddLogMessage is thread-safe, so it can be called directly from any goroutine.
 	slideshowLogger := func(message string) {
@@ -52,7 +53,7 @@ func (a *App) initServices() error {
 	fileScanner := scan.FileScannerImpl{}
 	a.Service = service.NewService(a.tagDB, &fileScanner, appLoggerFunc)
 	a.ImageService = service.NewImageService()
-	a.thumbnailManager = NewThumbnailManager(a.ImageService, appLoggerFunc)
+	a.thumbnailManager = NewThumbnailManager(a.appCtx, a.ImageService, appLoggerFunc)
 
 	return nil
 }
@@ -70,19 +71,19 @@ func (a *App) initComponents(slideshowIntervalSec float64, skipNum int) {
 
 // runInitialScanAndWait starts the background image scan and waits for it to
 // find at least one image or times out.
-func (a *App) runInitialScanAndWait(dir string, splashLabel *widget.Label, loadFromDB bool) {
+func (a *App) runInitialScanAndWait(ctx context.Context, dir string, splashLabel *widget.Label, loadFromDB bool) {
 	// Clear any previous state and re-initialize managers before starting new scans.
 	a.imageState.Clear()
 
 	// Start loading from DB. This runs in the background and adds to the
 	// imageState concurrently. We don't need to wait for it to finish.
 	if loadFromDB {
-		go a.loadImagesFromDB()
+		go a.loadImagesFromDB(ctx)
 	}
 
 	// Start scanning filesystem. This function will signal scanCompleteChan
 	// when it finishes, providing one of the exit conditions for the wait loop.
-	go a.loadImages(dir)
+	go a.loadImages(ctx, dir)
 
 	timeout := time.NewTimer(10 * time.Second)
 	defer timeout.Stop()
@@ -132,8 +133,8 @@ func (a *App) flushLogBuffer() {
 }
 
 // startBackgroundTasks starts the goroutines for the slideshow ticker and UI clock.
-func (a *App) startBackgroundTasks() {
+func (a *App) startBackgroundTasks(ctx context.Context) {
 	ticker := time.NewTicker(a.slideshowManager.Interval())
-	go a.slideshowAdvancer(ticker)
-	go a.updateTimer()
+	go a.slideshowAdvancer(ctx, ticker)
+	go a.updateTimer(ctx)
 }

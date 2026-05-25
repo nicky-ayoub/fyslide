@@ -43,13 +43,13 @@ func NewFileItem(path string, fi fs.FileInfo) FileItem {
 
 }
 
-func findImageFiles(dir string, out chan<- FileItem, logger LoggerFunc) {
-	findFiles(dir, IsImage, out, logger)
+func findImageFiles(ctx context.Context, dir string, out chan<- FileItem, logger LoggerFunc) {
+	findFiles(ctx, dir, IsImage, out, logger)
 }
 
 // findImageFiles recursively scans dir for supported image files and sends them to the out channel.
 // It closes the out channel when done.
-func findFiles(dir string, predicate Predicate, out chan<- FileItem, logger LoggerFunc) {
+func findFiles(ctx context.Context, dir string, predicate Predicate, out chan<- FileItem, logger LoggerFunc) {
 	defer close(out) // Ensure channel is closed when WalkDir finishes or panics
 
 	logMsg := func(format string, args ...interface{}) {
@@ -61,6 +61,12 @@ func findFiles(dir string, predicate Predicate, out chan<- FileItem, logger Logg
 	}
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		// Respect cancellation requests from the provided context.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			logMsg("Scan: Error accessing path %q: %v", path, err)
 			if d != nil && d.IsDir() && path != dir { // Don't skip the root dir on error
@@ -77,7 +83,11 @@ func findFiles(dir string, predicate Predicate, out chan<- FileItem, logger Logg
 				return nil // Skip this file
 			}
 			if info.Size() > 0 { // Ensure it's not an empty file
-				out <- NewFileItem(path, info)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case out <- NewFileItem(path, info):
+				}
 			}
 		}
 		return nil

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"fyslide/internal/scan"
 	"fyslide/internal/service"
@@ -37,6 +38,7 @@ func cliLogger(msg string) {
 // and returning the service and tagDB instances. This allows tests to inject mocks
 // or test-specific instances.
 func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (*service.Service, *tagging.TagDB, error)) *cobra.Command {
+	ctx := context.Background() // Create a context to pass to service methods
 	var rootCmd = &cobra.Command{
 		Use:   "fyslide-cli",
 		Short: "FySlide CLI - manage image tags",
@@ -210,7 +212,7 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 				return err
 			}
 			tags := strings.Split(args[1], ",")
-			return svc.BatchAddTagsToDirectory(dir, tags)
+			return svc.BatchAddTagsToDirectory(ctx, dir, tags)
 		},
 	}
 	batchAddCmd.GroupID = "batch"
@@ -228,7 +230,7 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 				return err
 			}
 			tags := strings.Split(args[1], ",")
-			return svc.BatchRemoveTagsFromDirectory(dir, tags)
+			return svc.BatchRemoveTagsFromDirectory(ctx, dir, tags)
 		},
 	}
 	batchRemoveCmd.GroupID = "batch"

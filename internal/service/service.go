@@ -166,11 +166,11 @@ func (s *Service) FindImagesByTags(tags []string) ([]string, error) {
 }
 
 // BatchAddTagsToDirectory adds tags to all supported images in a directory (recursive).
-func (s *Service) BatchAddTagsToDirectory(dir string, tags []string) error {
+func (s *Service) BatchAddTagsToDirectory(ctx context.Context, dir string, tags []string) error {
 	if dir == "" || len(tags) == 0 {
 		return errors.New("directory and tags required")
 	}
-	files, err := s.scanDirectoryForImages(dir) // Use service method
+	files, err := s.scanDirectoryForImages(ctx, dir) // Use service method
 	if err != nil {
 		return err
 	}
@@ -214,11 +214,11 @@ func (s *Service) RemoveTagGlobally(tag string) (int, int, error) {
 // 1. It removes all tag entries for image files that no longer exist on disk.
 
 // BatchRemoveTagsFromDirectory removes tags from all supported images in a directory (recursive).
-func (s *Service) BatchRemoveTagsFromDirectory(dir string, tags []string) error {
+func (s *Service) BatchRemoveTagsFromDirectory(ctx context.Context, dir string, tags []string) error {
 	if dir == "" || len(tags) == 0 {
 		return errors.New("directory and tags required")
 	}
-	files, err := s.scanDirectoryForImages(dir) // Use service method
+	files, err := s.scanDirectoryForImages(ctx, dir) // Use service method
 	if err != nil {
 		return err
 	}
@@ -321,10 +321,10 @@ func (s *Service) RemoveTagsFromImageList(imagePaths []string, tags []string) er
 }
 
 // scanDirectoryForImages lists supported image files in a directory (recursive due to s.FileScan.Run).
-func (s *Service) scanDirectoryForImages(dir string) ([]string, error) {
+func (s *Service) scanDirectoryForImages(ctx context.Context, dir string) ([]string, error) {
 	var files []string
 	// Use s.FileScan for testability and s.Logger for logging
-	items := s.FileScan.Run(dir, func(msg string) { s.Logger(fmt.Sprintf("scanDirectoryForImages: %s", msg)) })
+	items := s.FileScan.Run(ctx, dir, func(msg string) { s.Logger(fmt.Sprintf("scanDirectoryForImages: %s", msg)) })
 	for item := range items {
 		files = append(files, item.Path)
 	}
