@@ -262,11 +262,12 @@ func (t *TaggingController) processBatchTagOperation(
 	resultsChan := make(chan result, len(imagePaths))
 	var wg sync.WaitGroup
 
+outer:
 	for _, path := range imagePaths {
 		select {
 		case <-ctx.Done():
 			// Stop launching more goroutines when cancelled
-			break
+			break outer
 		default:
 		}
 		wg.Add(1)
