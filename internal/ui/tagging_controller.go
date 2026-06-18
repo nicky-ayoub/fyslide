@@ -392,18 +392,32 @@ func (t *TaggingController) showAddTagDialog() {
 		return topTagsWithCount[i].Count > topTagsWithCount[j].Count
 	})
 
-	topTagChecks := make(map[string]bool)
-	topTagsContainer := container.NewVBox()
+	topTagSelected := make(map[string]bool)
+	topTagsContainer := container.NewHBox()
 	maxTopTags := 5
 	for i, tagInfo := range topTagsWithCount {
 		if i >= maxTopTags {
 			break
 		}
+
 		tagName := tagInfo.Name
-		check := widget.NewCheck(fmt.Sprintf("%s (%d)", tagName, tagInfo.Count), func(checked bool) {
-			topTagChecks[tagName] = checked
-		})
-		topTagsContainer.Add(check)
+		checkedLabel := "✓ " + tagName
+		button := widget.NewButton(tagName, nil)
+		button.Importance = widget.LowImportance
+		button.OnTapped = func(tagName, checkedLabel string, btn *widget.Button) func() {
+			return func() {
+				topTagSelected[tagName] = !topTagSelected[tagName]
+				if topTagSelected[tagName] {
+					btn.Importance = widget.HighImportance
+					btn.SetText(checkedLabel)
+				} else {
+					btn.Importance = widget.LowImportance
+					btn.SetText(tagName)
+				}
+				btn.Refresh()
+			}
+		}(tagName, checkedLabel, button)
+		topTagsContainer.Add(button)
 	}
 
 	applyToAllCheck := widget.NewCheck("Apply tag(s) to all images in this directory", nil)
@@ -426,8 +440,8 @@ func (t *TaggingController) showAddTagDialog() {
 		for _, tag := range tagging.NormalizeTags(rawInput) {
 			tagSet[tag] = true
 		}
-		for tag, checked := range topTagChecks {
-			if checked {
+		for tag, selected := range topTagSelected {
+			if selected {
 				tagSet[tag] = true
 			}
 		}
