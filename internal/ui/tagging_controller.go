@@ -379,23 +379,67 @@ func (t *TaggingController) showAddTagDialog() {
 	}
 	currentTagsLabel := widget.NewLabel(currentTagsText)
 
+	topTagsWithCount, err := t.service.ListAllTags()
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("failed to get top tags: %w", err), t.host.GetMainWindow())
+		return
+	}
+
+	sort.Slice(topTagsWithCount, func(i, j int) bool {
+		if topTagsWithCount[i].Count == topTagsWithCount[j].Count {
+			return topTagsWithCount[i].Name < topTagsWithCount[j].Name
+		}
+		return topTagsWithCount[i].Count > topTagsWithCount[j].Count
+	})
+
+	topTagChecks := make(map[string]bool)
+	topTagsContainer := container.NewVBox()
+	maxTopTags := 5
+	for i, tagInfo := range topTagsWithCount {
+		if i >= maxTopTags {
+			break
+		}
+		tagName := tagInfo.Name
+		check := widget.NewCheck(fmt.Sprintf("%s (%d)", tagName, tagInfo.Count), func(checked bool) {
+			topTagChecks[tagName] = checked
+		})
+		topTagsContainer.Add(check)
+	}
+
 	applyToAllCheck := widget.NewCheck("Apply tag(s) to all images in this directory", nil)
 	applyToAllCheck.SetChecked(true)
 
 	formItems := []*widget.FormItem{
 		widget.NewFormItem("", currentTagsLabel),
 		widget.NewFormItem("New Tag(s)", tagEntry),
-		widget.NewFormItem("", applyToAllCheck),
 	}
+	if len(topTagsWithCount) > 0 {
+		formItems = append(formItems, widget.NewFormItem("Top Tags", topTagsContainer))
+	}
+	formItems = append(formItems, widget.NewFormItem("", applyToAllCheck))
 
 	execute := func(_ bool) {
 		rawInput := tagEntry.Text
 		applyToAll := applyToAllCheck.Checked
 
-		tagsToAdd := tagging.NormalizeTags(rawInput)
+		tagSet := make(map[string]bool)
+		for _, tag := range tagging.NormalizeTags(rawInput) {
+			tagSet[tag] = true
+		}
+		for tag, checked := range topTagChecks {
+			if checked {
+				tagSet[tag] = true
+			}
+		}
+
+		tagsToAdd := make([]string, 0, len(tagSet))
+		for tag := range tagSet {
+			tagsToAdd = append(tagsToAdd, tag)
+		}
+		sort.Strings(tagsToAdd)
 
 		if len(tagsToAdd) == 0 {
-			dialog.ShowInformation("Add Tags", "No valid tags entered.", t.host.GetMainWindow())
+			dialog.ShowInformation("Add Tags", "No valid tags selected or entered.", t.host.GetMainWindow())
 			return
 		}
 
