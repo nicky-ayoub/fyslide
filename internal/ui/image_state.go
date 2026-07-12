@@ -139,6 +139,15 @@ func (is *ImageState) GetCurrentIndex() int {
 	return is.index
 }
 
+// GetAllImages returns a snapshot of the full image list in a thread-safe manner.
+func (is *ImageState) GetAllImages() scan.FileItems {
+	is.mu.RLock()
+	defer is.mu.RUnlock()
+	items := make(scan.FileItems, len(is.images))
+	copy(items, is.images)
+	return items
+}
+
 // SetIndex sets the current view index.
 func (is *ImageState) SetIndex(i int) {
 	is.mu.Lock()
