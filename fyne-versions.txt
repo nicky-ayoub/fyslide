@@ -1,0 +1,6 @@
+	fyne.io/fyne/v2 v2.6.0
+	fyne.io/systray v1.11.0 // indirect
+	github.com/fyne-io/gl-js v0.1.0 // indirect
+	github.com/fyne-io/glfw-js v0.2.0 // indirect
+	github.com/fyne-io/image v0.1.1 // indirect
+	github.com/fyne-io/oksvg v0.1.0 // indirect

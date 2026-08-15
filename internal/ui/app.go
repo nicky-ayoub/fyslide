@@ -123,36 +123,37 @@ func setupAndLaunch(ctx context.Context, ui *App, config *AppConfig, splashWin f
 
 	updateSplash("Building main user interface...")
 	// 3. Build the main UI window and its components
-	ui.UI.MainWin = ui.app.NewWindow("FySlide")
-	fyne.Do(func() {
+	// Create and configure the main window on the Fyne UI thread.
+	fyne.DoAndWait(func() {
+		ui.UI.MainWin = ui.app.NewWindow("FySlide")
 		ui.UI.MainWin.SetContent(ui.buildMainUI())
-	})
-	ui.UI.MainWin.SetCloseIntercept(func() {
-		if ui.Tagging.IsBusy() {
-			dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
-			return
-		}
-		// Save the splitter offset before closing
-		if ui.UI.split != nil {
-			ui.app.Preferences().SetFloat(prefSplitterOffset, ui.UI.split.Offset)
-		}
-
-		log.Println("Closing application resources...")
-		// Cancel background workers before closing DB
-		if ui.appCancel != nil {
-			ui.appCancel()
-		}
-		if ui.tagDB != nil {
-			if err := ui.tagDB.Close(); err != nil {
-				log.Printf("Error closing tag database: %v", err)
+		ui.UI.MainWin.SetCloseIntercept(func() {
+			if ui.Tagging.IsBusy() {
+				dialog.ShowInformation("Operation in Progress", "A tagging operation is in progress.\nPlease wait for it to complete before closing the application.", ui.UI.MainWin)
+				return
 			}
-		}
-		ui.UI.MainWin.Close() // Proceed with closing the window
+			// Save the splitter offset before closing
+			if ui.UI.split != nil {
+				ui.app.Preferences().SetFloat(prefSplitterOffset, ui.UI.split.Offset)
+			}
+
+			log.Println("Closing application resources...")
+			// Cancel background workers before closing DB
+			if ui.appCancel != nil {
+				ui.appCancel()
+			}
+			if ui.tagDB != nil {
+				if err := ui.tagDB.Close(); err != nil {
+					log.Printf("Error closing tag database: %v", err)
+				}
+			}
+			ui.UI.MainWin.Close() // Proceed with closing the window
+		})
+		ui.UI.MainWin.SetIcon(resourceIconPng)
+		ui.UI.MainWin.CenterOnScreen()
+		//ui.UI.MainWin.SetFullScreen(true)
+		ui.UI.MainWin.Resize(fyne.NewSize(1920, 1024))
 	})
-	ui.UI.MainWin.SetIcon(resourceIconPng)
-	ui.UI.MainWin.CenterOnScreen()
-	//ui.UI.MainWin.SetFullScreen(true)
-	ui.UI.MainWin.Resize(fyne.NewSize(1920, 1024))
 
 	// After the UI is built and logUIManager is initialized, flush any buffered logs.
 	ui.flushLogBuffer()
