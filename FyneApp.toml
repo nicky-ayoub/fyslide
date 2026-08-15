@@ -3,3 +3,5 @@
     Name = "Fyne Slide Show"
     ID = "com.github/nicky-ayoub/fyslide"
     Build = 0
+[Migrations]
+fyneDo = true
