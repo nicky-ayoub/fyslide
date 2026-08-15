@@ -218,6 +218,10 @@ func setupAndLaunch(ctx context.Context, ui *App, config *AppConfig, splashWin f
 
 // run initializes and runs the Fyne application.
 func run(ctx context.Context, config *AppConfig) {
+	// Opt into the fyne.Do migration programmatically so running binaries
+	// don't need an external FyneApp.toml present.
+	app.SetMetadata(fyne.AppMetadata{Migrations: map[string]bool{"fyneDo": true}})
+
 	a := app.NewWithID("com.github.nicky-ayoub/fyslide")
 	a.SetIcon(resourceIconPng)
 
