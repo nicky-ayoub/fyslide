@@ -33,23 +33,28 @@ type ImageInfo struct {
 }
 
 // ImageService provides methods for loading and decoding images.
-type ImageService struct{}
+
+// ImageService provides an optional per-instance test hook for GetImageInfo.
+// The hook is unexported and intended for tests only; leave nil in production.
+type ImageService struct {
+	testHook func(string)
+}
+
+// NewImageServiceWithHook creates an ImageService with a test hook.
+func NewImageServiceWithHook(h func(string)) *ImageService {
+	return &ImageService{testHook: h}
+}
 
 // NewImageService creates a new ImageService.
 func NewImageService() *ImageService {
 	return &ImageService{}
 }
 
-// TestGetImageInfoHook is a hook function that can be set by tests to simulate delays or specific behavior during GetImageInfo calls.
-// Test hook used by unit tests to simulate delays or behavior during GetImageInfo.
-// Tests may set this to introduce artificial delays; production code should not set it.
-var TestGetImageInfoHook func(path string)
-
 // GetImageInfo reads an image file, decodes it, and extracts metadata.
 func (is *ImageService) GetImageInfo(path string) (info *ImageInfo, img image.Image, err error) {
-	// Allow tests to inject delays or other behavior
-	if TestGetImageInfoHook != nil {
-		TestGetImageInfoHook(path)
+	// Allow tests to inject delays or other behavior via per-instance hook
+	if is.testHook != nil {
+		is.testHook(path)
 	}
 	defer func() {
 		if r := recover(); r != nil {
