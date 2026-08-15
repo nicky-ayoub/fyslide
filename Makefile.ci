@@ -1,0 +1,22 @@
+## CI-specific Makefile fragment
+# This file is intended to be included by the main Makefile. It defines
+# handful of targets commonly used by CI pipelines.
+
+.PHONY: ci-quick ci-full coverage-ci verify-generated-ci fmt-check-ci
+
+# Quick CI: format, vet, lint, and tests (fast feedback)
+ci-quick: fmt-check-ci vet lint-all test
+
+# Full CI: ensure generated assets are up-to-date and run coverage
+ci-full: verify-generated-ci ci-quick coverage-ci
+
+coverage-ci: ## Produce coverage report (coverage.out) and print function summary
+	@echo "CI: Running coverage"
+	$(GO_CMD) test ./... -coverprofile=coverage.out
+	@$(GO_CMD) tool cover -func=coverage.out
+
+verify-generated-ci: gen ## Ensure generated assets are up-to-date in CI
+	@git diff --exit-code -- $(GENERATED_ASSETS)
+
+fmt-check-ci: ## Same as fmt-check but explicit for CI
+	@files=$$(gofmt -l .); if [ -n "$$files" ]; then echo "gofmt needs to be run on:"; echo "$$files"; exit 1; fi
