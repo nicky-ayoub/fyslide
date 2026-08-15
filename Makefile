@@ -72,7 +72,7 @@ deps: ## Tidy Go module dependencies.
 deploy: ## Deploy the application (placeholder).
 	@echo "Deploy target is not yet implemented."
 
-full-rebuild: clean deps build ## Clean, update dependencies, and rebuild both applications.
+full-rebuild: clean deps build test ## Clean, update dependencies, and rebuild both applications.
 	@echo "Full rebuild completed."
 
 help: ## Show this help message.
