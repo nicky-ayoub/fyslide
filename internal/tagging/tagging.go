@@ -20,9 +20,11 @@ import (
 )
 
 const (
-	dbFileName         = "fyslide_tags.db"
-	imagesToTagsBucket = "ImagesToTags" // Bucket name for image path to tags mapping.
-	tagsToImagesBucket = "TagsToImages" // Bucket name for tag to image paths mapping.
+	dbFileName            = "fyslide_tags.db"
+	imagesToTagsBucket    = "ImagesToTags" // Bucket name for image path to tags mapping.
+	tagsToImagesBucket    = "TagsToImages" // Bucket name for tag to image paths mapping.
+	fingerprintsBucket    = "DuplicateFingerprints"
+	duplicateGroupsBucket = "DuplicateGroups"
 )
 
 // tagSplitter is a regex to split input strings by common delimiters.
@@ -47,6 +49,27 @@ var (
 type TagWithCount struct {
 	Name  string
 	Count int
+}
+
+// Fingerprint stores a compact signature for an image used for duplicate detection.
+type Fingerprint struct {
+	Path           string
+	FileHash       string
+	PerceptualHash string
+	Width          int
+	Height         int
+	Size           int64
+	ModTime        time.Time
+	UpdatedAt      time.Time
+}
+
+// DuplicateGroup stores a set of images that were identified as duplicates.
+type DuplicateGroup struct {
+	RepresentativePath string
+	Members            []string
+	MatchType          string
+	Confidence         float64
+	UpdatedAt          time.Time
 }
 
 // NewTagDB creates or opens the tag database file.
@@ -107,6 +130,14 @@ func NewTagDB(dbDir string, logger LoggerFunc) (*TagDB, error) {
 		_, err = tx.CreateBucketIfNotExists([]byte(tagsToImagesBucket))
 		if err != nil {
 			return fmt.Errorf("failed to create bucket %s: %w", tagsToImagesBucket, err)
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte(fingerprintsBucket))
+		if err != nil {
+			return fmt.Errorf("failed to create bucket %s: %w", fingerprintsBucket, err)
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte(duplicateGroupsBucket))
+		if err != nil {
+			return fmt.Errorf("failed to create bucket %s: %w", duplicateGroupsBucket, err)
 		}
 		return nil
 	})
@@ -194,6 +225,17 @@ func decodeList(data []byte) ([]string, error) {
 	}
 	err := json.Unmarshal(data, &list)
 	return list, err
+}
+
+func encodeValue(value interface{}) ([]byte, error) {
+	return json.Marshal(value)
+}
+
+func decodeValue(data []byte, dest interface{}) error {
+	if data == nil {
+		return nil
+	}
+	return json.Unmarshal(data, dest)
 }
 
 // Adds an item to a list only if it's not already present. Returns true if added.
@@ -291,6 +333,105 @@ func (tdb *TagDB) AddTagsToImageList(imagePaths []string, tags []string) error {
 	return tdb.db.Update(func(tx *bolt.Tx) error {
 		return tdb._updateTagsForImageList(tx, imagePaths, tags, true)
 	})
+}
+
+// SaveFingerprint stores or updates a duplicate fingerprint for an image path.
+func (tdb *TagDB) SaveFingerprint(fp Fingerprint) error {
+	if fp.Path == "" {
+		return errors.New("fingerprint path cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(fingerprintsBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", fingerprintsBucket)
+		}
+		data, err := encodeValue(fp)
+		if err != nil {
+			return fmt.Errorf("encoding fingerprint: %w", err)
+		}
+		return bucket.Put([]byte(fp.Path), data)
+	})
+}
+
+// GetFingerprint retrieves a stored fingerprint for an image path.
+func (tdb *TagDB) GetFingerprint(path string) (*Fingerprint, error) {
+	if path == "" {
+		return nil, errors.New("path cannot be empty")
+	}
+	var fp Fingerprint
+	err := tdb.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(fingerprintsBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", fingerprintsBucket)
+		}
+		data := bucket.Get([]byte(path))
+		if data == nil {
+			return os.ErrNotExist
+		}
+		if err := decodeValue(data, &fp); err != nil {
+			return fmt.Errorf("decoding fingerprint: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &fp, nil
+}
+
+// DeleteFingerprint removes a stored fingerprint for an image path.
+func (tdb *TagDB) DeleteFingerprint(path string) error {
+	if path == "" {
+		return errors.New("path cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(fingerprintsBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", fingerprintsBucket)
+		}
+		return bucket.Delete([]byte(path))
+	})
+}
+
+// SaveDuplicateGroup stores or updates a duplicate group.
+func (tdb *TagDB) SaveDuplicateGroup(group DuplicateGroup) error {
+	if group.RepresentativePath == "" {
+		return errors.New("duplicate group representative path cannot be empty")
+	}
+	return tdb.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(duplicateGroupsBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", duplicateGroupsBucket)
+		}
+		data, err := encodeValue(group)
+		if err != nil {
+			return fmt.Errorf("encoding duplicate group: %w", err)
+		}
+		return bucket.Put([]byte(group.RepresentativePath), data)
+	})
+}
+
+// GetDuplicateGroups retrieves all stored duplicate groups.
+func (tdb *TagDB) GetDuplicateGroups() ([]DuplicateGroup, error) {
+	var groups []DuplicateGroup
+	err := tdb.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(duplicateGroupsBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", duplicateGroupsBucket)
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			var group DuplicateGroup
+			if err := decodeValue(v, &group); err != nil {
+				return fmt.Errorf("decoding duplicate group %s: %w", string(k), err)
+			}
+			groups = append(groups, group)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return groups, nil
 }
 
 // --- Core Tagging Functions ---

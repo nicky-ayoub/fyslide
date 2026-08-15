@@ -3,9 +3,13 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -387,6 +391,89 @@ func TestAddToTagged(t *testing.T) {
 	assert.Contains(t, outY, "othertag")
 	assert.NotContains(t, outY, "newtag1")
 	assert.NotContains(t, outY, "newtag2")
+}
+
+func TestDuplicatesCmdDefaultsToCurrentDirectoryAndScansSubfolders(t *testing.T) {
+	newTestRootCmd := newTestRootCmdMockFactory()
+
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "nested")
+	require.NoError(t, os.MkdirAll(subDir, 0o755))
+
+	repPath := filepath.Join(subDir, "rep.png")
+	dupPath := filepath.Join(subDir, "dup.png")
+
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 0, B: 0, A: 255})
+		}
+	}
+	writePNG := func(path string) {
+		file, err := os.Create(path)
+		require.NoError(t, err)
+		defer file.Close()
+		require.NoError(t, png.Encode(file, img))
+	}
+	writePNG(repPath)
+	writePNG(dupPath)
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(wd)) }()
+
+	cmd := newTestRootCmd()
+	out, err := executeCommandC(cmd, "duplicates")
+	require.NoError(t, err)
+	assert.Contains(t, out, "Dry run enabled by default")
+	assert.Contains(t, out, "Duplicate group")
+}
+
+func TestDuplicatesCmdDryRunIsDefaultAndForceExecutes(t *testing.T) {
+	newTestRootCmd := newTestRootCmdMockFactory()
+
+	imgDir := t.TempDir()
+	repPath := filepath.Join(imgDir, "rep.png")
+	dupPath := filepath.Join(imgDir, "dup.png")
+
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 0, B: 0, A: 255})
+		}
+	}
+	writePNG := func(path string) {
+		file, err := os.Create(path)
+		require.NoError(t, err)
+		defer file.Close()
+		require.NoError(t, png.Encode(file, img))
+	}
+	writePNG(repPath)
+	writePNG(dupPath)
+
+	cmdDryRun := newTestRootCmd()
+	out, err := executeCommandC(cmdDryRun, "duplicates", imgDir)
+	require.NoError(t, err)
+	assert.Contains(t, out, "Dry run")
+	assert.Contains(t, out, "would merge")
+
+	repInfo, err := os.Stat(repPath)
+	require.NoError(t, err)
+	dupInfo, err := os.Stat(dupPath)
+	require.NoError(t, err)
+	assert.NotEqual(t, repInfo.Sys().(*syscall.Stat_t).Ino, dupInfo.Sys().(*syscall.Stat_t).Ino)
+
+	cmdForce := newTestRootCmd()
+	out, err = executeCommandC(cmdForce, "duplicates", imgDir, "--force")
+	require.NoError(t, err)
+	assert.Contains(t, out, "Merged")
+
+	repInfo, err = os.Stat(repPath)
+	require.NoError(t, err)
+	dupInfo, err = os.Stat(dupPath)
+	require.NoError(t, err)
+	assert.Equal(t, repInfo.Sys().(*syscall.Stat_t).Ino, dupInfo.Sys().(*syscall.Stat_t).Ino)
 }
 
 func TestDeleteCmd(t *testing.T) {

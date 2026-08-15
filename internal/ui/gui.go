@@ -108,6 +108,7 @@ func (a *App) buildToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.NavigateNextIcon(), a.Navigation.NextUntaggedImage),     // Find Next Untagged
 		widget.NewToolbarAction(theme.DocumentIcon(), a.Tagging.showAddTagDialog),             // Changed from a.tagFile
 		widget.NewToolbarAction(theme.ContentRemoveIcon(), a.Tagging.showRemoveTagDialog),     // Changed from a.removeTag
+		widget.NewToolbarAction(theme.FolderOpenIcon(), a.runDuplicateDetection),
 		widget.NewToolbarAction(theme.DeleteIcon(), a.deleteFileCheck),
 		a.UI.randomAction,
 		widget.NewToolbarSeparator(),
@@ -219,6 +220,8 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 		fyne.NewMenuItem("Filter by Tags...", a.Tagging.showFilterByTagsDialog),
 		a.UI.clearFilterMenuItem,
 		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Find Duplicates", a.runDuplicateDetection),
+		fyne.NewMenuItemSeparator(),
 		&fyne.MenuItem{Label: "Scale Algorithm", ChildMenu: fyne.NewMenu("Scale Algorithm",
 			a.UI.scaleNnMenuItem,
 			a.UI.scaleBlMenuItem,
@@ -238,6 +241,7 @@ func (a *App) buildMainUI() fyne.CanvasObject {
 			fyne.NewMenuItem("Remove Tag", a.Tagging.showRemoveTagDialog),
 			fyne.NewMenuItemSeparator(), // Optional separator
 			fyne.NewMenuItem("Delete Image", a.deleteFileCheck),
+			fyne.NewMenuItem("Find Duplicates", a.runDuplicateDetection),
 			fyne.NewMenuItem("Keyboard Shortucts", a.showShortcuts),
 		),
 		view,

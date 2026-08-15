@@ -3,16 +3,22 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/gif"  // Register GIF decoder
 	_ "image/jpeg" // Register JPEG decoder
 	_ "image/png"  // Register PNG decoder
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"log"
+
+	"fyslide/internal/tagging"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -101,6 +107,103 @@ func (is *ImageService) GetImageInfo(path string) (info *ImageInfo, img image.Im
 	}
 
 	return info, img, nil
+}
+
+// GetImageFingerprint generates a compact fingerprint for an image suitable for duplicate detection.
+func (is *ImageService) GetImageFingerprint(path string) (*tagging.Fingerprint, error) {
+	if path == "" {
+		return nil, fmt.Errorf("image path cannot be empty")
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening file: %w", err)
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, fmt.Errorf("decoding image: %w", err)
+	}
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("getting file stats: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading file bytes: %w", err)
+	}
+
+	hash := sha256.Sum256(data)
+	phash := computePerceptualHash(img)
+
+	return &tagging.Fingerprint{
+		Path:           path,
+		FileHash:       hex.EncodeToString(hash[:]),
+		PerceptualHash: phash,
+		Width:          img.Bounds().Dx(),
+		Height:         img.Bounds().Dy(),
+		Size:           fileInfo.Size(),
+		ModTime:        fileInfo.ModTime(),
+		UpdatedAt:      time.Now().UTC(),
+	}, nil
+}
+
+func computePerceptualHash(img image.Image) string {
+	resized := resizeImage(img, 8, 8)
+	gray := convertToGray(resized)
+	avg := averageBrightness(gray)
+
+	var bits []string
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			if gray[y][x] >= avg {
+				bits = append(bits, "1")
+			} else {
+				bits = append(bits, "0")
+			}
+		}
+	}
+
+	var hash uint64
+	for i, bit := range bits {
+		if bit == "1" {
+			hash |= 1 << uint(i)
+		}
+	}
+	return strconv.FormatUint(hash, 16)
+}
+
+func resizeImage(img image.Image, width, height int) [][]uint8 {
+	bounds := img.Bounds()
+	out := make([][]uint8, height)
+	for y := 0; y < height; y++ {
+		out[y] = make([]uint8, width)
+		for x := 0; x < width; x++ {
+			srcX := bounds.Min.X + (x*bounds.Dx())/width
+			srcY := bounds.Min.Y + (y*bounds.Dy())/height
+			c := color.NRGBAModel.Convert(img.At(srcX, srcY)).(color.NRGBA)
+			out[y][x] = uint8((c.R + c.G + c.B) / 3)
+		}
+	}
+	return out
+}
+
+func convertToGray(img [][]uint8) [][]uint8 {
+	return img
+}
+
+func averageBrightness(gray [][]uint8) uint8 {
+	total := 0
+	for _, row := range gray {
+		for _, value := range row {
+			total += int(value)
+		}
+	}
+	count := len(gray) * len(gray[0])
+	return uint8(total / count)
 }
 
 // GetEmbeddedThumbnail attempts to read an embedded EXIF thumbnail from an image file.

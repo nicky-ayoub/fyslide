@@ -11,17 +11,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	dbDirFlag   string
-	tagDB       *tagging.TagDB
-	svc         *service.Service
-	dryRunFlag  bool // Flag for delete dry-run
-	forceFlag   bool // Flag for delete force
-	verboseFlag bool // Flag for verbose output
+	dbDirFlag           string
+	tagDB               *tagging.TagDB
+	svc                 *service.Service
+	dryRunFlag          bool // Flag for delete dry-run
+	forceFlag           bool // Flag for delete force
+	verboseFlag         bool // Flag for verbose output
+	mergeDuplicatesFlag bool // Flag for duplicates command to execute changes
 )
 
 func cliLogger(msg string) {
@@ -263,6 +265,90 @@ func NewRootCmd(getServiceAndDB func(dbPath string, logger tagging.LoggerFunc) (
 	}
 	addToTaggedCmd.GroupID = "batch"
 	rootCmd.AddCommand(addToTaggedCmd)
+
+	// Find duplicate images and optionally merge them.
+	duplicatesCmd := &cobra.Command{
+		Use:   "duplicates [directory]",
+		Short: "Find exact duplicate images in the current directory and subfolders",
+		Long:  `Scan a directory for exact duplicate image files, including subfolders. By default, this command runs in dry-run mode and only reports what would happen. Use --force to actually merge duplicates by hard-linking them to the representative file.`,
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) > 0 {
+				dir = args[0]
+			}
+			dir, err := filepath.Abs(dir)
+			if err != nil {
+				return err
+			}
+			if svc == nil {
+				return fmt.Errorf("service is not initialized")
+			}
+
+			if !mergeDuplicatesFlag {
+				cmd.Printf("Dry run enabled by default; use --force to actually merge duplicates.\n")
+			}
+
+			ctx := context.Background()
+			start := time.Now()
+			paths := make([]string, 0)
+			logFn := func(msg string) {
+				if verboseFlag {
+					fmt.Fprintf(cmd.ErrOrStderr(), "[log] %s\n", msg)
+				}
+			}
+
+			files := svc.FileScan.Run(ctx, dir, logFn)
+			count := 0
+			for item := range files {
+				if item.Path != "" {
+					paths = append(paths, item.Path)
+					count++
+					if count%1000 == 0 {
+						fmt.Fprintf(cmd.ErrOrStderr(), "[log] scanned %d files...\n", count)
+					}
+				}
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "[log] scanned %d image files in %s\n", count, time.Since(start).Round(time.Second))
+			if len(paths) == 0 {
+				cmd.Printf("No image files found in %s.\n", dir)
+				return nil
+			}
+
+			groups, err := svc.FindDuplicates(ctx, paths)
+			if err != nil {
+				return err
+			}
+			if len(groups) == 0 {
+				cmd.Printf("No duplicates found.\n")
+				return nil
+			}
+
+			for _, group := range groups {
+				cmd.Printf("Duplicate group (%d member(s), %s):\n", len(group.Members), group.MatchType)
+				for _, member := range group.Members {
+					cmd.Printf("  - %s\n", member)
+				}
+				if mergeDuplicatesFlag {
+					result, err := svc.MergeDuplicateGroup(group)
+					if err != nil {
+						cmd.Printf("  merge failed: %v\n", err)
+						continue
+					}
+					cmd.Printf("  Merged %d file(s) into %s\n", len(result.MergedPaths), result.RepresentativePath)
+					if verboseFlag {
+						cmd.Printf("[log] merged tags: %s\n", strings.Join(result.MergedTags, ", "))
+					}
+				} else {
+					cmd.Printf("  Dry run: would merge %d file(s) into %s\n", len(group.Members)-1, group.RepresentativePath)
+				}
+			}
+			return nil
+		},
+	}
+	duplicatesCmd.Flags().BoolVarP(&mergeDuplicatesFlag, "force", "f", false, "Actually perform the merge instead of dry-run")
+	duplicatesCmd.GroupID = "maintenance"
+	rootCmd.AddCommand(duplicatesCmd)
 
 	// Shell completion command
 	var completionCmd = &cobra.Command{

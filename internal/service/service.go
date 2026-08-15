@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // TagStore abstracts the tagging DB for easier testing and decoupling.
@@ -37,18 +38,186 @@ type FileScanner interface {
 
 // Service is the main entry point for business logic.
 type Service struct {
-	TagDB    TagStore
-	FileScan FileScanner
-	Logger   func(string)
+	TagDB        TagStore
+	FileScan     FileScanner
+	Logger       func(string)
+	ImageService *ImageService
+}
+
+// MergeResult describes the outcome of merging a duplicate group.
+type MergeResult struct {
+	RepresentativePath string
+	MergedPaths        []string
+	MergedTags         []string
 }
 
 // NewService constructs a new Service.
 func NewService(tagDB TagStore, fileScan FileScanner, logger func(string)) *Service {
 	return &Service{
-		TagDB:    tagDB,
-		FileScan: fileScan,
-		Logger:   logger,
+		TagDB:        tagDB,
+		FileScan:     fileScan,
+		Logger:       logger,
+		ImageService: NewImageService(),
 	}
+}
+
+// FindDuplicates scans a set of image paths, computes fingerprints, and returns duplicate groups.
+func (s *Service) FindDuplicates(ctx context.Context, paths []string) ([]tagging.DuplicateGroup, error) {
+	if len(paths) == 0 {
+		return []tagging.DuplicateGroup{}, nil
+	}
+	if s.ImageService == nil {
+		s.ImageService = NewImageService()
+	}
+	if s.TagDB == nil {
+		return nil, errors.New("tag database not configured")
+	}
+
+	fingerprints := make(map[string]tagging.Fingerprint, len(paths))
+	for _, path := range paths {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		if path == "" {
+			continue
+		}
+		fp, err := s.ImageService.GetImageFingerprint(path)
+		if err != nil {
+			continue
+		}
+		fingerprints[fp.Path] = *fp
+		if db, ok := s.TagDB.(interface {
+			SaveFingerprint(tagging.Fingerprint) error
+		}); ok {
+			if err := db.SaveFingerprint(*fp); err != nil && s.Logger != nil {
+				s.Logger(fmt.Sprintf("failed to save fingerprint for %s: %v", path, err))
+			}
+		}
+	}
+
+	groupByHash := make(map[string][]string)
+	for _, fp := range fingerprints {
+		if fp.FileHash != "" {
+			groupByHash[fp.FileHash] = append(groupByHash[fp.FileHash], fp.Path)
+		}
+	}
+
+	var groups []tagging.DuplicateGroup
+	for _, members := range groupByHash {
+		if len(members) < 2 {
+			continue
+		}
+		sort.Strings(members)
+		groups = append(groups, tagging.DuplicateGroup{
+			RepresentativePath: members[0],
+			Members:            members,
+			MatchType:          "exact",
+			Confidence:         1.0,
+		})
+	}
+
+	for _, group := range groups {
+		if db, ok := s.TagDB.(interface {
+			SaveDuplicateGroup(tagging.DuplicateGroup) error
+		}); ok {
+			if err := db.SaveDuplicateGroup(group); err != nil && s.Logger != nil {
+				s.Logger(fmt.Sprintf("failed to save duplicate group for %s: %v", group.RepresentativePath, err))
+			}
+		}
+	}
+
+	return groups, nil
+}
+
+// MergeDuplicateGroup hard-links exact duplicate files on the same filesystem and merges tags onto the representative.
+func (s *Service) MergeDuplicateGroup(group tagging.DuplicateGroup) (*MergeResult, error) {
+	if group.RepresentativePath == "" || len(group.Members) < 2 {
+		return nil, errors.New("duplicate group must contain a representative and at least one other member")
+	}
+	if s.TagDB == nil {
+		return nil, errors.New("tag database not configured")
+	}
+	if s.ImageService == nil {
+		s.ImageService = NewImageService()
+	}
+
+	representative := group.RepresentativePath
+	repFingerprint, err := s.ImageService.GetImageFingerprint(representative)
+	if err != nil {
+		return nil, fmt.Errorf("reading representative fingerprint: %w", err)
+	}
+
+	var mergedPaths []string
+	var mergedTags []string
+	seenTags := make(map[string]struct{})
+
+	representativeInfo, err := os.Stat(representative)
+	if err != nil {
+		return nil, fmt.Errorf("statting representative: %w", err)
+	}
+	repStat, ok := representativeInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, errors.New("failed to read representative filesystem metadata")
+	}
+
+	for _, member := range group.Members {
+		if member == "" || member == representative {
+			continue
+		}
+
+		memberFingerprint, err := s.ImageService.GetImageFingerprint(member)
+		if err != nil {
+			return nil, fmt.Errorf("reading fingerprint for %s: %w", member, err)
+		}
+		if memberFingerprint.FileHash != repFingerprint.FileHash {
+			return nil, fmt.Errorf("member %s does not match the representative file hash", member)
+		}
+
+		memberInfo, err := os.Stat(member)
+		if err != nil {
+			return nil, fmt.Errorf("statting member %s: %w", member, err)
+		}
+		memberStat, ok := memberInfo.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, fmt.Errorf("failed to read filesystem metadata for %s", member)
+		}
+		if repStat.Dev != memberStat.Dev {
+			return nil, fmt.Errorf("member %s is not on the same filesystem as the representative", member)
+		}
+
+		if err := os.Remove(member); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("removing existing member %s before hard-link: %w", member, err)
+		}
+		if err := os.Link(representative, member); err != nil {
+			return nil, fmt.Errorf("hard-linking %s to %s: %w", representative, member, err)
+		}
+		mergedPaths = append(mergedPaths, member)
+
+		memberTags, err := s.TagDB.GetTags(member)
+		if err != nil {
+			return nil, fmt.Errorf("getting tags for %s: %w", member, err)
+		}
+		for _, tag := range memberTags {
+			if _, ok := seenTags[tag]; ok {
+				continue
+			}
+			seenTags[tag] = struct{}{}
+			mergedTags = append(mergedTags, tag)
+		}
+		if err := s.TagDB.RemoveAllTagsForImage(member); err != nil {
+			return nil, fmt.Errorf("removing tags from %s: %w", member, err)
+		}
+	}
+
+	if len(mergedTags) > 0 {
+		if err := s.AddTagsToImageList([]string{representative}, mergedTags); err != nil {
+			return nil, fmt.Errorf("adding merged tags to representative: %w", err)
+		}
+	}
+
+	return &MergeResult{RepresentativePath: representative, MergedPaths: mergedPaths, MergedTags: mergedTags}, nil
 }
 
 // AddTagsToImage adds one or more tags to an image.
