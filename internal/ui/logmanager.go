@@ -73,9 +73,11 @@ func (lm *LogUIManager) updateLogDisplay() {
 	}
 	// ... rest of the logic
 	if len(lm.logMessages) == 0 {
-		lm.statusLogLabel.SetText("")
-		lm.statusLogUpBtn.Disable()
-		lm.statusLogDownBtn.Disable()
+		fyne.Do(func() {
+			lm.statusLogLabel.SetText("")
+			lm.statusLogUpBtn.Disable()
+			lm.statusLogDownBtn.Disable()
+		})
 		return
 	}
 
