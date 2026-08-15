@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -232,7 +233,13 @@ func run(ctx context.Context, config *AppConfig) {
 	splashWin.Show()
 
 	// --- Main Application Setup in Background ---
-	go setupAndLaunch(ctx, ui, config, splashWin, splashText)
+	// Delay starting the background setup slightly to ensure the Fyne
+	// UI thread and driver are initialized by `a.Run()` before we make
+	// any calls that marshal to the UI thread via `fyne.Do`/`DoAndWait`.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		setupAndLaunch(ctx, ui, config, splashWin, splashText)
+	}()
 
 	// Run the application event loop. This will initially just service the splash screen.
 	a.Run()
