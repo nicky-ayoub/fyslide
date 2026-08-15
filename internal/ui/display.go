@@ -63,7 +63,9 @@ func (a *App) updateStatusBar() {
 	// } else {
 	// 	statusText += " | Playing"
 	// }
-	a.UI.statusPathLabel.SetText(statusText) // Update only the path label
+	fyne.Do(func() {
+		a.UI.statusPathLabel.SetText(statusText) // Update only the path label
+	})
 }
 
 // AddLogMessage adds a message to the UI log display.
@@ -80,12 +82,12 @@ func (a *App) AddLogMessage(message string) {
 // current image in the info panel, including stats, tags, and EXIF data.
 func (a *App) UpdateInfoText(info *service.ImageInfo) {
 	if a.GetLoadedImagePath() == "" {
-		a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.")
+		fyne.Do(func() { a.UI.infoText.ParseMarkdown("# Info\n---\nNo image loaded.") })
 		return
 	}
 
 	if info == nil { // Called when image info isn't available (e.g. load error)
-		a.UI.infoText.ParseMarkdown("# Info\n---\nImage metadata not available.")
+		fyne.Do(func() { a.UI.infoText.ParseMarkdown("# Info\n---\nImage metadata not available.") })
 		return
 	}
 
@@ -152,7 +154,7 @@ func (a *App) UpdateInfoText(info *service.ImageInfo) {
 		exifString,
 	)
 
-	a.UI.infoText.ParseMarkdown(md)
+	fyne.Do(func() { a.UI.infoText.ParseMarkdown(md) })
 }
 
 // handleImageDisplayError sets the UI state when an image fails to load or decode.
@@ -262,12 +264,14 @@ func (a *App) toggleRandom() {
 		currentPath = currentItem.Path
 	}
 	a.imageState.ToggleRandomMode(currentPath)
-	if a.UI.randomAction != nil {
-		a.UI.randomAction.SetIcon(a.getDiceIcon())
-	}
-	if a.UI.toolBar != nil {
-		a.UI.toolBar.Refresh()
-	}
+	fyne.Do(func() {
+		if a.UI.randomAction != nil {
+			a.UI.randomAction.SetIcon(a.getDiceIcon())
+		}
+		if a.UI.toolBar != nil {
+			a.UI.toolBar.Refresh()
+		}
+	})
 	a.LoadAndDisplayCurrentImage()
 }
 
@@ -328,8 +332,8 @@ func (a *App) updateScaleAlgorithmMenu() {
 	a.UI.scaleBcMenuItem.Checked = (currentAlgo == Bicubic)
 
 	// Refresh the main menu to show checkmark changes
-	if a.UI.MainWin.MainMenu() != nil {
-		a.UI.MainWin.MainMenu().Refresh()
+	if a.UI.MainWin != nil && a.UI.MainWin.MainMenu() != nil {
+		fyne.Do(func() { a.UI.MainWin.MainMenu().Refresh() })
 	}
 }
 
@@ -362,6 +366,6 @@ func (a *App) updateThumbnailFormatMenu() {
 
 	// Refresh the main menu to show checkmark changes
 	if a.UI.MainWin != nil && a.UI.MainWin.MainMenu() != nil {
-		a.UI.MainWin.MainMenu().Refresh()
+		fyne.Do(func() { a.UI.MainWin.MainMenu().Refresh() })
 	}
 }
