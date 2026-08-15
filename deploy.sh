@@ -16,6 +16,9 @@ FILES=(bin/fyslide bin/fyslide-cli)
 
 # Stream the files and run remote backup + extract in one SSH session.
 tar -C . -cf - "${FILES[@]}" | ssh ${REMOTE} 'set -e; \
+	# Ensure Fyne cache directory exists so the app can create its cache.
+	mkdir -p "$HOME/.cache/fyne/com.github.nicky-ayoub/fyslide"; \
+	chmod 700 "$HOME/.cache/fyne" || true; \
 	cp -a bin/fyslide bin/fyslide2.backup 2>/dev/null || true; \
 	cp -a bin/fyslide-cli bin/fyslide-cli2.backup 2>/dev/null || true; \
 	tar -C "$HOME" -xf -'
